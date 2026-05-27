@@ -115,6 +115,32 @@ db.exec(`
     notes TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS clients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_name TEXT NOT NULL,
+    address TEXT,
+    address2 TEXT,
+    email TEXT,
+    phone TEXT,
+    contact_name TEXT,
+    payment_terms TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS suppliers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_name TEXT NOT NULL,
+    address TEXT,
+    address2 TEXT,
+    email TEXT,
+    phone TEXT,
+    contact_name TEXT,
+    payment_terms TEXT,
+    product_types TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 module.exports = db;
