@@ -300,7 +300,6 @@ app.get('/api/dashboard', (req, res) => {
   res.json({ orderStats, sampleStats, clientFinancial, supplierFinancial, recentOrders });
 });
 
-// ─── START ────────────────────────────────────────────────────────────────────
 // ─── CLIENTS ─────────────────────────────────────────────────────────────────
 
 app.get('/api/clients', (req, res) => {
@@ -366,5 +365,8 @@ app.delete('/api/suppliers/:id', (req, res) => {
   db.prepare('DELETE FROM suppliers WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
+
+// ─── START ────────────────────────────────────────────────────────────────────
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
