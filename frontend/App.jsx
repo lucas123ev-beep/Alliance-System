@@ -780,6 +780,153 @@ function Financial({ type }) {
   );
 }
 
+function ClientForm({ initial, onSave, onClose }) {
+  const [f, setF] = useState(initial || {
+    company_name: "", address: "", address2: "", email: "",
+    phone: "", contact_name: "", payment_terms: "", notes: "",
+  });
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+      <Field label="Company Name"><Input value={f.company_name} onChange={set("company_name")} /></Field>
+      <Field label="Contact Name" half><Input value={f.contact_name} onChange={set("contact_name")} /></Field>
+      <Field label="Email" half><Input type="email" value={f.email} onChange={set("email")} /></Field>
+      <Field label="Phone" half><Input value={f.phone} onChange={set("phone")} /></Field>
+      <Field label="Payment Terms" half><Input value={f.payment_terms} onChange={set("payment_terms")} placeholder="e.g. Net 30, 50% deposit" /></Field>
+      <Field label="Address"><Input value={f.address} onChange={set("address")} /></Field>
+      <Field label="Address 2"><Input value={f.address2} onChange={set("address2")} /></Field>
+      <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
+      <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+        <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={async () => { await onSave(f); onClose(); }}>Save Client</Btn>
+      </div>
+    </div>
+  );
+}
+
+function Clients() {
+  const [clients, setClients] = useState([]);
+  const [modal, setModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [search, setSearch] = useState("");
+  const load = useCallback(() => api("/clients").then(setClients), []);
+  useEffect(() => { load(); }, [load]);
+  const filtered = clients.filter(c =>
+    c.company_name.toLowerCase().includes(search.toLowerCase()) ||
+    (c.contact_name || "").toLowerCase().includes(search.toLowerCase())
+  );
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Clients</h2>
+        <Btn onClick={() => setModal(true)}>+ New Client</Btn>
+      </div>
+      <Input value={search} onChange={e => setSearch(e.target.value)}
+        placeholder="Search by company or contact…" style={{ ...inputStyle, marginBottom: "16px" }} />
+      {modal && (
+        <Modal title="New Client" onClose={() => setModal(false)}>
+          <ClientForm onSave={b => api("/clients", "POST", b).then(load)} onClose={() => setModal(false)} />
+        </Modal>
+      )}
+      {editing && (
+        <Modal title="Edit Client" onClose={() => setEditing(null)}>
+          <ClientForm initial={editing} onSave={b => api(`/clients/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
+        </Modal>
+      )}
+      <Table
+        cols={[
+          { label: "Company", render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.company_name}</span> },
+          { label: "Contact", key: "contact_name" },
+          { label: "Email", key: "email" },
+          { label: "Phone", key: "phone" },
+          { label: "Payment Terms", key: "payment_terms" },
+          { label: "Actions", render: r => (
+            <div style={{ display: "flex", gap: "6px" }}>
+              <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
+              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/clients/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+            </div>
+          )},
+        ]}
+        rows={filtered}
+      />
+    </div>
+  );
+}
+
+function SupplierForm({ initial, onSave, onClose }) {
+  const [f, setF] = useState(initial || {
+    company_name: "", address: "", address2: "", email: "",
+    phone: "", contact_name: "", payment_terms: "", product_types: "", notes: "",
+  });
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+      <Field label="Company Name"><Input value={f.company_name} onChange={set("company_name")} /></Field>
+      <Field label="Contact Name" half><Input value={f.contact_name} onChange={set("contact_name")} /></Field>
+      <Field label="Email" half><Input type="email" value={f.email} onChange={set("email")} /></Field>
+      <Field label="Phone" half><Input value={f.phone} onChange={set("phone")} /></Field>
+      <Field label="Payment Terms" half><Input value={f.payment_terms} onChange={set("payment_terms")} /></Field>
+      <Field label="Address"><Input value={f.address} onChange={set("address")} /></Field>
+      <Field label="Address 2"><Input value={f.address2} onChange={set("address2")} /></Field>
+      <Field label="Product Types"><Input value={f.product_types} onChange={set("product_types")} placeholder="e.g. Furniture, Textiles, Electronics" /></Field>
+      <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
+      <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+        <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
+        <Btn color="#8b5cf6" onClick={async () => { await onSave(f); onClose(); }}>Save Supplier</Btn>
+      </div>
+    </div>
+  );
+}
+
+function Suppliers() {
+  const [suppliers, setSuppliers] = useState([]);
+  const [modal, setModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [search, setSearch] = useState("");
+  const load = useCallback(() => api("/suppliers").then(setSuppliers), []);
+  useEffect(() => { load(); }, [load]);
+  const filtered = suppliers.filter(s =>
+    s.company_name.toLowerCase().includes(search.toLowerCase()) ||
+    (s.product_types || "").toLowerCase().includes(search.toLowerCase())
+  );
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Suppliers</h2>
+        <Btn color="#8b5cf6" onClick={() => setModal(true)}>+ New Supplier</Btn>
+      </div>
+      <Input value={search} onChange={e => setSearch(e.target.value)}
+        placeholder="Search by company or product type…" style={{ ...inputStyle, marginBottom: "16px" }} />
+      {modal && (
+        <Modal title="New Supplier" onClose={() => setModal(false)}>
+          <SupplierForm onSave={b => api("/suppliers", "POST", b).then(load)} onClose={() => setModal(false)} />
+        </Modal>
+      )}
+      {editing && (
+        <Modal title="Edit Supplier" onClose={() => setEditing(null)}>
+          <SupplierForm initial={editing} onSave={b => api(`/suppliers/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
+        </Modal>
+      )}
+      <Table
+        cols={[
+          { label: "Company", render: r => <span style={{ fontWeight: 600, color: "#a78bfa" }}>{r.company_name}</span> },
+          { label: "Contact", key: "contact_name" },
+          { label: "Email", key: "email" },
+          { label: "Phone", key: "phone" },
+          { label: "Product Types", key: "product_types" },
+          { label: "Payment Terms", key: "payment_terms" },
+          { label: "Actions", render: r => (
+            <div style={{ display: "flex", gap: "6px" }}>
+              <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
+              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/suppliers/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+            </div>
+          )},
+        ]}
+        rows={filtered}
+      />
+    </div>
+  );
+}
 // ─── NAV CONFIG ───────────────────────────────────────────────────────────────
 const TABS = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
@@ -800,10 +947,12 @@ export default function App() {
   const [tab, setTab] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const renderTab = () => {
+const renderTab = () => {
     switch (tab) {
       case "dashboard": return <Dashboard />;
       case "orders": return <Orders />;
+      case "clients": return <Clients />;
+      case "suppliers": return <Suppliers />;
       case "products": return <Products />;
       case "samples": return <Samples />;
       case "proformas": return <Proformas />;
