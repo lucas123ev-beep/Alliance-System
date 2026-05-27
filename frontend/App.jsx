@@ -781,12 +781,13 @@ function Financial({ type }) {
 }
 
 // ─── NAV CONFIG ───────────────────────────────────────────────────────────────
-
 const TABS = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
   { id: "orders", label: "Orders", icon: "📋" },
+  { id: "clients", label: "Clients", icon: "🏢" },
+  { id: "suppliers", label: "Suppliers", icon: "🏭" },
   { id: "products", label: "Products", icon: "🗂" },
-  { id: "samples", label: "Samples", icon: "🧪" },
+  { id: "samples", label: "Samples", icon: "✏️" },
   { id: "proformas", label: "Proformas", icon: "📄" },
   { id: "contracts", label: "Contracts", icon: "🤝" },
   { id: "fin-clients", label: "Client Flow", icon: "💰" },
