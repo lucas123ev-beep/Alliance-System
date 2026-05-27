@@ -301,6 +301,70 @@ app.get('/api/dashboard', (req, res) => {
 });
 
 // ─── START ────────────────────────────────────────────────────────────────────
+// ─── CLIENTS ─────────────────────────────────────────────────────────────────
 
+app.get('/api/clients', (req, res) => {
+  res.json(db.prepare('SELECT * FROM clients ORDER BY company_name').all());
+});
+
+app.post('/api/clients', (req, res) => {
+  const { company_name, address, address2, email, phone, contact_name, payment_terms, notes } = req.body;
+  try {
+    const result = db.prepare(`
+      INSERT INTO clients (company_name, address, address2, email, phone, contact_name, payment_terms, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(company_name, address, address2, email, phone, contact_name, payment_terms, notes);
+    res.status(201).json(db.prepare('SELECT * FROM clients WHERE id=?').get(result.lastInsertRowid));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/clients/:id', (req, res) => {
+  const { company_name, address, address2, email, phone, contact_name, payment_terms, notes } = req.body;
+  db.prepare(`
+    UPDATE clients SET company_name=?, address=?, address2=?, email=?, phone=?, contact_name=?, payment_terms=?, notes=?
+    WHERE id=?
+  `).run(company_name, address, address2, email, phone, contact_name, payment_terms, notes, req.params.id);
+  res.json(db.prepare('SELECT * FROM clients WHERE id=?').get(req.params.id));
+});
+
+app.delete('/api/clients/:id', (req, res) => {
+  db.prepare('DELETE FROM clients WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── SUPPLIERS ────────────────────────────────────────────────────────────────
+
+app.get('/api/suppliers', (req, res) => {
+  res.json(db.prepare('SELECT * FROM suppliers ORDER BY company_name').all());
+});
+
+app.post('/api/suppliers', (req, res) => {
+  const { company_name, address, address2, email, phone, contact_name, payment_terms, product_types, notes } = req.body;
+  try {
+    const result = db.prepare(`
+      INSERT INTO suppliers (company_name, address, address2, email, phone, contact_name, payment_terms, product_types, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(company_name, address, address2, email, phone, contact_name, payment_terms, product_types, notes);
+    res.status(201).json(db.prepare('SELECT * FROM suppliers WHERE id=?').get(result.lastInsertRowid));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/suppliers/:id', (req, res) => {
+  const { company_name, address, address2, email, phone, contact_name, payment_terms, product_types, notes } = req.body;
+  db.prepare(`
+    UPDATE suppliers SET company_name=?, address=?, address2=?, email=?, phone=?, contact_name=?, payment_terms=?, product_types=?, notes=?
+    WHERE id=?
+  `).run(company_name, address, address2, email, phone, contact_name, payment_terms, product_types, notes, req.params.id);
+  res.json(db.prepare('SELECT * FROM suppliers WHERE id=?').get(req.params.id));
+});
+
+app.delete('/api/suppliers/:id', (req, res) => {
+  db.prepare('DELETE FROM suppliers WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
