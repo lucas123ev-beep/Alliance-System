@@ -460,7 +460,7 @@ function Orders() {
   };
 
   const nextStatus = { Pending: "In Production", "In Production": "Inspection", Inspection: "Completed" };
-
+const prevStatus = { "In Production": "Pending", Inspection: "In Production", Completed: "Inspection" };
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
@@ -507,11 +507,16 @@ function Orders() {
           {
             label: "Actions", render: r => (
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                {nextStatus[r.status] && (
-                  <Btn small color="#10b981" onClick={() => changeStatus(r.id, nextStatus[r.status])}>
-                    → {nextStatus[r.status]}
-                  </Btn>
-                )}
+               {prevStatus[r.status] && (
+  <Btn small outline color="#64748b" onClick={() => changeStatus(r.id, prevStatus[r.status])}>
+    ← {prevStatus[r.status]}
+  </Btn>
+)}
+{nextStatus[r.status] && (
+  <Btn small color="#10b981" onClick={() => changeStatus(r.id, nextStatus[r.status])}>
+    → {nextStatus[r.status]}
+  </Btn>
+)}
                 <Btn small outline color="#64748b" onClick={() => setEditOrder(r)}>Edit</Btn>
                 <Btn small outline color="#ef4444" onClick={() => deleteOrder(r.id)}>Del</Btn>
               </div>
