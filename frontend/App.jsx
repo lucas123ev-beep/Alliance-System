@@ -653,10 +653,17 @@ cols={[
 }
 
 function Samples() {
-  const [samples, setSamples] = useState([]);
+ const [samples, setSamples] = useState([]);
   const [modal, setModal] = useState(false);
+  const [search, setSearch] = useState("");
   const load = useCallback(() => api("/samples").then(setSamples), []);
   useEffect(() => { load(); }, [load]);
+
+  const filtered = samples.filter(s =>
+    s.product_name.toLowerCase().includes(search.toLowerCase()) ||
+    s.client.toLowerCase().includes(search.toLowerCase()) ||
+    (s.status || "").toLowerCase().includes(search.toLowerCase())
+  );
 
   const sampleColors = {
     Requested: "#64748b", "In Production": "#3b82f6", Sent: "#f59e0b",
@@ -669,6 +676,8 @@ function Samples() {
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Product Development – Samples</h2>
         <Btn onClick={() => setModal(true)}>+ New Sample</Btn>
       </div>
+      <Input value={search} onChange={e => setSearch(e.target.value)}
+  placeholder="Search by product, client or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       {modal && (
         <Modal title="New Sample Request" onClose={() => setModal(false)}>
           <SampleForm onSave={b => api("/samples", "POST", b).then(load)} onClose={() => setModal(false)} />
@@ -692,7 +701,7 @@ function Samples() {
             <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/samples/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
           )},
         ]}
-        rows={samples}
+        rows={filtered}
       />
     </div>
   );
