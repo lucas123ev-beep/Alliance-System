@@ -28,7 +28,11 @@ db.exec(`
     description TEXT,
     unit TEXT DEFAULT 'unit',
     unit_cost REAL DEFAULT 0,
+    cost_currency TEXT DEFAULT 'USD',
+    margin REAL DEFAULT 0,
     sale_price REAL DEFAULT 0,
+    sale_currency TEXT DEFAULT 'USD',
+    width TEXT,
     category TEXT,
     supplier TEXT,
     created_at TEXT DEFAULT (datetime('now'))
