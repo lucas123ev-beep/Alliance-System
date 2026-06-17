@@ -498,14 +498,22 @@ function Dashboard() {
 }
 
 function Orders() {
-  const [orders, setOrders] = useState([]);
+const [orders, setOrders] = useState([]);
   const [modal, setModal] = useState(null);
   const [editOrder, setEditOrder] = useState(null);
   const [editNumberId, setEditNumberId] = useState(null);
   const [editNumberVal, setEditNumberVal] = useState("");
+  const [search, setSearch] = useState("");
 
   const load = useCallback(() => api("/orders").then(setOrders), []);
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
+
+  const filtered = orders.filter(o =>
+    o.order_number.toLowerCase().includes(search.toLowerCase()) ||
+    o.client.toLowerCase().includes(search.toLowerCase()) ||
+    (o.status || "").toLowerCase().includes(search.toLowerCase()) ||
+    (o.incoterm || "").toLowerCase().includes(search.toLowerCase())
+  );
 
   const createOrder = (f) => api("/orders", "POST", f).then(load);
   const updateOrder = (f) => api(`/orders/${editOrder.id}`, "PUT", f).then(load);
@@ -524,6 +532,8 @@ const prevStatus = { "In Production": "Pending", Inspection: "In Production", Co
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Orders</h2>
         <Btn onClick={() => setModal("new")}>+ New Order</Btn>
       </div>
+      <Input value={search} onChange={e => setSearch(e.target.value)}
+  placeholder="Search by order #, client, status or incoterm…" style={{ ...inputStyle, marginBottom: "16px" }} />
 
       {modal === "new" && (
         <Modal title="New Order" onClose={() => setModal(null)}>
@@ -580,7 +590,7 @@ const prevStatus = { "In Production": "Pending", Inspection: "In Production", Co
             )
           },
         ]}
-        rows={orders}
+        rows={filtered}
         emptyMsg="No orders yet. Create your first one!"
       />
     </div>
