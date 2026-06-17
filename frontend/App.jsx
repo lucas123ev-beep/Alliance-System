@@ -225,23 +225,80 @@ function OrderForm({ initial, onSave, onClose }) {
 
 function ProductForm({ initial, onSave, onClose }) {
   const [f, setF] = useState(initial || {
-    code: "", name: "", description: "", unit: "unit",
-    unit_cost: "", sale_price: "", category: "", supplier: "",
+    code: "", name: "", description: "", unit: "unit", width: "",
+    unit_cost: "", cost_currency: "USD", margin: "", sale_price: "", sale_currency: "USD",
+    category: "", supplier: "",
   });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+
+  const handleCostChange = (e) => {
+    const cost = parseFloat(e.target.value) || 0;
+    const margin = parseFloat(f.margin) || 0;
+    const sale = margin > 0 ? (cost * (1 + margin / 100)).toFixed(2) : f.sale_price;
+    setF((p) => ({ ...p, unit_cost: e.target.value, sale_price: sale }));
+  };
+
+  const handleMarginChange = (e) => {
+    const margin = parseFloat(e.target.value) || 0;
+    const cost = parseFloat(f.unit_cost) || 0;
+    const sale = cost > 0 ? (cost * (1 + margin / 100)).toFixed(2) : f.sale_price;
+    setF((p) => ({ ...p, margin: e.target.value, sale_price: sale }));
+  };
+
+  const handleSalePriceChange = (e) => {
+    const sale = parseFloat(e.target.value) || 0;
+    const cost = parseFloat(f.unit_cost) || 0;
+    const margin = cost > 0 ? (((sale - cost) / cost) * 100).toFixed(1) : f.margin;
+    setF((p) => ({ ...p, sale_price: e.target.value, margin }));
+  };
+
+  const currencies = ["USD", "BRL", "CNY", "EUR", "GBP", "JPY"];
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Product Code" half><Input value={f.code} onChange={set("code")} placeholder="PROD-001" /></Field>
       <Field label="Name" half><Input value={f.name} onChange={set("name")} /></Field>
       <Field label="Category" half><Input value={f.category} onChange={set("category")} /></Field>
+      <Field label="Supplier" half><Input value={f.supplier} onChange={set("supplier")} /></Field>
       <Field label="Unit" half>
         <Select value={f.unit} onChange={set("unit")}>
           {["unit","kg","m","m²","m³","box","pcs","set","pair"].map(u => <option key={u}>{u}</option>)}
         </Select>
       </Field>
-      <Field label="Unit Cost (USD)" half><Input type="number" value={f.unit_cost} onChange={set("unit_cost")} /></Field>
-      <Field label="Sale Price (USD)" half><Input type="number" value={f.sale_price} onChange={set("sale_price")} /></Field>
-      <Field label="Supplier"><Input value={f.supplier} onChange={set("supplier")} /></Field>
+      <Field label="Width" half><Input value={f.width} onChange={set("width")} placeholder="e.g. 1.2m, 150cm" /></Field>
+
+      <Field label="Cost Currency" half>
+        <Select value={f.cost_currency} onChange={set("cost_currency")}>
+          {currencies.map(c => <option key={c}>{c}</option>)}
+        </Select>
+      </Field>
+      <Field label="Unit Cost" half>
+        <Input type="number" value={f.unit_cost} onChange={handleCostChange} placeholder="0.00" />
+      </Field>
+
+      <Field label="Margin %" half>
+        <div style={{ position: "relative" }}>
+          <Input type="number" value={f.margin} onChange={handleMarginChange} placeholder="0" style={{ ...inputStyle, paddingRight: "32px" }} />
+          <span style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", color: "#64748b", fontSize: "13px" }}>%</span>
+        </div>
+      </Field>
+      <Field label="Sale Currency" half>
+        <Select value={f.sale_currency} onChange={set("sale_currency")}>
+          {currencies.map(c => <option key={c}>{c}</option>)}
+        </Select>
+      </Field>
+      <Field label="Sale Price" half>
+        <Input type="number" value={f.sale_price} onChange={handleSalePriceChange} placeholder="0.00" />
+      </Field>
+      {f.unit_cost && f.sale_price && (
+        <div style={{ gridColumn: "span 1", background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "12px", color: "#64748b", display: "flex", alignItems: "center", gap: "8px" }}>
+          <span>Margin:</span>
+          <span style={{ fontWeight: 700, color: parseFloat(f.margin) >= 0 ? "#10b981" : "#ef4444", fontSize: "16px" }}>
+            {f.margin || 0}%
+          </span>
+        </div>
+      )}
+
       <Field label="Description"><Textarea value={f.description} onChange={set("description")} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
@@ -568,24 +625,27 @@ function Products() {
       )}
 
       <Table
-        cols={[
-          { label: "Code", render: r => <span style={{ fontFamily: "monospace", color: "#60a5fa" }}>{r.code}</span> },
-          { label: "Name", render: r => <span style={{ fontWeight: 600 }}>{r.name}</span> },
-          { label: "Category", key: "category" },
-          { label: "Supplier", key: "supplier" },
-          { label: "Unit", key: "unit" },
-          { label: "Cost", render: r => fmt(r.unit_cost) },
-          { label: "Sale Price", render: r => fmt(r.sale_price) },
-          { label: "Margin", render: r => r.unit_cost > 0 ? `${(((r.sale_price - r.unit_cost) / r.unit_cost) * 100).toFixed(1)}%` : "—" },
-          {
-            label: "Actions", render: r => (
-              <div style={{ display: "flex", gap: "6px" }}>
-                <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
-                <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/products/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
-              </div>
-            )
-          },
-        ]}
+cols={[
+  { label: "Code", render: r => <span style={{ fontFamily: "monospace", color: "#60a5fa" }}>{r.code}</span> },
+  { label: "Name", render: r => <span style={{ fontWeight: 600 }}>{r.name}</span> },
+  { label: "Category", key: "category" },
+  { label: "Supplier", key: "supplier" },
+  { label: "Unit", key: "unit" },
+  { label: "Width", render: r => r.width || "—" },
+  { label: "Cost", render: r => r.unit_cost ? `${r.cost_currency || "USD"} ${parseFloat(r.unit_cost).toFixed(2)}` : "—" },
+  { label: "Sale Price", render: r => r.sale_price ? `${r.sale_currency || "USD"} ${parseFloat(r.sale_price).toFixed(2)}` : "—" },
+  { label: "Margin", render: r => r.unit_cost > 0 ? (
+    <span style={{ color: parseFloat(r.margin) >= 0 ? "#10b981" : "#ef4444", fontWeight: 600 }}>
+      {r.margin || (((r.sale_price - r.unit_cost) / r.unit_cost) * 100).toFixed(1)}%
+    </span>
+  ) : "—" },
+  { label: "Actions", render: r => (
+    <div style={{ display: "flex", gap: "6px" }}>
+      <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
+      <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/products/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+    </div>
+  )},
+]}
         rows={filtered}
       />
     </div>
