@@ -169,23 +169,149 @@ function StatCard({ label, value, sub, color = "#3b82f6" }) {
 
 function OrderForm({ initial, onSave, onClose }) {
   const [f, setF] = useState(initial || {
-    order_number: "", client: "", value: "", currency: "USD",
+    order_number: "", client: "", supplier: "", value: "", currency: "USD",
     production_lead_time: "", shipment_date: "", arrival_date: "",
-    incoterm: "", payment_terms: "", notes: "",
+    incoterm: "", payment_terms: "", port_of_loading: "", port_of_discharge: "", notes: "",
   });
+  const [clients, setClients] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [clientSearch, setClientSearch] = useState(f.client || "");
+  const [supplierSearch, setSupplierSearch] = useState(f.supplier || "");
+  const [productSearch, setProductSearch] = useState("");
+  const [showClientList, setShowClientList] = useState(false);
+  const [showSupplierList, setShowSupplierList] = useState(false);
+  const [showProductList, setShowProductList] = useState(false);
+  const [showPaymentList, setShowPaymentList] = useState(false);
+
+  useEffect(() => {
+    api("/clients").then(setClients);
+    api("/suppliers").then(setSuppliers);
+    api("/products").then(setProducts);
+  }, []);
+
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
-  const submit = async () => {
-    await onSave(f);
-    onClose();
+
+  const paymentOptions = [
+    "30% Deposit, 70% Before Shipment",
+    "50% Deposit, 50% Before Shipment",
+    "100% Advance Payment",
+    "Net 30", "Net 60", "Net 90",
+    "Letter of Credit (L/C)",
+    "Documents Against Payment (D/P)",
+    "Documents Against Acceptance (D/A)",
+    "Open Account",
+    "Consignment",
+  ];
+
+  const filteredClients = clients.filter(c =>
+    c.company_name.toLowerCase().includes(clientSearch.toLowerCase())
+  );
+  const filteredSuppliers = suppliers.filter(s =>
+    s.company_name.toLowerCase().includes(supplierSearch.toLowerCase())
+  );
+  const filteredProducts = products.filter(p =>
+    p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+    p.code.toLowerCase().includes(productSearch.toLowerCase())
+  );
+  const filteredPayments = paymentOptions.filter(p =>
+    p.toLowerCase().includes((f.payment_terms || "").toLowerCase())
+  );
+
+  const dropdownStyle = {
+    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+    background: "#1e293b", border: "1px solid #334155", borderRadius: "8px",
+    maxHeight: "180px", overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
   };
+  const dropItemStyle = {
+    padding: "10px 12px", cursor: "pointer", fontSize: "13px", color: "#cbd5e1",
+    borderBottom: "1px solid #0f172a",
+  };
+
+  const submit = async () => { await onSave(f); onClose(); };
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Order Number" half>
         <Input value={f.order_number} onChange={set("order_number")} placeholder="EXP-2024-001" />
       </Field>
+
+      {/* CLIENT */}
       <Field label="Client" half>
-        <Input value={f.client} onChange={set("client")} placeholder="Client name" />
+        <div style={{ position: "relative" }}>
+          <Input
+            value={clientSearch}
+            onChange={e => { setClientSearch(e.target.value); setF(p => ({ ...p, client: e.target.value })); setShowClientList(true); }}
+            onFocus={() => setShowClientList(true)}
+            onBlur={() => setTimeout(() => setShowClientList(false), 200)}
+            placeholder="Search client…"
+          />
+          {showClientList && filteredClients.length > 0 && (
+            <div style={dropdownStyle}>
+              {filteredClients.map(c => (
+                <div key={c.id} style={dropItemStyle}
+                  onMouseDown={() => { setClientSearch(c.company_name); setF(p => ({ ...p, client: c.company_name })); setShowClientList(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  {c.company_name}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </Field>
+
+      {/* SUPPLIER */}
+      <Field label="Supplier" half>
+        <div style={{ position: "relative" }}>
+          <Input
+            value={supplierSearch}
+            onChange={e => { setSupplierSearch(e.target.value); setF(p => ({ ...p, supplier: e.target.value })); setShowSupplierList(true); }}
+            onFocus={() => setShowSupplierList(true)}
+            onBlur={() => setTimeout(() => setShowSupplierList(false), 200)}
+            placeholder="Search supplier…"
+          />
+          {showSupplierList && filteredSuppliers.length > 0 && (
+            <div style={dropdownStyle}>
+              {filteredSuppliers.map(s => (
+                <div key={s.id} style={dropItemStyle}
+                  onMouseDown={() => { setSupplierSearch(s.company_name); setF(p => ({ ...p, supplier: s.company_name })); setShowSupplierList(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  {s.company_name}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Field>
+
+      {/* PRODUCT */}
+      <Field label="Product" half>
+        <div style={{ position: "relative" }}>
+          <Input
+            value={productSearch}
+            onChange={e => { setProductSearch(e.target.value); setF(p => ({ ...p, product: e.target.value })); setShowProductList(true); }}
+            onFocus={() => setShowProductList(true)}
+            onBlur={() => setTimeout(() => setShowProductList(false), 200)}
+            placeholder="Search product…"
+          />
+          {showProductList && filteredProducts.length > 0 && (
+            <div style={dropdownStyle}>
+              {filteredProducts.map(p => (
+                <div key={p.id} style={dropItemStyle}
+                  onMouseDown={() => { setProductSearch(`${p.code} – ${p.name}`); setF(prev => ({ ...prev, product: p.name, value: p.sale_price || prev.value })); setShowProductList(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{p.code}</span> {p.name}
+                  {p.sale_price ? <span style={{ float: "right", color: "#10b981" }}>{p.sale_currency || "USD"} {p.sale_price}</span> : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Field>
+
       <Field label="Value" half>
         <Input type="number" value={f.value} onChange={set("value")} placeholder="0.00" />
       </Field>
@@ -203,18 +329,53 @@ function OrderForm({ initial, onSave, onClose }) {
           {["FOB","CIF","CFR","EXW","DAP","DDP","FCA"].map(t => <option key={t}>{t}</option>)}
         </Select>
       </Field>
+
+      {/* PORT OF LOADING */}
+      <Field label="Port of Loading" half>
+        <Input value={f.port_of_loading} onChange={set("port_of_loading")} placeholder="e.g. Shanghai, CN" />
+      </Field>
+
+      {/* PORT OF DISCHARGE */}
+      <Field label="Port of Discharge" half>
+        <Input value={f.port_of_discharge} onChange={set("port_of_discharge")} placeholder="e.g. Santos, BR" />
+      </Field>
+
       <Field label="Shipment Date" half>
         <Input type="date" value={f.shipment_date} onChange={set("shipment_date")} />
       </Field>
       <Field label="Arrival Date" half>
         <Input type="date" value={f.arrival_date} onChange={set("arrival_date")} />
       </Field>
+
+      {/* PAYMENT TERMS */}
       <Field label="Payment Terms">
-        <Input value={f.payment_terms} onChange={set("payment_terms")} placeholder="e.g. 30% deposit, 70% before shipment" />
+        <div style={{ position: "relative" }}>
+          <Input
+            value={f.payment_terms}
+            onChange={e => { setF(p => ({ ...p, payment_terms: e.target.value })); setShowPaymentList(true); }}
+            onFocus={() => setShowPaymentList(true)}
+            onBlur={() => setTimeout(() => setShowPaymentList(false), 200)}
+            placeholder="Search or type payment terms…"
+          />
+          {showPaymentList && filteredPayments.length > 0 && (
+            <div style={dropdownStyle}>
+              {filteredPayments.map((pt, i) => (
+                <div key={i} style={dropItemStyle}
+                  onMouseDown={() => { setF(p => ({ ...p, payment_terms: pt })); setShowPaymentList(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  {pt}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </Field>
+
       <Field label="Notes">
         <Textarea value={f.notes} onChange={set("notes")} />
       </Field>
+
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
         <Btn onClick={submit}>Save Order</Btn>
