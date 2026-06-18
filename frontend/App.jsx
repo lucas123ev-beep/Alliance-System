@@ -735,6 +735,7 @@ const [orders, setOrders] = useState([]);
   const [editNumberId, setEditNumberId] = useState(null);
   const [editNumberVal, setEditNumberVal] = useState("");
   const [search, setSearch] = useState("");
+  const [proformaModal, setProformaModal] = useState(null);
 
   const load = useCallback(() => api("/orders").then(setOrders), []);
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
@@ -757,6 +758,20 @@ const [orders, setOrders] = useState([]);
 
   const nextStatus = { Pending: "In Production", "In Production": "Inspection", Inspection: "Completed" };
 const prevStatus = { "In Production": "Pending", Inspection: "In Production", Completed: "Inspection" };
+const generateProforma = (order) => {
+    const number = `PI-${order.order_number}-${Date.now().toString().slice(-4)}`;
+    setProformaModal({
+      order_id: order.id,
+      number,
+      issue_date: new Date().toISOString().slice(0, 10),
+      validity: "",
+      client: order.client,
+      total: order.value,
+      currency: order.currency || "USD",
+      status: "Draft",
+      notes: "",
+    });
+  };
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
@@ -774,6 +789,15 @@ const prevStatus = { "In Production": "Pending", Inspection: "In Production", Co
       {editOrder && (
         <Modal title="Edit Order" onClose={() => setEditOrder(null)}>
           <OrderForm initial={editOrder} onSave={updateOrder} onClose={() => setEditOrder(null)} />
+        </Modal>
+{proformaModal && (
+        <Modal title="Generate Proforma Invoice" onClose={() => setProformaModal(null)} wide>
+          <ProformaForm
+            orders={[]}
+            initial={proformaModal}
+            onSave={async b => { await api("/proformas", "POST", b); setProformaModal(null); }}
+            onClose={() => setProformaModal(null)}
+          />
         </Modal>
       )}
 
@@ -803,24 +827,23 @@ const prevStatus = { "In Production": "Pending", Inspection: "In Production", Co
           { label: "Arrival", render: r => fmtDate(r.arrival_date) },
           { label: "Status", render: r => <Badge status={r.status} /> },
           {
-            label: "Actions", render: r => (
+{ label: "Actions", render: r => (
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-               {prevStatus[r.status] && (
-  <Btn small outline color="#64748b" onClick={() => changeStatus(r.id, prevStatus[r.status])}>
-    ← {prevStatus[r.status]}
-  </Btn>
-)}
-{nextStatus[r.status] && (
-  <Btn small color="#10b981" onClick={() => changeStatus(r.id, nextStatus[r.status])}>
-    → {nextStatus[r.status]}
-  </Btn>
-)}
+                {prevStatus[r.status] && (
+                  <Btn small outline color="#64748b" onClick={() => changeStatus(r.id, prevStatus[r.status])}>
+                    ← {prevStatus[r.status]}
+                  </Btn>
+                )}
+                {nextStatus[r.status] && (
+                  <Btn small color="#10b981" onClick={() => changeStatus(r.id, nextStatus[r.status])}>
+                    → {nextStatus[r.status]}
+                  </Btn>
+                )}
+                <Btn small color="#f59e0b" onClick={() => generateProforma(r)}>📄 Proforma</Btn>
                 <Btn small outline color="#64748b" onClick={() => setEditOrder(r)}>Edit</Btn>
                 <Btn small outline color="#ef4444" onClick={() => deleteOrder(r.id)}>Del</Btn>
               </div>
-            )
-          },
-        ]}
+            )}
         rows={filtered}
         emptyMsg="No orders yet. Create your first one!"
       />
@@ -949,26 +972,35 @@ function Samples() {
 }
 
 function Proformas() {
-  const [proformas, setProformas] = useState([]);
+const [proformas, setProformas] = useState([]);
   const [orders, setOrders] = useState([]);
   const [modal, setModal] = useState(false);
+  const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState(null);
   const load = useCallback(() => {
     api("/proformas").then(setProformas);
     api("/orders").then(setOrders);
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const filtered = proformas.filter(p =>
+    p.number.toLowerCase().includes(search.toLowerCase()) ||
+    p.client.toLowerCase().includes(search.toLowerCase()) ||
+    (p.status || "").toLowerCase().includes(search.toLowerCase())
+  );
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Proforma Invoices</h2>
-        <Btn onClick={() => setModal(true)}>+ New Proforma</Btn>
       </div>
-      {modal && (
-        <Modal title="New Proforma" onClose={() => setModal(false)}>
-          <ProformaForm orders={orders} onSave={b => api("/proformas", "POST", b).then(load)} onClose={() => setModal(false)} />
+      {editing && (
+        <Modal title="Edit Proforma" onClose={() => setEditing(null)} wide>
+          <ProformaForm orders={orders} initial={editing} onSave={b => api(`/proformas/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
         </Modal>
       )}
+      <Input value={search} onChange={e => setSearch(e.target.value)}
+        placeholder="Search by number, client or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
         cols={[
           { label: "Number", render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
@@ -977,9 +1009,14 @@ function Proformas() {
           { label: "Validity", render: r => fmtDate(r.validity) },
           { label: "Total", render: r => fmt(r.total, r.currency) },
           { label: "Status", render: r => <Badge status={r.status} /> },
-          { label: "", render: r => <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/proformas/${r.id}`, "DELETE"); load(); } }}>Del</Btn> },
+          { label: "Actions", render: r => (
+            <div style={{ display: "flex", gap: "6px" }}>
+              <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
+              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/proformas/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+            </div>
+          )},
         ]}
-        rows={proformas}
+        rows={filtered}
       />
     </div>
   );
