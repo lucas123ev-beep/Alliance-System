@@ -192,16 +192,18 @@ function OrderForm({ initial, onSave, onClose }) {
 
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
-  const paymentOptions = [
-    "30% Deposit, 70% Before Shipment",
-    "50% Deposit, 50% Before Shipment",
-    "100% Advance Payment",
-    "Net 30", "Net 60", "Net 90",
-    "Letter of Credit (L/C)",
-    "Documents Against Payment (D/P)",
-    "Documents Against Acceptance (D/A)",
-    "Open Account",
-    "Consignment",
+const paymentOptions = [
+    "100% ADV – 100% Advance",
+    "100% AFTER D. SALE – 100% After Domestic Sale",
+    "100% ARRIVAL – 100% At Destination Port",
+    "100%ADV B. SHIP. – 100% Advance Before Shipment",
+    "100%DP BL – 100%DP Under BL Copy",
+    "20%ADV/80%DP B. SHIP – 20% Advance, 80%DP Before Shipment",
+    "20%ADV/80%DP BL – 20% Advance, 80%DP Under BL Copy",
+    "30% ADV 70% BL – 30% Advance and 70% 30 Days After Shipment",
+    "30% ADV 70% BS – 30% Advance and 70% Before Shipment",
+    "30%ADV/70%DP B. SHIP – 30% Advance, 70%DP Before Shipment",
+    "30%ADV/70%DP BL – 30% Advance, 70%DP Under BL Copy",
   ];
 
   const filteredClients = clients.filter(c =>
