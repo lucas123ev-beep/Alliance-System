@@ -183,6 +183,8 @@ function OrderForm({ initial, onSave, onClose }) {
   const [showSupplierList, setShowSupplierList] = useState(false);
   const [showProductList, setShowProductList] = useState(false);
   const [showPaymentList, setShowPaymentList] = useState(false);
+  const [showLoadingList, setShowLoadingList] = useState(false);
+  const [showDischargeList, setShowDischargeList] = useState(false);
 
   useEffect(() => {
     api("/clients").then(setClients);
@@ -205,6 +207,28 @@ const paymentOptions = [
     "30%ADV/70%DP B. SHIP – 30% Advance, 70%DP Before Shipment",
     "30%ADV/70%DP BL – 30% Advance, 70%DP Under BL Copy",
   ];
+
+  const chinaPortsOptions = [
+  "Shanghai, CN", "Shenzhen, CN", "Ningbo, CN", "Guangzhou, CN", "Qingdao, CN",
+  "Tianjin, CN", "Dalian, CN", "Xiamen, CN", "Suzhou, CN", "Foshan, CN",
+  "Dongguan, CN", "Zhongshan, CN", "Zhuhai, CN", "Shantou, CN", "Quanzhou, CN",
+  "Fuzhou, CN", "Wenzhou, CN", "Nanjing, CN", "Wuhan, CN", "Chongqing, CN",
+  "Chengdu, CN", "Hangzhou, CN", "Nantong, CN", "Lianyungang, CN", "Yantai, CN",
+  "Qinhuangdao, CN", "Tangshan, CN", "Rizhao, CN", "Zhanjiang, CN", "Huangpu, CN",
+  "Chiwan, CN", "Yantian, CN", "Shekou, CN", "Nansha, CN", "Taicang, CN",
+  "Zhoushan, CN", "Jinzhou, CN", "Yingkou, CN", "Dandong, CN", "Fangchenggang, CN",
+  "Beihai, CN", "Haikou, CN", "Sanya, CN", "Lanzhou, CN", "Urumqi, CN",
+];
+
+const brazilPortsOptions = [
+  "Santos, BR", "Paranaguá, BR", "Rio de Janeiro, BR", "Itajaí, BR", "Suape, BR",
+  "Manaus, BR", "Salvador, BR", "Fortaleza, BR", "Belém, BR", "Rio Grande, BR",
+  "Vitória, BR", "São Francisco do Sul, BR", "Navegantes, BR", "Imbituba, BR",
+  "Porto Alegre, BR", "Recife, BR", "Maceió, BR", "Natal, BR", "São Luís, BR",
+  "Aratu, BR", "Angra dos Reis, BR", "Sepetiba, BR", "Presidente Epitácio, BR",
+  "Santarém, BR", "Porto Velho, BR", "Corumbá, BR", "Ladário, BR",
+  "Ilhéus, BR", "Cabedelo, BR", "Pecém, BR",
+];
 
   const filteredClients = clients.filter(c =>
     c.company_name.toLowerCase().includes(clientSearch.toLowerCase())
@@ -333,14 +357,58 @@ const paymentOptions = [
       </Field>
 
       {/* PORT OF LOADING */}
-      <Field label="Port of Loading" half>
-        <Input value={f.port_of_loading} onChange={set("port_of_loading")} placeholder="e.g. Shanghai, CN" />
-      </Field>
+<Field label="Port of Loading" half>
+  <div style={{ position: "relative" }}>
+    <Input
+      value={f.port_of_loading}
+      onChange={e => { setF(p => ({ ...p, port_of_loading: e.target.value })); setShowLoadingList(true); }}
+      onFocus={() => setShowLoadingList(true)}
+      onBlur={() => setTimeout(() => setShowLoadingList(false), 200)}
+      placeholder="Search China ports or type any…"
+    />
+    {showLoadingList && f.port_of_loading !== undefined && (
+      <div style={dropdownStyle}>
+        {chinaPortsOptions
+          .filter(p => p.toLowerCase().includes((f.port_of_loading || "").toLowerCase()))
+          .map((p, i) => (
+            <div key={i} style={dropItemStyle}
+              onMouseDown={() => { setF(prev => ({ ...prev, port_of_loading: p })); setShowLoadingList(false); }}
+              onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              {p}
+            </div>
+          ))}
+      </div>
+    )}
+  </div>
+</Field>
 
       {/* PORT OF DISCHARGE */}
-      <Field label="Port of Discharge" half>
-        <Input value={f.port_of_discharge} onChange={set("port_of_discharge")} placeholder="e.g. Santos, BR" />
-      </Field>
+<Field label="Port of Discharge" half>
+  <div style={{ position: "relative" }}>
+    <Input
+      value={f.port_of_discharge}
+      onChange={e => { setF(p => ({ ...p, port_of_discharge: e.target.value })); setShowDischargeList(true); }}
+      onFocus={() => setShowDischargeList(true)}
+      onBlur={() => setTimeout(() => setShowDischargeList(false), 200)}
+      placeholder="Search Brazil ports or type any…"
+    />
+    {showDischargeList && f.port_of_discharge !== undefined && (
+      <div style={dropdownStyle}>
+        {brazilPortsOptions
+          .filter(p => p.toLowerCase().includes((f.port_of_discharge || "").toLowerCase()))
+          .map((p, i) => (
+            <div key={i} style={dropItemStyle}
+              onMouseDown={() => { setF(prev => ({ ...prev, port_of_discharge: p })); setShowDischargeList(false); }}
+              onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              {p}
+            </div>
+          ))}
+      </div>
+    )}
+  </div>
+</Field>
 
       <Field label="Shipment Date" half>
         <Input type="date" value={f.shipment_date} onChange={set("shipment_date")} />
