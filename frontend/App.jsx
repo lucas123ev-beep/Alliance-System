@@ -562,8 +562,8 @@ function SampleForm({ onSave, onClose }) {
   );
 }
 
-function ProformaForm({ onSave, onClose, orders }) {
-  const [f, setF] = useState({ order_id: "", number: "", issue_date: "", validity: "", client: "", total: "", currency: "USD", status: "Draft", notes: "" });
+function ProformaForm({ onSave, onClose, orders, initial }) {
+  const [f, setF] = useState(initial || { order_id: "", number: "", issue_date: "", validity: "", client: "", total: "", currency: "USD", status: "Draft", notes: "" });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
@@ -1003,20 +1003,29 @@ const [proformas, setProformas] = useState([]);
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by number, client or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
-        cols={[
-          { label: "Number", render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
-          { label: "Client", key: "client" },
-          { label: "Issue Date", render: r => fmtDate(r.issue_date) },
-          { label: "Validity", render: r => fmtDate(r.validity) },
-          { label: "Total", render: r => fmt(r.total, r.currency) },
-          { label: "Status", render: r => <Badge status={r.status} /> },
-          { label: "Actions", render: r => (
-            <div style={{ display: "flex", gap: "6px" }}>
-              <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
-              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/proformas/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
-            </div>
-          )},
-        ]}
+cols={[
+  { label: "Number", render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
+  { label: "Client", key: "client" },
+  { label: "Issue Date", render: r => fmtDate(r.issue_date) },
+  { label: "Validity", render: r => fmtDate(r.validity) },
+  { label: "Total", render: r => fmt(r.total, r.currency) },
+  { label: "Status", render: r => (
+    <select value={r.status}
+      onChange={async e => {
+        await api(`/proformas/${r.id}`, "PUT", { ...r, status: e.target.value });
+        load();
+      }}
+      style={{ ...inputStyle, padding: "4px 8px", fontSize: "12px", width: "auto" }}>
+      {["Draft","Sent","Accepted","Rejected"].map(s => <option key={s}>{s}</option>)}
+    </select>
+  )},
+  { label: "Actions", render: r => (
+    <div style={{ display: "flex", gap: "6px" }}>
+      <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
+      <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/proformas/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+    </div>
+  )},
+]}
         rows={filtered}
       />
     </div>
