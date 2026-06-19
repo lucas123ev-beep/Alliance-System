@@ -786,11 +786,12 @@ const generateProforma = (order) => {
           <OrderForm onSave={createOrder} onClose={() => setModal(null)} />
         </Modal>
       )}
-      {editOrder && (
+{editOrder && (
         <Modal title="Edit Order" onClose={() => setEditOrder(null)}>
           <OrderForm initial={editOrder} onSave={updateOrder} onClose={() => setEditOrder(null)} />
         </Modal>
-{proformaModal && (
+      )}
+      {proformaModal && (
         <Modal title="Generate Proforma Invoice" onClose={() => setProformaModal(null)} wide>
           <ProformaForm
             orders={[]}
@@ -826,8 +827,7 @@ const generateProforma = (order) => {
           { label: "Shipment", render: r => fmtDate(r.shipment_date) },
           { label: "Arrival", render: r => fmtDate(r.arrival_date) },
           { label: "Status", render: r => <Badge status={r.status} /> },
-          {
-{ label: "Actions", render: r => (
+          { label: "Actions", render: r => (
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                 {prevStatus[r.status] && (
                   <Btn small outline color="#64748b" onClick={() => changeStatus(r.id, prevStatus[r.status])}>
@@ -843,7 +843,8 @@ const generateProforma = (order) => {
                 <Btn small outline color="#64748b" onClick={() => setEditOrder(r)}>Edit</Btn>
                 <Btn small outline color="#ef4444" onClick={() => deleteOrder(r.id)}>Del</Btn>
               </div>
-            )}
+            )},
+        ]}
         rows={filtered}
         emptyMsg="No orders yet. Create your first one!"
       />
