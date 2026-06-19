@@ -30,16 +30,17 @@ app.get('/api/orders/:id', (req, res) => {
 });
 
 app.post('/api/orders', (req, res) => {
-  const { order_number, client, value, currency, production_lead_time,
-    shipment_date, arrival_date, incoterm, payment_terms, notes, items } = req.body;
+  const { order_number, client, supplier, value, currency, production_lead_time,
+    shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
+    port_of_discharge, notes, items } = req.body;
   try {
     const insert = db.transaction(() => {
-      const result = db.prepare(`
-        INSERT INTO orders (order_number, client, value, currency, production_lead_time,
-          shipment_date, arrival_date, incoterm, payment_terms, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(order_number, client, value, currency || 'USD', production_lead_time,
-        shipment_date, arrival_date, incoterm, payment_terms, notes);
+    const result = db.prepare(`
+        INSERT INTO orders (order_number, client, supplier, value, currency, production_lead_time,
+          shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(order_number, client, supplier, value, currency || 'USD', production_lead_time,
+        shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, notes);
       const orderId = result.lastInsertRowid;
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
@@ -62,15 +63,18 @@ app.post('/api/orders', (req, res) => {
 });
 
 app.put('/api/orders/:id', (req, res) => {
-  const { order_number, client, value, currency, production_lead_time,
-    shipment_date, arrival_date, incoterm, payment_terms, notes } = req.body;
+  const { order_number, client, supplier, value, currency, production_lead_time,
+    shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
+    port_of_discharge, notes } = req.body;
   db.prepare(`
-    UPDATE orders SET order_number=?, client=?, value=?, currency=?, production_lead_time=?,
-      shipment_date=?, arrival_date=?, incoterm=?, payment_terms=?, notes=?,
+    UPDATE orders SET order_number=?, client=?, supplier=?, value=?, currency=?,
+      production_lead_time=?, shipment_date=?, arrival_date=?, incoterm=?,
+      payment_terms=?, port_of_loading=?, port_of_discharge=?, notes=?,
       updated_at=datetime('now')
     WHERE id=?
-  `).run(order_number, client, value, currency, production_lead_time,
-    shipment_date, arrival_date, incoterm, payment_terms, notes, req.params.id);
+  `).run(order_number, client, supplier, value, currency, production_lead_time,
+    shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
+    port_of_discharge, notes, req.params.id);
   res.json(db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id));
 });
 
