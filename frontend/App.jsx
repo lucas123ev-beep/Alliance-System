@@ -597,8 +597,8 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
   );
 }
 
-function ContractForm({ onSave, onClose, orders }) {
-  const [f, setF] = useState({ order_id: "", contract_number: "", supplier: "", sign_date: "", delivery_date: "", total: "", currency: "USD", status: "Draft", notes: "" });
+function ContractForm({ onSave, onClose, orders, initial }) {
+  const [f, setF] = useState(initial || { order_id: "", contract_number: "", supplier: "", sign_date: "", delivery_date: "", total: "", currency: "USD", status: "Draft", notes: "" });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
@@ -736,6 +736,7 @@ const [orders, setOrders] = useState([]);
   const [editNumberVal, setEditNumberVal] = useState("");
   const [search, setSearch] = useState("");
   const [proformaModal, setProformaModal] = useState(null);
+  const [contractModal, setContractModal] = useState(null);
 
   const load = useCallback(() => api("/orders").then(setOrders), []);
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
@@ -772,6 +773,20 @@ const generateProforma = (order) => {
       notes: "",
     });
   };
+  const generateContract = (order) => {
+  const number = `SC-${order.order_number}-${Date.now().toString().slice(-4)}`;
+  setContractModal({
+    order_id: order.id,
+    contract_number: number,
+    supplier: order.supplier || "",
+    sign_date: new Date().toISOString().slice(0, 10),
+    delivery_date: order.shipment_date || "",
+    total: order.value || "",
+    currency: order.currency || "USD",
+    status: "Draft",
+    notes: order.notes || "",
+  });
+};
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
@@ -801,6 +816,16 @@ const generateProforma = (order) => {
           />
         </Modal>
       )}
+      {contractModal && (
+  <Modal title="Generate Supplier Contract" onClose={() => setContractModal(null)} wide>
+    <ContractForm
+      orders={[]}
+      initial={contractModal}
+      onSave={async b => { await api("/contracts", "POST", b); setContractModal(null); load(); }}
+      onClose={() => setContractModal(null)}
+    />
+  </Modal>
+)}
 
       <Table
         cols={[
@@ -840,6 +865,7 @@ const generateProforma = (order) => {
                   </Btn>
                 )}
                 <Btn small color="#f59e0b" onClick={() => generateProforma(r)}>📄 Proforma</Btn>
+                <Btn small color="#8b5cf6" onClick={() => generateContract(r)}>🤝 Contract</Btn>
                 <Btn small outline color="#64748b" onClick={() => setEditOrder(r)}>Edit</Btn>
                 <Btn small outline color="#ef4444" onClick={() => deleteOrder(r.id)}>Del</Btn>
               </div>
@@ -1035,24 +1061,34 @@ cols={[
 function Contracts() {
   const [contracts, setContracts] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [modal, setModal] = useState(false);
+  const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState(null);
   const load = useCallback(() => {
     api("/contracts").then(setContracts);
     api("/orders").then(setOrders);
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const filtered = contracts.filter(c =>
+    (c.contract_number || "").toLowerCase().includes(search.toLowerCase()) ||
+    (c.supplier || "").toLowerCase().includes(search.toLowerCase()) ||
+    (c.status || "").toLowerCase().includes(search.toLowerCase())
+  );
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Supplier Contracts</h2>
-        <Btn color="#8b5cf6" onClick={() => setModal(true)}>+ New Contract</Btn>
       </div>
-      {modal && (
-        <Modal title="New Supplier Contract" onClose={() => setModal(false)}>
-          <ContractForm orders={orders} onSave={b => api("/contracts", "POST", b).then(load)} onClose={() => setModal(false)} />
+      {editing && (
+        <Modal title="Edit Contract" onClose={() => setEditing(null)} wide>
+          <ContractForm orders={orders} initial={editing}
+            onSave={async b => { await api(`/contracts/${editing.id}`, "PUT", b).then(load); setEditing(null); }}
+            onClose={() => setEditing(null)} />
         </Modal>
       )}
+      <Input value={search} onChange={e => setSearch(e.target.value)}
+        placeholder="Search by contract #, supplier or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
         cols={[
           { label: "Contract #", render: r => <span style={{ fontWeight: 700, color: "#a78bfa" }}>{r.contract_number}</span> },
@@ -1060,10 +1096,24 @@ function Contracts() {
           { label: "Sign Date", render: r => fmtDate(r.sign_date) },
           { label: "Delivery Date", render: r => fmtDate(r.delivery_date) },
           { label: "Total", render: r => fmt(r.total, r.currency) },
-          { label: "Status", render: r => <Badge status={r.status} /> },
-          { label: "", render: r => <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/contracts/${r.id}`, "DELETE"); load(); } }}>Del</Btn> },
+          { label: "Status", render: r => (
+            <select value={r.status}
+              onChange={async e => {
+                await api(`/contracts/${r.id}`, "PUT", { ...r, status: e.target.value });
+                load();
+              }}
+              style={{ ...inputStyle, padding: "4px 8px", fontSize: "12px", width: "auto" }}>
+              {["Draft","Signed","In Force","Completed","Cancelled"].map(s => <option key={s}>{s}</option>)}
+            </select>
+          )},
+          { label: "Actions", render: r => (
+            <div style={{ display: "flex", gap: "6px" }}>
+              <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
+              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/contracts/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+            </div>
+          )},
         ]}
-        rows={contracts}
+        rows={filtered}
       />
     </div>
   );
