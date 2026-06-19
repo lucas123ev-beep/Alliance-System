@@ -16,6 +16,9 @@ db.exec(`
     status TEXT DEFAULT 'Pending',
     incoterm TEXT,
     payment_terms TEXT,
+    port_of_loading TEXT,
+    port_of_discharge TEXT,
+    supplier TEXT,
     notes TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
