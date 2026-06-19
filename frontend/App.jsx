@@ -176,9 +176,9 @@ function OrderForm({ initial, onSave, onClose }) {
   const [clients, setClients] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
-  const [clientSearch, setClientSearch] = useState(f.client || "");
-  const [supplierSearch, setSupplierSearch] = useState(f.supplier || "");
-  const [productSearch, setProductSearch] = useState("");
+  const [clientSearch, setClientSearch] = useState(initial?.client || "");
+  const [supplierSearch, setSupplierSearch] = useState(initial?.supplier || "");
+  const [productSearch, setProductSearch] = useState(initial?.product || "");
   const [showClientList, setShowClientList] = useState(false);
   const [showSupplierList, setShowSupplierList] = useState(false);
   const [showProductList, setShowProductList] = useState(false);
