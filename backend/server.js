@@ -83,8 +83,17 @@ app.patch('/api/orders/:id/status', (req, res) => {
   res.json(db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id));
 });
 
-app.delete('/api/orders/:id', (req, res) => {
-  db.prepare('DELETE FROM orders WHERE id=?').run(req.params.id);
+app.put('/api/contracts/:id', (req, res) => {
+  const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes } = req.body;
+  db.prepare(`
+    UPDATE supplier_contracts SET order_id=?, contract_number=?, supplier=?, sign_date=?, delivery_date=?, total=?, currency=?, status=?, notes=?
+    WHERE id=?
+  `).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, req.params.id);
+  res.json(db.prepare('SELECT * FROM supplier_contracts WHERE id=?').get(req.params.id));
+});
+
+app.delete('/api/contracts/:id', (req, res) => {
+  db.prepare('DELETE FROM supplier_contracts WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 
