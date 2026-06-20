@@ -167,24 +167,125 @@ function StatCard({ label, value, sub, color = "#3b82f6" }) {
 
 // ─── FORMS ───────────────────────────────────────────────────────────────────
 
+function ProductItemModal({ onSave, onClose, initial, products }) {
+  const [item, setItem] = useState(initial || { product_id: "", product_name: "", product_code: "", quantity: "", unit: "unit", unit_price: "", total: "" });
+  const [search, setSearch] = useState(initial?.product_name || "");
+  const [showList, setShowList] = useState(false);
+
+  const filtered = products.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.code.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const selectProduct = (p) => {
+    setSearch(`${p.code} – ${p.name}`);
+    setItem(prev => ({
+      ...prev,
+      product_id: p.id,
+      product_name: p.name,
+      product_code: p.code,
+      unit: p.unit || "unit",
+      unit_price: p.sale_price || "",
+      total: prev.quantity && p.sale_price ? (parseFloat(prev.quantity) * parseFloat(p.sale_price)).toFixed(2) : "",
+    }));
+    setShowList(false);
+  };
+
+  const handleQtyChange = (e) => {
+    const qty = e.target.value;
+    const total = qty && item.unit_price ? (parseFloat(qty) * parseFloat(item.unit_price)).toFixed(2) : "";
+    setItem(prev => ({ ...prev, quantity: qty, total }));
+  };
+
+  const handlePriceChange = (e) => {
+    const price = e.target.value;
+    const total = price && item.quantity ? (parseFloat(item.quantity) * parseFloat(price)).toFixed(2) : "";
+    setItem(prev => ({ ...prev, unit_price: price, total }));
+  };
+
+  const handleTotalChange = (e) => {
+    const total = e.target.value;
+    const price = total && item.quantity ? (parseFloat(total) / parseFloat(item.quantity)).toFixed(4) : item.unit_price;
+    setItem(prev => ({ ...prev, total, unit_price: price }));
+  };
+
+  const dropdownStyle = {
+    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200,
+    background: "#1e293b", border: "1px solid #334155", borderRadius: "8px",
+    maxHeight: "180px", overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+  };
+  const dropItemStyle = {
+    padding: "10px 12px", cursor: "pointer", fontSize: "13px", color: "#cbd5e1",
+    borderBottom: "1px solid #0f172a",
+  };
+
+  return (
+    <Modal title={initial ? "Edit Product Item" : "Add Product"} onClose={onClose}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+        <Field label="Product">
+          <div style={{ position: "relative" }}>
+            <Input value={search}
+              onChange={e => { setSearch(e.target.value); setItem(p => ({ ...p, product_name: e.target.value })); setShowList(true); }}
+              onFocus={() => setShowList(true)}
+              onBlur={() => setTimeout(() => setShowList(false), 200)}
+              placeholder="Search product…" />
+            {showList && filtered.length > 0 && (
+              <div style={dropdownStyle}>
+                {filtered.map(p => (
+                  <div key={p.id} style={dropItemStyle}
+                    onMouseDown={() => selectProduct(p)}
+                    onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{p.code}</span> {p.name}
+                    {p.sale_price ? <span style={{ float: "right", color: "#10b981" }}>{p.sale_currency || "USD"} {p.sale_price}</span> : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Field>
+        <Field label="Unit" half>
+          <Input value={item.unit} onChange={e => setItem(p => ({ ...p, unit: e.target.value }))} placeholder="unit" />
+        </Field>
+        <Field label="Quantity" half>
+          <Input type="number" value={item.quantity} onChange={handleQtyChange} placeholder="0" />
+        </Field>
+        <Field label="Unit Price" half>
+          <Input type="number" value={item.unit_price} onChange={handlePriceChange} placeholder="0.00" />
+        </Field>
+        <Field label="Total">
+          <Input type="number" value={item.total} onChange={handleTotalChange} placeholder="0.00" />
+        </Field>
+        <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+          <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
+          <Btn onClick={() => { onSave(item); onClose(); }}>
+            {initial ? "Update Item" : "Add Item"}
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function OrderForm({ initial, onSave, onClose }) {
   const [f, setF] = useState(initial || {
     order_number: "", client: "", supplier: "", value: "", currency: "USD",
     production_lead_time: "", shipment_date: "", arrival_date: "",
     incoterm: "", payment_terms: "", port_of_loading: "", port_of_discharge: "", notes: "",
   });
+  const [items, setItems] = useState(initial?.items || []);
   const [clients, setClients] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [clientSearch, setClientSearch] = useState(initial?.client || "");
   const [supplierSearch, setSupplierSearch] = useState(initial?.supplier || "");
-  const [productSearch, setProductSearch] = useState(initial?.product || "");
   const [showClientList, setShowClientList] = useState(false);
   const [showSupplierList, setShowSupplierList] = useState(false);
-  const [showProductList, setShowProductList] = useState(false);
   const [showPaymentList, setShowPaymentList] = useState(false);
   const [showLoadingList, setShowLoadingList] = useState(false);
   const [showDischargeList, setShowDischargeList] = useState(false);
+  const [itemModal, setItemModal] = useState(null);
+  const [editingItemIdx, setEditingItemIdx] = useState(null);
 
   useEffect(() => {
     api("/clients").then(setClients);
@@ -194,7 +295,33 @@ function OrderForm({ initial, onSave, onClose }) {
 
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
-const paymentOptions = [
+  const itemsTotal = items.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0);
+
+  const addItem = (item) => {
+    setItems(prev => [...prev, item]);
+    setF(p => ({ ...p, value: (parseFloat(p.value || 0) + parseFloat(item.total || 0)).toFixed(2) }));
+  };
+
+  const updateItem = (idx, item) => {
+    setItems(prev => {
+      const updated = [...prev];
+      const oldTotal = parseFloat(updated[idx].total) || 0;
+      const newTotal = parseFloat(item.total) || 0;
+      updated[idx] = item;
+      setF(p => ({ ...p, value: (parseFloat(p.value || 0) - oldTotal + newTotal).toFixed(2) }));
+      return updated;
+    });
+  };
+
+  const removeItem = (idx) => {
+    setItems(prev => {
+      const removed = parseFloat(prev[idx].total) || 0;
+      setF(p => ({ ...p, value: Math.max(0, parseFloat(p.value || 0) - removed).toFixed(2) }));
+      return prev.filter((_, i) => i !== idx);
+    });
+  };
+
+  const paymentOptions = [
     "100% ADV – 100% Advance",
     "100% AFTER D. SALE – 100% After Domestic Sale",
     "100% ARRIVAL – 100% At Destination Port",
@@ -209,40 +336,30 @@ const paymentOptions = [
   ];
 
   const chinaPortsOptions = [
-  "Shanghai, CN", "Shenzhen, CN", "Ningbo, CN", "Guangzhou, CN", "Qingdao, CN",
-  "Tianjin, CN", "Dalian, CN", "Xiamen, CN", "Suzhou, CN", "Foshan, CN",
-  "Dongguan, CN", "Zhongshan, CN", "Zhuhai, CN", "Shantou, CN", "Quanzhou, CN",
-  "Fuzhou, CN", "Wenzhou, CN", "Nanjing, CN", "Wuhan, CN", "Chongqing, CN",
-  "Chengdu, CN", "Hangzhou, CN", "Nantong, CN", "Lianyungang, CN", "Yantai, CN",
-  "Qinhuangdao, CN", "Tangshan, CN", "Rizhao, CN", "Zhanjiang, CN", "Huangpu, CN",
-  "Chiwan, CN", "Yantian, CN", "Shekou, CN", "Nansha, CN", "Taicang, CN",
-  "Zhoushan, CN", "Jinzhou, CN", "Yingkou, CN", "Dandong, CN", "Fangchenggang, CN",
-  "Beihai, CN", "Haikou, CN", "Sanya, CN", "Lanzhou, CN", "Urumqi, CN",
-];
+    "Shanghai, CN", "Shenzhen, CN", "Ningbo, CN", "Guangzhou, CN", "Qingdao, CN",
+    "Tianjin, CN", "Dalian, CN", "Xiamen, CN", "Suzhou, CN", "Foshan, CN",
+    "Dongguan, CN", "Zhongshan, CN", "Zhuhai, CN", "Shantou, CN", "Quanzhou, CN",
+    "Fuzhou, CN", "Wenzhou, CN", "Nanjing, CN", "Wuhan, CN", "Chongqing, CN",
+    "Chengdu, CN", "Hangzhou, CN", "Nantong, CN", "Lianyungang, CN", "Yantai, CN",
+    "Qinhuangdao, CN", "Tangshan, CN", "Rizhao, CN", "Zhanjiang, CN", "Huangpu, CN",
+    "Chiwan, CN", "Yantian, CN", "Shekou, CN", "Nansha, CN", "Taicang, CN",
+    "Zhoushan, CN", "Jinzhou, CN", "Yingkou, CN", "Dandong, CN", "Fangchenggang, CN",
+    "Beihai, CN", "Haikou, CN", "Sanya, CN", "Lanzhou, CN", "Urumqi, CN",
+  ];
 
-const brazilPortsOptions = [
-  "Santos, BR", "Paranaguá, BR", "Rio de Janeiro, BR", "Itajaí, BR", "Suape, BR",
-  "Manaus, BR", "Salvador, BR", "Fortaleza, BR", "Belém, BR", "Rio Grande, BR",
-  "Vitória, BR", "São Francisco do Sul, BR", "Navegantes, BR", "Imbituba, BR",
-  "Porto Alegre, BR", "Recife, BR", "Maceió, BR", "Natal, BR", "São Luís, BR",
-  "Aratu, BR", "Angra dos Reis, BR", "Sepetiba, BR", "Presidente Epitácio, BR",
-  "Santarém, BR", "Porto Velho, BR", "Corumbá, BR", "Ladário, BR",
-  "Ilhéus, BR", "Cabedelo, BR", "Pecém, BR",
-];
+  const brazilPortsOptions = [
+    "Santos, BR", "Paranaguá, BR", "Rio de Janeiro, BR", "Itajaí, BR", "Suape, BR",
+    "Manaus, BR", "Salvador, BR", "Fortaleza, BR", "Belém, BR", "Rio Grande, BR",
+    "Vitória, BR", "São Francisco do Sul, BR", "Navegantes, BR", "Imbituba, BR",
+    "Porto Alegre, BR", "Recife, BR", "Maceió, BR", "Natal, BR", "São Luís, BR",
+    "Aratu, BR", "Angra dos Reis, BR", "Sepetiba, BR", "Presidente Epitácio, BR",
+    "Santarém, BR", "Porto Velho, BR", "Corumbá, BR", "Ladário, BR",
+    "Ilhéus, BR", "Cabedelo, BR", "Pecém, BR",
+  ];
 
-  const filteredClients = clients.filter(c =>
-    c.company_name.toLowerCase().includes(clientSearch.toLowerCase())
-  );
-  const filteredSuppliers = suppliers.filter(s =>
-    s.company_name.toLowerCase().includes(supplierSearch.toLowerCase())
-  );
-  const filteredProducts = products.filter(p =>
-    p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-    p.code.toLowerCase().includes(productSearch.toLowerCase())
-  );
-  const filteredPayments = paymentOptions.filter(p =>
-    p.toLowerCase().includes((f.payment_terms || "").toLowerCase())
-  );
+  const filteredClients = clients.filter(c => c.company_name.toLowerCase().includes(clientSearch.toLowerCase()));
+  const filteredSuppliers = suppliers.filter(s => s.company_name.toLowerCase().includes(supplierSearch.toLowerCase()));
+  const filteredPayments = paymentOptions.filter(p => p.toLowerCase().includes((f.payment_terms || "").toLowerCase()));
 
   const dropdownStyle = {
     position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
@@ -254,203 +371,201 @@ const brazilPortsOptions = [
     borderBottom: "1px solid #0f172a",
   };
 
-  const submit = async () => { await onSave(f); onClose(); };
+  const submit = async () => {
+    await onSave({ ...f, items });
+    onClose();
+  };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-      <Field label="Order Number" half>
-        <Input value={f.order_number} onChange={set("order_number")} placeholder="EXP-2024-001" />
-      </Field>
+    <>
+      {itemModal !== null && (
+        <ProductItemModal
+          products={products}
+          initial={editingItemIdx !== null ? items[editingItemIdx] : null}
+          onSave={(item) => {
+            if (editingItemIdx !== null) { updateItem(editingItemIdx, item); setEditingItemIdx(null); }
+            else addItem(item);
+          }}
+          onClose={() => { setItemModal(null); setEditingItemIdx(null); }}
+        />
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+        <Field label="Order Number" half>
+          <Input value={f.order_number} onChange={set("order_number")} placeholder="EXP-2024-001" />
+        </Field>
 
-      {/* CLIENT */}
-      <Field label="Client" half>
-        <div style={{ position: "relative" }}>
-          <Input
-            value={clientSearch}
-            onChange={e => { setClientSearch(e.target.value); setF(p => ({ ...p, client: e.target.value })); setShowClientList(true); }}
-            onFocus={() => setShowClientList(true)}
-            onBlur={() => setTimeout(() => setShowClientList(false), 200)}
-            placeholder="Search client…"
-          />
-          {showClientList && filteredClients.length > 0 && (
-            <div style={dropdownStyle}>
-              {filteredClients.map(c => (
-                <div key={c.id} style={dropItemStyle}
-                  onMouseDown={() => { setClientSearch(c.company_name); setF(p => ({ ...p, client: c.company_name })); setShowClientList(false); }}
-                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  {c.company_name}
+        <Field label="Client" half>
+          <div style={{ position: "relative" }}>
+            <Input value={clientSearch}
+              onChange={e => { setClientSearch(e.target.value); setF(p => ({ ...p, client: e.target.value })); setShowClientList(true); }}
+              onFocus={() => setShowClientList(true)}
+              onBlur={() => setTimeout(() => setShowClientList(false), 200)}
+              placeholder="Search client…" />
+            {showClientList && filteredClients.length > 0 && (
+              <div style={dropdownStyle}>
+                {filteredClients.map(c => (
+                  <div key={c.id} style={dropItemStyle}
+                    onMouseDown={() => { setClientSearch(c.company_name); setF(p => ({ ...p, client: c.company_name })); setShowClientList(false); }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    {c.company_name}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Field>
+
+        <Field label="Supplier" half>
+          <div style={{ position: "relative" }}>
+            <Input value={supplierSearch}
+              onChange={e => { setSupplierSearch(e.target.value); setF(p => ({ ...p, supplier: e.target.value })); setShowSupplierList(true); }}
+              onFocus={() => setShowSupplierList(true)}
+              onBlur={() => setTimeout(() => setShowSupplierList(false), 200)}
+              placeholder="Search supplier…" />
+            {showSupplierList && filteredSuppliers.length > 0 && (
+              <div style={dropdownStyle}>
+                {filteredSuppliers.map(s => (
+                  <div key={s.id} style={dropItemStyle}
+                    onMouseDown={() => { setSupplierSearch(s.company_name); setF(p => ({ ...p, supplier: s.company_name })); setShowSupplierList(false); }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    {s.company_name}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Field>
+
+        {/* PRODUCTS LIST */}
+        <Field label="Products">
+          <div style={{ background: "#1e293b", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>
+            {items.length === 0 && (
+              <div style={{ padding: "12px 14px", color: "#475569", fontSize: "13px" }}>No products added yet.</div>
+            )}
+            {items.map((item, idx) => (
+              <div key={idx} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderBottom: "1px solid #0f172a" }}>
+                <div style={{ flex: 1, fontSize: "13px" }}>
+                  <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
+                  <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
+                  <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit} × {item.unit_price}</span>
                 </div>
-              ))}
+                <span style={{ color: "#10b981", fontWeight: 600, fontSize: "13px", whiteSpace: "nowrap" }}>
+                  {fmt(parseFloat(item.total), f.currency)}
+                </span>
+                <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
+                <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
+              </div>
+            ))}
+            <div style={{ padding: "10px 14px" }}>
+              <Btn small color="#3b82f6" onClick={() => { setEditingItemIdx(null); setItemModal("new"); }}>+ Add Product</Btn>
             </div>
-          )}
+          </div>
+        </Field>
+
+        {items.length > 0 && (
+          <div style={{ gridColumn: "span 2", background: "#0f172a", borderRadius: "8px", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ color: "#64748b", fontSize: "13px" }}>Items Total</span>
+            <span style={{ color: "#10b981", fontWeight: 700, fontSize: "18px" }}>{fmt(itemsTotal, f.currency)}</span>
+          </div>
+        )}
+
+        <Field label="Value" half>
+          <Input type="number" value={f.value} onChange={set("value")} placeholder="0.00" />
+        </Field>
+        <Field label="Currency" half>
+          <Select value={f.currency} onChange={set("currency")}>
+            <option>USD</option><option>EUR</option><option>BRL</option><option>CNY</option>
+          </Select>
+        </Field>
+        <Field label="Prod. Lead Time (days)" half>
+          <Input type="number" value={f.production_lead_time} onChange={set("production_lead_time")} />
+        </Field>
+        <Field label="Incoterm" half>
+          <Select value={f.incoterm} onChange={set("incoterm")}>
+            <option value="">Select...</option>
+            {["FOB","CIF","CFR","EXW","DAP","DDP","FCA"].map(t => <option key={t}>{t}</option>)}
+          </Select>
+        </Field>
+
+        <Field label="Port of Loading" half>
+          <div style={{ position: "relative" }}>
+            <Input value={f.port_of_loading}
+              onChange={e => { setF(p => ({ ...p, port_of_loading: e.target.value })); setShowLoadingList(true); }}
+              onFocus={() => setShowLoadingList(true)}
+              onBlur={() => setTimeout(() => setShowLoadingList(false), 200)}
+              placeholder="Search China ports or type any…" />
+            {showLoadingList && (
+              <div style={dropdownStyle}>
+                {chinaPortsOptions.filter(p => p.toLowerCase().includes((f.port_of_loading || "").toLowerCase())).map((p, i) => (
+                  <div key={i} style={dropItemStyle}
+                    onMouseDown={() => { setF(prev => ({ ...prev, port_of_loading: p })); setShowLoadingList(false); }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{p}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Field>
+
+        <Field label="Port of Discharge" half>
+          <div style={{ position: "relative" }}>
+            <Input value={f.port_of_discharge}
+              onChange={e => { setF(p => ({ ...p, port_of_discharge: e.target.value })); setShowDischargeList(true); }}
+              onFocus={() => setShowDischargeList(true)}
+              onBlur={() => setTimeout(() => setShowDischargeList(false), 200)}
+              placeholder="Search Brazil ports or type any…" />
+            {showDischargeList && (
+              <div style={dropdownStyle}>
+                {brazilPortsOptions.filter(p => p.toLowerCase().includes((f.port_of_discharge || "").toLowerCase())).map((p, i) => (
+                  <div key={i} style={dropItemStyle}
+                    onMouseDown={() => { setF(prev => ({ ...prev, port_of_discharge: p })); setShowDischargeList(false); }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{p}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Field>
+
+        <Field label="Shipment Date" half>
+          <Input type="date" value={f.shipment_date} onChange={set("shipment_date")} />
+        </Field>
+        <Field label="Arrival Date" half>
+          <Input type="date" value={f.arrival_date} onChange={set("arrival_date")} />
+        </Field>
+
+        <Field label="Payment Terms">
+          <div style={{ position: "relative" }}>
+            <Input value={f.payment_terms}
+              onChange={e => { setF(p => ({ ...p, payment_terms: e.target.value })); setShowPaymentList(true); }}
+              onFocus={() => setShowPaymentList(true)}
+              onBlur={() => setTimeout(() => setShowPaymentList(false), 200)}
+              placeholder="Search or type payment terms…" />
+            {showPaymentList && filteredPayments.length > 0 && (
+              <div style={dropdownStyle}>
+                {filteredPayments.map((pt, i) => (
+                  <div key={i} style={dropItemStyle}
+                    onMouseDown={() => { setF(p => ({ ...p, payment_terms: pt })); setShowPaymentList(false); }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{pt}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Field>
+
+        <Field label="Notes">
+          <Textarea value={f.notes} onChange={set("notes")} />
+        </Field>
+
+        <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+          <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
+          <Btn onClick={submit}>Save Order</Btn>
         </div>
-      </Field>
-
-      {/* SUPPLIER */}
-      <Field label="Supplier" half>
-        <div style={{ position: "relative" }}>
-          <Input
-            value={supplierSearch}
-            onChange={e => { setSupplierSearch(e.target.value); setF(p => ({ ...p, supplier: e.target.value })); setShowSupplierList(true); }}
-            onFocus={() => setShowSupplierList(true)}
-            onBlur={() => setTimeout(() => setShowSupplierList(false), 200)}
-            placeholder="Search supplier…"
-          />
-          {showSupplierList && filteredSuppliers.length > 0 && (
-            <div style={dropdownStyle}>
-              {filteredSuppliers.map(s => (
-                <div key={s.id} style={dropItemStyle}
-                  onMouseDown={() => { setSupplierSearch(s.company_name); setF(p => ({ ...p, supplier: s.company_name })); setShowSupplierList(false); }}
-                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  {s.company_name}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </Field>
-
-      {/* PRODUCT */}
-      <Field label="Product" half>
-        <div style={{ position: "relative" }}>
-          <Input
-            value={productSearch}
-            onChange={e => { setProductSearch(e.target.value); setF(p => ({ ...p, product: e.target.value })); setShowProductList(true); }}
-            onFocus={() => setShowProductList(true)}
-            onBlur={() => setTimeout(() => setShowProductList(false), 200)}
-            placeholder="Search product…"
-          />
-          {showProductList && filteredProducts.length > 0 && (
-            <div style={dropdownStyle}>
-              {filteredProducts.map(p => (
-                <div key={p.id} style={dropItemStyle}
-                  onMouseDown={() => { setProductSearch(`${p.code} – ${p.name}`); setF(prev => ({ ...prev, product: p.name, value: p.sale_price || prev.value })); setShowProductList(false); }}
-                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{p.code}</span> {p.name}
-                  {p.sale_price ? <span style={{ float: "right", color: "#10b981" }}>{p.sale_currency || "USD"} {p.sale_price}</span> : null}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </Field>
-
-      <Field label="Value" half>
-        <Input type="number" value={f.value} onChange={set("value")} placeholder="0.00" />
-      </Field>
-      <Field label="Currency" half>
-        <Select value={f.currency} onChange={set("currency")}>
-          <option>USD</option><option>EUR</option><option>BRL</option><option>CNY</option>
-        </Select>
-      </Field>
-      <Field label="Prod. Lead Time (days)" half>
-        <Input type="number" value={f.production_lead_time} onChange={set("production_lead_time")} />
-      </Field>
-      <Field label="Incoterm" half>
-        <Select value={f.incoterm} onChange={set("incoterm")}>
-          <option value="">Select...</option>
-          {["FOB","CIF","CFR","EXW","DAP","DDP","FCA"].map(t => <option key={t}>{t}</option>)}
-        </Select>
-      </Field>
-
-      {/* PORT OF LOADING */}
-<Field label="Port of Loading" half>
-  <div style={{ position: "relative" }}>
-    <Input
-      value={f.port_of_loading}
-      onChange={e => { setF(p => ({ ...p, port_of_loading: e.target.value })); setShowLoadingList(true); }}
-      onFocus={() => setShowLoadingList(true)}
-      onBlur={() => setTimeout(() => setShowLoadingList(false), 200)}
-      placeholder="Search China ports or type any…"
-    />
-    {showLoadingList && f.port_of_loading !== undefined && (
-      <div style={dropdownStyle}>
-        {chinaPortsOptions
-          .filter(p => p.toLowerCase().includes((f.port_of_loading || "").toLowerCase()))
-          .map((p, i) => (
-            <div key={i} style={dropItemStyle}
-              onMouseDown={() => { setF(prev => ({ ...prev, port_of_loading: p })); setShowLoadingList(false); }}
-              onMouseEnter={e => e.currentTarget.style.background = "#334155"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-              {p}
-            </div>
-          ))}
       </div>
-    )}
-  </div>
-</Field>
-
-      {/* PORT OF DISCHARGE */}
-<Field label="Port of Discharge" half>
-  <div style={{ position: "relative" }}>
-    <Input
-      value={f.port_of_discharge}
-      onChange={e => { setF(p => ({ ...p, port_of_discharge: e.target.value })); setShowDischargeList(true); }}
-      onFocus={() => setShowDischargeList(true)}
-      onBlur={() => setTimeout(() => setShowDischargeList(false), 200)}
-      placeholder="Search Brazil ports or type any…"
-    />
-    {showDischargeList && f.port_of_discharge !== undefined && (
-      <div style={dropdownStyle}>
-        {brazilPortsOptions
-          .filter(p => p.toLowerCase().includes((f.port_of_discharge || "").toLowerCase()))
-          .map((p, i) => (
-            <div key={i} style={dropItemStyle}
-              onMouseDown={() => { setF(prev => ({ ...prev, port_of_discharge: p })); setShowDischargeList(false); }}
-              onMouseEnter={e => e.currentTarget.style.background = "#334155"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-              {p}
-            </div>
-          ))}
-      </div>
-    )}
-  </div>
-</Field>
-
-      <Field label="Shipment Date" half>
-        <Input type="date" value={f.shipment_date} onChange={set("shipment_date")} />
-      </Field>
-      <Field label="Arrival Date" half>
-        <Input type="date" value={f.arrival_date} onChange={set("arrival_date")} />
-      </Field>
-
-      {/* PAYMENT TERMS */}
-      <Field label="Payment Terms">
-        <div style={{ position: "relative" }}>
-          <Input
-            value={f.payment_terms}
-            onChange={e => { setF(p => ({ ...p, payment_terms: e.target.value })); setShowPaymentList(true); }}
-            onFocus={() => setShowPaymentList(true)}
-            onBlur={() => setTimeout(() => setShowPaymentList(false), 200)}
-            placeholder="Search or type payment terms…"
-          />
-          {showPaymentList && filteredPayments.length > 0 && (
-            <div style={dropdownStyle}>
-              {filteredPayments.map((pt, i) => (
-                <div key={i} style={dropItemStyle}
-                  onMouseDown={() => { setF(p => ({ ...p, payment_terms: pt })); setShowPaymentList(false); }}
-                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  {pt}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </Field>
-
-      <Field label="Notes">
-        <Textarea value={f.notes} onChange={set("notes")} />
-      </Field>
-
-      <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
-        <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={submit}>Save Order</Btn>
-      </div>
-    </div>
+    </>
   );
 }
 
