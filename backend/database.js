@@ -39,6 +39,8 @@ db.exec(`
     sale_price REAL DEFAULT 0,
     sale_currency TEXT DEFAULT 'USD',
     width TEXT,
+    height TEXT,
+    weight TEXT,
     category TEXT,
     supplier TEXT,
     created_at TEXT DEFAULT (datetime('now'))
