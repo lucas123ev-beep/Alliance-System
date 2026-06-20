@@ -853,20 +853,20 @@ const generateProforma = (order) => {
           <OrderForm initial={editOrder} onSave={updateOrder} onClose={() => setEditOrder(null)} />
         </Modal>
       )}
-      {proformaModal && (
+{proformaModal && (
         <Modal title="Generate Proforma Invoice" onClose={() => setProformaModal(null)} wide>
           <ProformaForm
-            orders={[]}
+            orders={orders}
             initial={proformaModal}
             onSave={async b => { await api("/proformas", "POST", b); setProformaModal(null); }}
             onClose={() => setProformaModal(null)}
           />
         </Modal>
       )}
-      {contractModal && (
+{contractModal && (
   <Modal title="Generate Supplier Contract" onClose={() => setContractModal(null)} wide>
     <ContractForm
-      orders={[]}
+      orders={orders}
       initial={contractModal}
       onSave={async b => { await api("/contracts", "POST", b); setContractModal(null); load(); }}
       onClose={() => setContractModal(null)}
