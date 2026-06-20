@@ -1186,20 +1186,71 @@ function Financial({ type }) {
     </div>
   );
 }
-
 function ClientForm({ initial, onSave, onClose }) {
   const [f, setF] = useState(initial || {
     company_name: "", address: "", address2: "", email: "",
     phone: "", contact_name: "", payment_terms: "", notes: "",
   });
+  const [showPaymentList, setShowPaymentList] = useState(false);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+
+  const paymentOptions = [
+    "100% ADV – 100% Advance",
+    "100% AFTER D. SALE – 100% After Domestic Sale",
+    "100% ARRIVAL – 100% At Destination Port",
+    "100%ADV B. SHIP. – 100% Advance Before Shipment",
+    "100%DP BL – 100%DP Under BL Copy",
+    "20%ADV/80%DP B. SHIP – 20% Advance, 80%DP Before Shipment",
+    "20%ADV/80%DP BL – 20% Advance, 80%DP Under BL Copy",
+    "30% ADV 70% BL – 30% Advance and 70% 30 Days After Shipment",
+    "30% ADV 70% BS – 30% Advance and 70% Before Shipment",
+    "30%ADV/70%DP B. SHIP – 30% Advance, 70%DP Before Shipment",
+    "30%ADV/70%DP BL – 30% Advance, 70%DP Under BL Copy",
+  ];
+
+  const filteredPayments = paymentOptions.filter(p =>
+    p.toLowerCase().includes((f.payment_terms || "").toLowerCase())
+  );
+
+  const dropdownStyle = {
+    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+    background: "#1e293b", border: "1px solid #334155", borderRadius: "8px",
+    maxHeight: "180px", overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+  };
+  const dropItemStyle = {
+    padding: "10px 12px", cursor: "pointer", fontSize: "13px", color: "#cbd5e1",
+    borderBottom: "1px solid #0f172a",
+  };
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Company Name"><Input value={f.company_name} onChange={set("company_name")} /></Field>
       <Field label="Contact Name" half><Input value={f.contact_name} onChange={set("contact_name")} /></Field>
       <Field label="Email" half><Input type="email" value={f.email} onChange={set("email")} /></Field>
       <Field label="Phone" half><Input value={f.phone} onChange={set("phone")} /></Field>
-      <Field label="Payment Terms" half><Input value={f.payment_terms} onChange={set("payment_terms")} placeholder="e.g. Net 30, 50% deposit" /></Field>
+      <Field label="Payment Terms" half>
+        <div style={{ position: "relative" }}>
+          <Input
+            value={f.payment_terms}
+            onChange={e => { setF(p => ({ ...p, payment_terms: e.target.value })); setShowPaymentList(true); }}
+            onFocus={() => setShowPaymentList(true)}
+            onBlur={() => setTimeout(() => setShowPaymentList(false), 200)}
+            placeholder="Search or type payment terms…"
+          />
+          {showPaymentList && filteredPayments.length > 0 && (
+            <div style={dropdownStyle}>
+              {filteredPayments.map((pt, i) => (
+                <div key={i} style={dropItemStyle}
+                  onMouseDown={() => { setF(p => ({ ...p, payment_terms: pt })); setShowPaymentList(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  {pt}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Field>
       <Field label="Address"><Input value={f.address} onChange={set("address")} /></Field>
       <Field label="Address 2"><Input value={f.address2} onChange={set("address2")} /></Field>
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
