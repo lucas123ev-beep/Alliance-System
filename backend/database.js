@@ -22,6 +22,7 @@ db.exec(`
     port_of_loading TEXT,
     port_of_discharge TEXT,
     supplier TEXT,
+    product TEXT,
     notes TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
