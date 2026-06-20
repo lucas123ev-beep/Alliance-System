@@ -168,7 +168,7 @@ function StatCard({ label, value, sub, color = "#3b82f6" }) {
 // ─── FORMS ───────────────────────────────────────────────────────────────────
 
 function ProductItemModal({ onSave, onClose, initial, products }) {
-  const [item, setItem] = useState(initial || { product_id: "", product_name: "", product_code: "", quantity: "", unit: "unit", unit_price: "", total: "" });
+  const [item, setItem] = useState(initial || { product_id: "", product_name: "", product_code: "", supplier: "", quantity: "", unit: "unit", unit_price: "", total: "" });
   const [search, setSearch] = useState(initial?.product_name || "");
   const [showList, setShowList] = useState(false);
 
@@ -177,13 +177,14 @@ function ProductItemModal({ onSave, onClose, initial, products }) {
     p.code.toLowerCase().includes(search.toLowerCase())
   );
 
-  const selectProduct = (p) => {
+const selectProduct = (p) => {
     setSearch(`${p.code} – ${p.name}`);
     setItem(prev => ({
       ...prev,
       product_id: p.id,
       product_name: p.name,
       product_code: p.code,
+      supplier: p.supplier || "",
       unit: p.unit || "unit",
       unit_price: p.sale_price || "",
       total: prev.quantity && p.sale_price ? (parseFloat(prev.quantity) * parseFloat(p.sale_price)).toFixed(2) : "",
@@ -249,6 +250,9 @@ function ProductItemModal({ onSave, onClose, initial, products }) {
         </Field>
         <Field label="Quantity" half>
           <Input type="number" value={item.quantity} onChange={handleQtyChange} placeholder="0" />
+        </Field>
+        <Field label="Supplier">
+          <Input value={item.supplier || ""} onChange={e => setItem(p => ({ ...p, supplier: e.target.value }))} placeholder="Auto-filled from product" />
         </Field>
         <Field label="Unit Price" half>
           <Input type="number" value={item.unit_price} onChange={handlePriceChange} placeholder="0.00" />
@@ -416,28 +420,6 @@ function OrderForm({ initial, onSave, onClose }) {
           </div>
         </Field>
 
-        <Field label="Supplier" half>
-          <div style={{ position: "relative" }}>
-            <Input value={supplierSearch}
-              onChange={e => { setSupplierSearch(e.target.value); setF(p => ({ ...p, supplier: e.target.value })); setShowSupplierList(true); }}
-              onFocus={() => setShowSupplierList(true)}
-              onBlur={() => setTimeout(() => setShowSupplierList(false), 200)}
-              placeholder="Search supplier…" />
-            {showSupplierList && filteredSuppliers.length > 0 && (
-              <div style={dropdownStyle}>
-                {filteredSuppliers.map(s => (
-                  <div key={s.id} style={dropItemStyle}
-                    onMouseDown={() => { setSupplierSearch(s.company_name); setF(p => ({ ...p, supplier: s.company_name })); setShowSupplierList(false); }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#334155"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    {s.company_name}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </Field>
-
         {/* PRODUCTS LIST */}
         <Field label="Products">
           <div style={{ background: "#1e293b", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>
@@ -576,17 +558,11 @@ function ProductForm({ initial, onSave, onClose }) {
     category: "", supplier: "",
   });
   const [suppliers, setSuppliers] = useState([]);
-  const [supplierSearch, setSupplierSearch] = useState(initial?.supplier || "");
-  const [showSupplierList, setShowSupplierList] = useState(false);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
   useEffect(() => {
     api("/suppliers").then(setSuppliers);
   }, []);
-
-  const filteredSuppliers = suppliers.filter(s =>
-    s.company_name.toLowerCase().includes(supplierSearch.toLowerCase())
-  );
 
   const handleCostChange = (e) => {
     const cost = parseFloat(e.target.value) || 0;
