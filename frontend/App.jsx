@@ -456,7 +456,7 @@ const brazilPortsOptions = [
 
 function ProductForm({ initial, onSave, onClose }) {
   const [f, setF] = useState(initial || {
-    code: "", name: "", description: "", unit: "unit", width: "",
+    code: "", name: "", description: "", unit: "unit", width: "", height: "", weight: "",
     unit_cost: "", cost_currency: "USD", margin: "", sale_price: "", sale_currency: "USD",
     category: "", supplier: "",
   });
@@ -542,6 +542,8 @@ function ProductForm({ initial, onSave, onClose }) {
         </Select>
       </Field>
       <Field label="Width" half><Input value={f.width} onChange={set("width")} placeholder="e.g. 1.2m, 150cm" /></Field>
+      <Field label="Height" half><Input value={f.height || ""} onChange={set("height")} placeholder="e.g. 0.8m, 80cm" /></Field>
+      <Field label="Weight" half><Input value={f.weight || ""} onChange={set("weight")} placeholder="e.g. 2.5kg, 500g" /></Field>
 
       <Field label="Cost Currency" half>
         <Select value={f.cost_currency} onChange={set("cost_currency")}>
