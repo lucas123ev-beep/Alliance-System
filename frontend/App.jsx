@@ -460,7 +460,18 @@ function ProductForm({ initial, onSave, onClose }) {
     unit_cost: "", cost_currency: "USD", margin: "", sale_price: "", sale_currency: "USD",
     category: "", supplier: "",
   });
+  const [suppliers, setSuppliers] = useState([]);
+  const [supplierSearch, setSupplierSearch] = useState(initial?.supplier || "");
+  const [showSupplierList, setShowSupplierList] = useState(false);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+
+  useEffect(() => {
+    api("/suppliers").then(setSuppliers);
+  }, []);
+
+  const filteredSuppliers = suppliers.filter(s =>
+    s.company_name.toLowerCase().includes(supplierSearch.toLowerCase())
+  );
 
   const handleCostChange = (e) => {
     const cost = parseFloat(e.target.value) || 0;
@@ -485,12 +496,46 @@ function ProductForm({ initial, onSave, onClose }) {
 
   const currencies = ["USD", "BRL", "CNY", "EUR", "GBP", "JPY"];
 
+  const dropdownStyle = {
+    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+    background: "#1e293b", border: "1px solid #334155", borderRadius: "8px",
+    maxHeight: "180px", overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+  };
+  const dropItemStyle = {
+    padding: "10px 12px", cursor: "pointer", fontSize: "13px", color: "#cbd5e1",
+    borderBottom: "1px solid #0f172a",
+  };
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Product Code" half><Input value={f.code} onChange={set("code")} placeholder="PROD-001" /></Field>
       <Field label="Name" half><Input value={f.name} onChange={set("name")} /></Field>
       <Field label="Category" half><Input value={f.category} onChange={set("category")} /></Field>
-      <Field label="Supplier" half><Input value={f.supplier} onChange={set("supplier")} /></Field>
+
+      <Field label="Supplier" half>
+        <div style={{ position: "relative" }}>
+          <Input
+            value={supplierSearch}
+            onChange={e => { setSupplierSearch(e.target.value); setF(p => ({ ...p, supplier: e.target.value })); setShowSupplierList(true); }}
+            onFocus={() => setShowSupplierList(true)}
+            onBlur={() => setTimeout(() => setShowSupplierList(false), 200)}
+            placeholder="Search supplier…"
+          />
+          {showSupplierList && filteredSuppliers.length > 0 && (
+            <div style={dropdownStyle}>
+              {filteredSuppliers.map(s => (
+                <div key={s.id} style={dropItemStyle}
+                  onMouseDown={() => { setSupplierSearch(s.company_name); setF(p => ({ ...p, supplier: s.company_name })); setShowSupplierList(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  {s.company_name}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Field>
+
       <Field label="Unit" half>
         <Select value={f.unit} onChange={set("unit")}>
           {["unit","kg","m","m²","m³","box","pcs","set","pair"].map(u => <option key={u}>{u}</option>)}
