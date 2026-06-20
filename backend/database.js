@@ -40,6 +40,7 @@ db.exec(`
     sale_currency TEXT DEFAULT 'USD',
     width TEXT,
     height TEXT,
+    thickness TEXT,
     weight TEXT,
     category TEXT,
     supplier TEXT,
