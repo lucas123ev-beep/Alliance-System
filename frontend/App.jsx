@@ -685,57 +685,6 @@ function ProductForm({ initial, onSave, onClose }) {
   );
 }
 
-      <Field label="Unit" half>
-        <Select value={f.unit} onChange={set("unit")}>
-          {["unit","kg","m","m²","m³","box","pcs","set","pair"].map(u => <option key={u}>{u}</option>)}
-        </Select>
-      </Field>
-      <Field label="Width" half><Input value={f.width} onChange={set("width")} placeholder="e.g. 1.2m, 150cm" /></Field>
-      <Field label="Height" half><Input value={f.height || ""} onChange={set("height")} placeholder="e.g. 0.8m, 80cm" /></Field>
-      <Field label="Thickness" half><Input value={f.thickness || ""} onChange={set("thickness")} placeholder="e.g. 5mm, 0.5cm" /></Field>
-      <Field label="Weight" half><Input value={f.weight || ""} onChange={set("weight")} placeholder="e.g. 2.5kg, 500g" /></Field>
-      
-      <Field label="Cost Currency" half>
-        <Select value={f.cost_currency} onChange={set("cost_currency")}>
-          {currencies.map(c => <option key={c}>{c}</option>)}
-        </Select>
-      </Field>
-      <Field label="Unit Cost" half>
-        <Input type="number" value={f.unit_cost} onChange={handleCostChange} placeholder="0.00" />
-      </Field>
-
-      <Field label="Margin %" half>
-        <div style={{ position: "relative" }}>
-          <Input type="number" value={f.margin} onChange={handleMarginChange} placeholder="0" style={{ ...inputStyle, paddingRight: "32px" }} />
-          <span style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", color: "#64748b", fontSize: "13px" }}>%</span>
-        </div>
-      </Field>
-      <Field label="Sale Currency" half>
-        <Select value={f.sale_currency} onChange={set("sale_currency")}>
-          {currencies.map(c => <option key={c}>{c}</option>)}
-        </Select>
-      </Field>
-      <Field label="Sale Price" half>
-        <Input type="number" value={f.sale_price} onChange={handleSalePriceChange} placeholder="0.00" />
-      </Field>
-      {f.unit_cost && f.sale_price && (
-        <div style={{ gridColumn: "span 1", background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "12px", color: "#64748b", display: "flex", alignItems: "center", gap: "8px" }}>
-          <span>Margin:</span>
-          <span style={{ fontWeight: 700, color: parseFloat(f.margin) >= 0 ? "#10b981" : "#ef4444", fontSize: "16px" }}>
-            {f.margin || 0}%
-          </span>
-        </div>
-      )}
-
-      <Field label="Description"><Textarea value={f.description} onChange={set("description")} /></Field>
-      <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-        <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={async () => { await onSave(f); onClose(); }}>Save Product</Btn>
-      </div>
-    </div>
-  );
-}
-
 function SampleForm({ onSave, onClose }) {
   const [f, setF] = useState({ product_name: "", client: "", requested_date: "", status: "Requested", notes: "" });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
