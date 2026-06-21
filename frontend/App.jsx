@@ -168,7 +168,7 @@ function StatCard({ label, value, sub, color = "#3b82f6" }) {
 // ─── FORMS ───────────────────────────────────────────────────────────────────
 
 function ProductItemModal({ onSave, onClose, initial, products }) {
-  const [item, setItem] = useState(initial || { product_id: "", product_name: "", product_code: "", supplier: "", quantity: "", unit: "unit", unit_price: "", total: "" });
+  const [item, setItem] = useState(initial || { product_id: "", product_name: "", product_code: "", supplier: "", currency: "USD", quantity: "", unit: "unit", unit_price: "", total: "" });
   const [search, setSearch] = useState(initial?.product_name || "");
   const [showList, setShowList] = useState(false);
 
@@ -186,6 +186,7 @@ const selectProduct = (p) => {
       product_code: p.code,
       supplier: p.supplier || "",
       unit: p.unit || "unit",
+      currency: p.sale_currency || "USD",
       unit_price: p.sale_price || "",
       total: prev.quantity && p.sale_price ? (parseFloat(prev.quantity) * parseFloat(p.sale_price)).toFixed(2) : "",
     }));
@@ -254,12 +255,12 @@ const selectProduct = (p) => {
         <Field label="Supplier">
           <Input value={item.supplier || ""} onChange={e => setItem(p => ({ ...p, supplier: e.target.value }))} placeholder="Auto-filled from product" />
         </Field>
-        <Field label="Unit Price" half>
-          <Input type="number" value={item.unit_price} onChange={handlePriceChange} placeholder="0.00" />
-        </Field>
-        <Field label="Total">
-          <Input type="number" value={item.total} onChange={handleTotalChange} placeholder="0.00" />
-        </Field>
+<Field label={`Unit Price (${item.currency || "USD"})`} half>
+  <Input type="number" value={item.unit_price} onChange={handlePriceChange} placeholder="0.00" />
+</Field>
+<Field label={`Total (${item.currency || "USD"})`}>
+  <Input type="number" value={item.total} onChange={handleTotalChange} placeholder="0.00" />
+</Field>
         <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
           <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
           <Btn onClick={() => { onSave(item); onClose(); }}>
@@ -433,9 +434,9 @@ function OrderForm({ initial, onSave, onClose }) {
                   <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
                   <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit} × {item.unit_price}</span>
                 </div>
-                <span style={{ color: "#10b981", fontWeight: 600, fontSize: "13px", whiteSpace: "nowrap" }}>
-                  {fmt(parseFloat(item.total), f.currency)}
-                </span>
+                 <span style={{ color: "#10b981", fontWeight: 600, fontSize: "13px", whiteSpace: "nowrap" }}>
+                 {fmt(parseFloat(item.total), item.currency || f.currency)}
+                 </span>
                 <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
                 <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
               </div>
