@@ -552,11 +552,11 @@ function OrderForm({ initial, onSave, onClose }) {
 }
 
 function ProductForm({ initial, onSave, onClose }) {
-  const [f, setF] = useState(initial || {
-    code: "", name: "", description: "", unit: "unit", width: "", height: "", thickness: "", weight: "",
-    unit_cost: "", cost_currency: "USD", margin: "", sale_price: "", sale_currency: "USD",
-    category: "", supplier: "",
-  });
+const [f, setF] = useState(initial || {
+  code: "", name: "", description: "", unit: "unit", width: "", height: "", thickness: "", weight: "",
+  unit_cost: "", cost_currency: "USD",
+  category: "", supplier: "",
+});
   const [suppliers, setSuppliers] = useState([]);
   const [supplierSearch, setSupplierSearch] = useState(initial?.supplier || "");
   const [showSupplierList, setShowSupplierList] = useState(false);
@@ -576,20 +576,6 @@ function ProductForm({ initial, onSave, onClose }) {
     const margin = parseFloat(f.margin) || 0;
     const sale = margin > 0 ? (cost * (1 + margin / 100)).toFixed(2) : f.sale_price;
     setF((p) => ({ ...p, unit_cost: e.target.value, sale_price: sale }));
-  };
-
-  const handleMarginChange = (e) => {
-    const margin = parseFloat(e.target.value) || 0;
-    const cost = parseFloat(f.unit_cost) || 0;
-    const sale = cost > 0 ? (cost * (1 + margin / 100)).toFixed(2) : f.sale_price;
-    setF((p) => ({ ...p, margin: e.target.value, sale_price: sale }));
-  };
-
-  const handleSalePriceChange = (e) => {
-    const sale = parseFloat(e.target.value) || 0;
-    const cost = parseFloat(f.unit_cost) || 0;
-    const margin = cost > 0 ? (((sale - cost) / cost) * 100).toFixed(1) : f.margin;
-    setF((p) => ({ ...p, sale_price: e.target.value, margin }));
   };
 
   const currencies = ["USD", "BRL", "CNY", "EUR", "GBP", "JPY"];
@@ -652,29 +638,6 @@ function ProductForm({ initial, onSave, onClose }) {
       <Field label="Unit Cost" half>
         <Input type="number" value={f.unit_cost} onChange={handleCostChange} placeholder="0.00" />
       </Field>
-
-      <Field label="Margin %" half>
-        <div style={{ position: "relative" }}>
-          <Input type="number" value={f.margin} onChange={handleMarginChange} placeholder="0" style={{ ...inputStyle, paddingRight: "32px" }} />
-          <span style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", color: "#64748b", fontSize: "13px" }}>%</span>
-        </div>
-      </Field>
-      <Field label="Sale Currency" half>
-        <Select value={f.sale_currency} onChange={set("sale_currency")}>
-          {currencies.map(c => <option key={c}>{c}</option>)}
-        </Select>
-      </Field>
-      <Field label="Sale Price" half>
-        <Input type="number" value={f.sale_price} onChange={handleSalePriceChange} placeholder="0.00" />
-      </Field>
-      {f.unit_cost && f.sale_price && (
-        <div style={{ gridColumn: "span 1", background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "12px", color: "#64748b", display: "flex", alignItems: "center", gap: "8px" }}>
-          <span>Margin:</span>
-          <span style={{ fontWeight: 700, color: parseFloat(f.margin) >= 0 ? "#10b981" : "#ef4444", fontSize: "16px" }}>
-            {f.margin || 0}%
-          </span>
-        </div>
-      )}
 
       <Field label="Description"><Textarea value={f.description} onChange={set("description")} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
