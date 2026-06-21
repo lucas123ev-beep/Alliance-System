@@ -44,12 +44,13 @@ app.post('/api/orders', (req, res) => {
       const orderId = result.lastInsertRowid;
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
-          INSERT INTO order_items (order_id, product_id, product_name, quantity, unit, unit_price)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `);
+  INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
         for (const item of items) {
           insertItem.run(orderId, item.product_id || null, item.product_name,
-            item.quantity, item.unit || 'unit', item.unit_price);
+  item.product_code || "", item.supplier || "", item.quantity,
+  item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total);
         }
       }
       return orderId;
@@ -87,13 +88,36 @@ app.patch('/api/orders/:id/status', (req, res) => {
   res.json(db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id));
 });
 
-app.put('/api/contracts/:id', (req, res) => {
-  const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes } = req.body;
+app.put('/api/orders/:id', (req, res) => {
+  const { order_number, client, supplier, product, value, currency, production_lead_time,
+    shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
+    port_of_discharge, notes, items } = req.body;
   db.prepare(`
-    UPDATE supplier_contracts SET order_id=?, contract_number=?, supplier=?, sign_date=?, delivery_date=?, total=?, currency=?, status=?, notes=?
+    UPDATE orders SET order_number=?, client=?, supplier=?, product=?, value=?, currency=?,
+      production_lead_time=?, shipment_date=?, arrival_date=?, incoterm=?,
+      payment_terms=?, port_of_loading=?, port_of_discharge=?, notes=?,
+      updated_at=datetime('now')
     WHERE id=?
-  `).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, req.params.id);
-  res.json(db.prepare('SELECT * FROM supplier_contracts WHERE id=?').get(req.params.id));
+  `).run(order_number, client, supplier, product, value, currency, production_lead_time,
+    shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
+    port_of_discharge, notes, req.params.id);
+
+  if (items && items.length > 0) {
+    db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
+    const insertItem = db.prepare(`
+      INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const item of items) {
+      insertItem.run(req.params.id, item.product_id || null, item.product_name,
+        item.product_code || "", item.supplier || "", item.quantity,
+        item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total);
+    }
+  }
+
+  const order = db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id);
+  const savedItems = db.prepare('SELECT * FROM order_items WHERE order_id=?').all(req.params.id);
+  res.json({ ...order, items: savedItems });
 });
 
 app.delete('/api/contracts/:id', (req, res) => {
