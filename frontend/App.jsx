@@ -363,7 +363,6 @@ function OrderForm({ initial, onSave, onClose }) {
   ];
 
   const filteredClients = clients.filter(c => c.company_name.toLowerCase().includes(clientSearch.toLowerCase()));
-  const filteredSuppliers = suppliers.filter(s => s.company_name.toLowerCase().includes(supplierSearch.toLowerCase()));
   const filteredPayments = paymentOptions.filter(p => p.toLowerCase().includes((f.payment_terms || "").toLowerCase()));
 
   const dropdownStyle = {
@@ -558,11 +557,9 @@ function ProductForm({ initial, onSave, onClose }) {
     unit_cost: "", cost_currency: "USD", margin: "", sale_price: "", sale_currency: "USD",
     category: "", supplier: "",
   });
-  const [suppliers, setSuppliers] = useState([]);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
   useEffect(() => {
-    api("/suppliers").then(setSuppliers);
   }, []);
 
   const handleCostChange = (e) => {
