@@ -1041,13 +1041,10 @@ cols={[
   { label: "Supplier", key: "supplier" },
   { label: "Unit", key: "unit" },
   { label: "Width", render: r => r.width || "—" },
+  { label: "Height", render: r => r.height || "—" },
+  { label: "Thickness", render: r => r.thickness || "—" },
+  { label: "Weight", render: r => r.weight || "—" },
   { label: "Cost", render: r => r.unit_cost ? `${r.cost_currency || "USD"} ${parseFloat(r.unit_cost).toFixed(2)}` : "—" },
-  { label: "Sale Price", render: r => r.sale_price ? `${r.sale_currency || "USD"} ${parseFloat(r.sale_price).toFixed(2)}` : "—" },
-  { label: "Margin", render: r => r.unit_cost > 0 ? (
-    <span style={{ color: parseFloat(r.margin) >= 0 ? "#10b981" : "#ef4444", fontWeight: 600 }}>
-      {r.margin || (((r.sale_price - r.unit_cost) / r.unit_cost) * 100).toFixed(1)}%
-    </span>
-  ) : "—" },
   { label: "Actions", render: r => (
     <div style={{ display: "flex", gap: "6px" }}>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
