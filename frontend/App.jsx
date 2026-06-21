@@ -878,7 +878,16 @@ const [orders, setOrders] = useState([]);
   const [proformaModal, setProformaModal] = useState(null);
   const [contractModal, setContractModal] = useState(null);
 
-  const load = useCallback(() => api("/orders").then(setOrders), []);
+  const load = useCallback(async () => {
+    const orders = await api("/orders");
+    const ordersWithItems = await Promise.all(
+      orders.map(async o => {
+        const detail = await api(`/orders/${o.id}`);
+        return { ...o, items: detail.items || [] };
+      })
+    );
+    setOrders(ordersWithItems);
+  }, []);
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
 
   const filtered = orders.filter(o =>
