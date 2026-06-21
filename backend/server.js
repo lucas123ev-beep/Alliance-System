@@ -79,6 +79,12 @@ app.put('/api/orders/:id', (req, res) => {
   res.json(db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id));
 });
 
+app.delete('/api/orders/:id', (req, res) => {
+  db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
+  db.prepare('DELETE FROM orders WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
 app.patch('/api/orders/:id/status', (req, res) => {
   const { status } = req.body;
   const validStatuses = ['Pending', 'In Production', 'Inspection', 'Completed'];
