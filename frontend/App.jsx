@@ -906,19 +906,40 @@ const generateProforma = (order) => {
       notes: "",
     });
   };
-  const generateContract = (order) => {
-  const number = `SC-${order.order_number}-${Date.now().toString().slice(-4)}`;
-  setContractModal({
-    order_id: order.id,
-    contract_number: number,
-    supplier: order.supplier || "",
-    sign_date: new Date().toISOString().slice(0, 10),
-    delivery_date: order.shipment_date || "",
-    total: order.value || "",
-    currency: order.currency || "USD",
-    status: "Draft",
-    notes: order.notes || "",
-  });
+const generateContract = (order) => {
+  const suppliers = [...new Set((order.items || []).map(i => i.supplier).filter(Boolean))];
+  if (suppliers.length === 0) {
+    const number = `SC-${order.order_number}-${Date.now().toString().slice(-4)}`;
+    setContractModal([{
+      order_id: order.id,
+      contract_number: number,
+      supplier: "",
+      sign_date: new Date().toISOString().slice(0, 10),
+      delivery_date: order.shipment_date || "",
+      total: order.value || "",
+      currency: order.currency || "USD",
+      status: "Draft",
+      notes: order.notes || "",
+    }]);
+  } else {
+    setContractModal(suppliers.map(supplier => {
+      const supplierItems = (order.items || []).filter(i => i.supplier === supplier);
+      const total = supplierItems.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0);
+      const currency = supplierItems[0]?.currency || order.currency || "USD";
+      const number = `SC-${order.order_number}-${supplier.slice(0,4).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+      return {
+        order_id: order.id,
+        contract_number: number,
+        supplier,
+        sign_date: new Date().toISOString().slice(0, 10),
+        delivery_date: order.shipment_date || "",
+        total: total.toFixed(2),
+        currency,
+        status: "Draft",
+        notes: order.notes || "",
+      };
+    }));
+  }
 };
   return (
     <div>
@@ -950,13 +971,31 @@ const generateProforma = (order) => {
         </Modal>
       )}
 {contractModal && (
-  <Modal title="Generate Supplier Contract" onClose={() => setContractModal(null)} wide>
-    <ContractForm
-      orders={orders}
-      initial={contractModal}
-      onSave={async b => { await api("/contracts", "POST", b); setContractModal(null); load(); }}
-      onClose={() => setContractModal(null)}
-    />
+  <Modal title="Generate Supplier Contracts" onClose={() => setContractModal(null)} wide>
+    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+      {contractModal.map((c, idx) => (
+        <div key={idx} style={{ background: "#1e293b", borderRadius: "12px", padding: "16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <span style={{ fontWeight: 700, color: "#a78bfa", fontSize: "14px" }}>
+              🏭 {c.supplier || "Supplier " + (idx + 1)}
+            </span>
+            <span style={{ color: "#10b981", fontWeight: 600 }}>{c.currency} {c.total}</span>
+          </div>
+          <ContractForm
+            orders={orders}
+            initial={c}
+            onSave={async b => {
+              await api("/contracts", "POST", b);
+              if (idx === contractModal.length - 1) {
+                setContractModal(null);
+                load();
+              }
+            }}
+            onClose={() => setContractModal(null)}
+          />
+        </div>
+      ))}
+    </div>
   </Modal>
 )}
 
