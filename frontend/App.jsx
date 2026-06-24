@@ -305,8 +305,10 @@ function OrderForm({ initial, onSave, onClose }) {
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
   const itemsTotal = items.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0);
-    useEffect(() => {
-  if (items.length > 0) {
+  const [userEditedValue, setUserEditedValue] = useState(false);
+
+useEffect(() => {
+  if (items.length > 0 && !userEditedValue) {
     setF(p => ({ ...p, value: itemsTotal.toFixed(2) }));
   }
 }, [itemsTotal]);
@@ -463,7 +465,7 @@ function OrderForm({ initial, onSave, onClose }) {
         )}
 
         <Field label="Value" half>
-          <Input type="number" value={f.value} onChange={set("value")} placeholder="0.00" />
+         <Input type="number" value={f.value} onChange={e => { setUserEditedValue(true); set("value")(e); }} placeholder="0.00" />
         </Field>
         <Field label="Currency" half>
           <Select value={f.currency} onChange={set("currency")}>
