@@ -305,6 +305,11 @@ function OrderForm({ initial, onSave, onClose }) {
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
   const itemsTotal = items.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0);
+    useEffect(() => {
+  if (items.length > 0) {
+    setF(p => ({ ...p, value: itemsTotal.toFixed(2) }));
+  }
+}, [itemsTotal]);
 
   const addItem = (item) => {
     setItems(prev => [...prev, item]);
