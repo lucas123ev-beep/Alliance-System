@@ -910,17 +910,18 @@ const generateContract = (order) => {
   const suppliers = [...new Set((order.items || []).map(i => i.supplier).filter(Boolean))];
   if (suppliers.length === 0) {
     const number = `SC-${order.order_number}-${Date.now().toString().slice(-4)}`;
-    setContractModal([{
-      order_id: order.id,
-      contract_number: number,
-      supplier: "",
-      sign_date: new Date().toISOString().slice(0, 10),
-      delivery_date: order.shipment_date || "",
-      total: order.value || "",
-      currency: order.currency || "USD",
-      status: "Draft",
-      notes: order.notes || "",
-    }]);
+   setContractModal([{
+  order_id: order.id,
+  contract_number: number,
+  supplier: "",
+  sign_date: new Date().toISOString().slice(0, 10),
+  delivery_date: order.shipment_date || "",
+  total: order.value || "",
+  currency: order.currency || "USD",
+  status: "Draft",
+  notes: order.notes || "",
+  _items: order.items || [],
+}]);
   } else {
     setContractModal(suppliers.map(supplier => {
       const supplierItems = (order.items || []).filter(i => i.supplier === supplier);
@@ -928,16 +929,17 @@ const generateContract = (order) => {
       const currency = supplierItems[0]?.currency || order.currency || "USD";
       const number = `SC-${order.order_number}-${supplier.slice(0,4).toUpperCase()}-${Date.now().toString().slice(-4)}`;
       return {
-        order_id: order.id,
-        contract_number: number,
-        supplier,
-        sign_date: new Date().toISOString().slice(0, 10),
-        delivery_date: order.shipment_date || "",
-        total: total.toFixed(2),
-        currency,
-        status: "Draft",
-        notes: order.notes || "",
-      };
+  order_id: order.id,
+  contract_number: number,
+  supplier,
+  sign_date: new Date().toISOString().slice(0, 10),
+  delivery_date: order.shipment_date || "",
+  total: total.toFixed(2),
+  currency,
+  status: "Draft",
+  notes: order.notes || "",
+  _items: supplierItems,
+};
     }));
   }
 };
@@ -975,12 +977,27 @@ const generateContract = (order) => {
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {contractModal.map((c, idx) => (
         <div key={idx} style={{ background: "#1e293b", borderRadius: "12px", padding: "16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-            <span style={{ fontWeight: 700, color: "#a78bfa", fontSize: "14px" }}>
-              🏭 {c.supplier || "Supplier " + (idx + 1)}
-            </span>
-            <span style={{ color: "#10b981", fontWeight: 600 }}>{c.currency} {c.total}</span>
-          </div>
+          <div style={{ marginBottom: "12px" }}>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+    <span style={{ fontWeight: 700, color: "#a78bfa", fontSize: "14px" }}>
+      🏭 {c.supplier || "Supplier " + (idx + 1)}
+    </span>
+    <span style={{ color: "#10b981", fontWeight: 600 }}>{c.currency} {c.total}</span>
+  </div>
+  <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 14px", marginBottom: "4px" }}>
+    <div style={{ fontSize: "11px", color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>Products in this contract</div>
+    {(contractModal[idx]._items || []).map((item, i) => (
+      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #1e293b", fontSize: "13px" }}>
+        <div>
+          <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
+          <span style={{ color: "#f1f5f9", marginLeft: "8px" }}>{item.product_name}</span>
+          <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
+        </div>
+        <span style={{ color: "#10b981", fontWeight: 600 }}>{item.currency} {parseFloat(item.unit_price).toFixed(2)} × {item.quantity}</span>
+      </div>
+    ))}
+  </div>
+</div>
           <ContractForm
             orders={orders}
             initial={c}
