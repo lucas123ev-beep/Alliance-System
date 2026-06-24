@@ -169,7 +169,11 @@ function StatCard({ label, value, sub, color = "#3b82f6" }) {
 
 function ProductItemModal({ onSave, onClose, initial, products }) {
   const [item, setItem] = useState(initial || { product_id: "", product_name: "", product_code: "", supplier: "", currency: "USD", quantity: "", unit: "unit", unit_price: "", total: "" });
-  const [search, setSearch] = useState(initial?.product_name || "");
+  const [search, setSearch] = useState(
+  initial?.product_code && initial?.product_name
+    ? `${initial.product_code} – ${initial.product_name}`
+    : initial?.product_name || ""
+);
   const [showList, setShowList] = useState(false);
 
   const filtered = products.filter(p =>
