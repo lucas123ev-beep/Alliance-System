@@ -66,7 +66,7 @@ app.post('/api/orders', (req, res) => {
 app.put('/api/orders/:id', (req, res) => {
   const { order_number, client, supplier, product, value, currency, production_lead_time,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
-    port_of_discharge, notes } = req.body;
+    port_of_discharge, notes, items } = req.body;
   db.prepare(`
     UPDATE orders SET order_number=?, client=?, supplier=?, product=?, value=?, currency=?,
       production_lead_time=?, shipment_date=?, arrival_date=?, incoterm=?,
@@ -76,7 +76,23 @@ app.put('/api/orders/:id', (req, res) => {
   `).run(order_number, client, supplier, product, value, currency, production_lead_time,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
     port_of_discharge, notes, req.params.id);
-  res.json(db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id));
+
+  db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
+  if (items && items.length > 0) {
+    const insertItem = db.prepare(`
+      INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const item of items) {
+      insertItem.run(req.params.id, item.product_id || null, item.product_name,
+        item.product_code || null, item.supplier || null, item.quantity,
+        item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0);
+    }
+  }
+
+  const order = db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id);
+  const savedItems = db.prepare('SELECT * FROM order_items WHERE order_id=?').all(req.params.id);
+  res.json({ ...order, items: savedItems });
 });
 
 app.delete('/api/orders/:id', (req, res) => {
