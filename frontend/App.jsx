@@ -861,6 +861,7 @@ const [orders, setOrders] = useState([]);
   const [search, setSearch] = useState("");
   const [proformaModal, setProformaModal] = useState(null);
   const [contractModal, setContractModal] = useState(null);
+  const [savedContracts, setSavedContracts] = useState([]);
 
   const load = useCallback(async () => {
     const orders = await api("/orders");
@@ -973,45 +974,58 @@ const generateContract = (order) => {
         </Modal>
       )}
 {contractModal && (
-  <Modal title="Generate Supplier Contracts" onClose={() => setContractModal(null)} wide>
+  <Modal title="Generate Supplier Contracts" onClose={() => { setContractModal(null); setSavedContracts([]); load(); }} wide>
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {contractModal.map((c, idx) => (
-        <div key={idx} style={{ background: "#1e293b", borderRadius: "12px", padding: "16px" }}>
+        <div key={idx} style={{ background: "#1e293b", borderRadius: "12px", padding: "16px", opacity: savedContracts.includes(idx) ? 0.6 : 1 }}>
           <div style={{ marginBottom: "12px" }}>
-  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-    <span style={{ fontWeight: 700, color: "#a78bfa", fontSize: "14px" }}>
-      🏭 {c.supplier || "Supplier " + (idx + 1)}
-    </span>
-    <span style={{ color: "#10b981", fontWeight: 600 }}>{c.currency} {c.total}</span>
-  </div>
-  <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 14px", marginBottom: "4px" }}>
-    <div style={{ fontSize: "11px", color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>Products in this contract</div>
-    {(contractModal[idx]._items || []).map((item, i) => (
-      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #1e293b", fontSize: "13px" }}>
-        <div>
-          <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
-          <span style={{ color: "#f1f5f9", marginLeft: "8px" }}>{item.product_name}</span>
-          <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
-        </div>
-        <span style={{ color: "#10b981", fontWeight: 600 }}>{item.currency} {parseFloat(item.unit_price).toFixed(2)} × {item.quantity}</span>
-      </div>
-    ))}
-  </div>
-</div>
-          <ContractForm
-            orders={orders}
-            initial={c}
-            onSave={async b => {
-              await api("/contracts", "POST", b);
-              if (idx === contractModal.length - 1) {
-                setContractModal(null);
-                load();
-              }
-            }}
-            onClose={() => setContractModal(null)}
-          />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+              <span style={{ fontWeight: 700, color: savedContracts.includes(idx) ? "#10b981" : "#a78bfa", fontSize: "14px" }}>
+                {savedContracts.includes(idx) ? "✅" : "🏭"} {c.supplier || "Supplier " + (idx + 1)}
+              </span>
+              <span style={{ color: "#10b981", fontWeight: 600 }}>{c.currency} {c.total}</span>
+            </div>
+            <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 14px", marginBottom: "4px" }}>
+              <div style={{ fontSize: "11px", color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>Products in this contract</div>
+              {(c._items || []).map((item, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #1e293b", fontSize: "13px" }}>
+                  <div>
+                    <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
+                    <span style={{ color: "#f1f5f9", marginLeft: "8px" }}>{item.product_name}</span>
+                    <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
+                  </div>
+                  <span style={{ color: "#10b981", fontWeight: 600 }}>{item.currency} {parseFloat(item.unit_price).toFixed(2)} × {item.quantity}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {savedContracts.includes(idx) ? (
+            <div style={{ textAlign: "center", padding: "12px", color: "#10b981", fontWeight: 600, fontSize: "14px" }}>
+              ✅ Contract saved successfully!
+            </div>
+          ) : (
+            <ContractForm
+              orders={orders}
+              initial={c}
+              onSave={async b => {
+                await api("/contracts", "POST", b);
+                setSavedContracts(prev => [...prev, idx]);
+                if ([...savedContracts, idx].length === contractModal.length) {
+                  load();
+                }
+              }}
+              onClose={() => { setContractModal(null); setSavedContracts([]); load(); }}
+            />
+          )}
         </div>
       ))}
+      {savedContracts.length === contractModal.length && (
+        <div style={{ textAlign: "center" }}>
+          <Btn color="#10b981" onClick={() => { setContractModal(null); setSavedContracts([]); load(); }}>
+            ✅ All contracts saved — Close
+          </Btn>
+        </div>
+      )}
     </div>
   </Modal>
 )}
