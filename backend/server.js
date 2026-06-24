@@ -49,8 +49,8 @@ app.post('/api/orders', (req, res) => {
 `);
         for (const item of items) {
           insertItem.run(orderId, item.product_id || null, item.product_name,
-  item.product_code || "", item.supplier || "", item.quantity,
-  item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total);
+  item.product_code || null, item.supplier || null, item.quantity,
+  item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0);
         }
       }
       return orderId;
