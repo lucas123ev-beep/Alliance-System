@@ -175,6 +175,7 @@ function ProductItemModal({ onSave, onClose, initial, products }) {
     : initial?.product_name || ""
 );
   const [showList, setShowList] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
 
   const filtered = products.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -182,6 +183,7 @@ function ProductItemModal({ onSave, onClose, initial, products }) {
   );
 
 const selectProduct = (p) => {
+    setSelectedProduct(p);
     setSearch(`${p.code} – ${p.name}`);
     setItem(prev => ({
       ...prev,
@@ -209,11 +211,42 @@ const selectProduct = (p) => {
     setItem(prev => ({ ...prev, unit_price: price, total }));
   };
 
-  const handleTotalChange = (e) => {
-    const total = e.target.value;
-    const price = total && item.quantity ? (parseFloat(total) / parseFloat(item.quantity)).toFixed(4) : item.unit_price;
-    setItem(prev => ({ ...prev, total, unit_price: price }));
-  };
+  const handleQtyChange = (e) => {
+  const qty = e.target.value;
+  const total = qty && item.unit_price ? (parseFloat(qty) * parseFloat(item.unit_price)).toFixed(2) : "";
+  const weight = calcWeight(selectedProduct, qty);
+  setItem(prev => ({ ...prev, quantity: qty, total, total_weight: weight }));
+};
+
+  const calcWeight = (product, quantity) => {
+  if (!product || !quantity) return null;
+  const qty = parseFloat(quantity) || 0;
+  const w = parseFloat(product.weight) || 0;
+  const h = parseFloat(product.height) || 0;
+  const width = parseFloat(product.width) || 0;
+  if (!w || !qty) return null;
+
+  const wu = product.weight_unit || "kg";
+  let totalKg = 0;
+
+  if (wu === "g/m²") {
+    const heightM = h * (product.height_unit === "cm" ? 0.01 : product.height_unit === "mm" ? 0.001 : 1);
+    const widthM = width * (product.width_unit === "cm" ? 0.01 : product.width_unit === "mm" ? 0.001 : 1);
+    totalKg = (w / 1000) * widthM * heightM * qty;
+  } else if (wu === "g/m") {
+    const heightM = h * (product.height_unit === "cm" ? 0.01 : product.height_unit === "mm" ? 0.001 : 1);
+    totalKg = (w / 1000) * heightM * qty;
+  } else if (wu === "g") {
+    totalKg = (w / 1000) * qty;
+  } else if (wu === "kg") {
+    totalKg = w * qty;
+  } else if (wu === "lb") {
+    totalKg = w * 0.453592 * qty;
+  } else if (wu === "oz") {
+    totalKg = w * 0.0283495 * qty;
+  }
+  return totalKg;
+};
 
   const dropdownStyle = {
     position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200,
@@ -261,6 +294,11 @@ const selectProduct = (p) => {
         </Field>
 <Field label={`Unit Price (${item.currency || "USD"})`} half>
   <Input type="number" value={item.unit_price} onChange={handlePriceChange} placeholder="0.00" />
+</Field>
+        <Field label="Total Weight" half>
+  <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: item.total_weight ? "#10b981" : "#475569", fontWeight: item.total_weight ? 700 : 400, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
+    {item.total_weight ? `${item.total_weight.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg` : "—"}
+  </div>
 </Field>
 <Field label={`Total (${item.currency || "USD"})`}>
   <Input type="number" value={item.total} onChange={handleTotalChange} placeholder="0.00" />
@@ -568,7 +606,11 @@ useEffect(() => {
 
 function ProductForm({ initial, onSave, onClose }) {
 const [f, setF] = useState(initial || {
-  code: "", name: "", description: "", unit: "unit", width: "", height: "", thickness: "", weight: "",
+  code: "", name: "", description: "", unit: "unit",
+  width: "", width_unit: "cm",
+  height: "", height_unit: "cm",
+  thickness: "", thickness_unit: "mm",
+  weight: "", weight_unit: "kg",
   unit_cost: "", cost_currency: "USD",
   category: "", supplier: "",
 });
@@ -640,10 +682,38 @@ const [f, setF] = useState(initial || {
           {["unit","kg","m","m²","m³","box","pcs","set","pair"].map(u => <option key={u}>{u}</option>)}
         </Select>
       </Field>
-      <Field label="Width" half><Input value={f.width} onChange={set("width")} placeholder="e.g. 1.2m, 150cm" /></Field>
-      <Field label="Height" half><Input value={f.height || ""} onChange={set("height")} placeholder="e.g. 0.8m, 80cm" /></Field>
-      <Field label="Thickness" half><Input value={f.thickness || ""} onChange={set("thickness")} placeholder="e.g. 5mm, 0.5cm" /></Field>
-      <Field label="Weight" half><Input value={f.weight || ""} onChange={set("weight")} placeholder="e.g. 2.5kg, 500g" /></Field>
+<Field label="Width" half>
+  <div style={{ display: "flex", gap: "6px" }}>
+    <Input value={f.width} onChange={set("width")} placeholder="0" style={{ ...inputStyle, flex: 1 }} />
+    <Select value={f.width_unit} onChange={set("width_unit")} style={{ ...inputStyle, width: "80px", cursor: "pointer" }}>
+      {["mm","cm","m","in"].map(u => <option key={u}>{u}</option>)}
+    </Select>
+  </div>
+</Field>
+<Field label="Height" half>
+  <div style={{ display: "flex", gap: "6px" }}>
+    <Input value={f.height || ""} onChange={set("height")} placeholder="0" style={{ ...inputStyle, flex: 1 }} />
+    <Select value={f.height_unit || "cm"} onChange={set("height_unit")} style={{ ...inputStyle, width: "80px", cursor: "pointer" }}>
+      {["mm","cm","m","in"].map(u => <option key={u}>{u}</option>)}
+    </Select>
+  </div>
+</Field>
+<Field label="Thickness" half>
+  <div style={{ display: "flex", gap: "6px" }}>
+    <Input value={f.thickness || ""} onChange={set("thickness")} placeholder="0" style={{ ...inputStyle, flex: 1 }} />
+    <Select value={f.thickness_unit || "mm"} onChange={set("thickness_unit")} style={{ ...inputStyle, width: "80px", cursor: "pointer" }}>
+      {["mm","cm","m","in"].map(u => <option key={u}>{u}</option>)}
+    </Select>
+  </div>
+</Field>
+<Field label="Weight" half>
+  <div style={{ display: "flex", gap: "6px" }}>
+    <Input value={f.weight || ""} onChange={set("weight")} placeholder="0" style={{ ...inputStyle, flex: 1 }} />
+    <Select value={f.weight_unit || "kg"} onChange={set("weight_unit")} style={{ ...inputStyle, width: "90px", cursor: "pointer" }}>
+      {["kg","g","g/m","g/m²","lb","oz"].map(u => <option key={u}>{u}</option>)}
+    </Select>
+  </div>
+</Field>
 
       <Field label="Cost Currency" half>
         <Select value={f.cost_currency} onChange={set("cost_currency")}>
