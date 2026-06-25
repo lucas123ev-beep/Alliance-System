@@ -750,7 +750,7 @@ function ContractForm({ onSave, onClose, orders, initial }) {
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={async () => { await onSave(f); onClose(); }}>Save Contract</Btn>
+        <Btn onClick={async () => { await onSave(f); }}>Save Contract</Btn>
       </div>
     </div>
   );
@@ -1008,12 +1008,13 @@ const generateContract = (order) => {
               orders={orders}
               initial={c}
               onSave={async b => {
-                await api("/contracts", "POST", b);
-                setSavedContracts(prev => [...prev, idx]);
-                if ([...savedContracts, idx].length === contractModal.length) {
-                  load();
-                }
-              }}
+  await api("/contracts", "POST", b);
+  setSavedContracts(prev => {
+    const updated = [...prev, idx];
+    if (updated.length === contractModal.length) load();
+    return updated;
+  });
+}}
               onClose={() => { setContractModal(null); setSavedContracts([]); load(); }}
             />
           )}
