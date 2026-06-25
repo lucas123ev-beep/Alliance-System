@@ -198,18 +198,20 @@ const selectProduct = (p) => {
     }));
     setShowList(false);
   };
-
-  const handleQtyChange = (e) => {
-    const qty = e.target.value;
-    const total = qty && item.unit_price ? (parseFloat(qty) * parseFloat(item.unit_price)).toFixed(2) : "";
-    setItem(prev => ({ ...prev, quantity: qty, total }));
-  };
-
+  
+const handleQtyChange = (e) => {
+  const qty = e.target.value;
+  const total = qty && item.unit_price ? (parseFloat(qty) * parseFloat(item.unit_price)).toFixed(2) : "";
+  const weight = selectedProduct ? calcWeight(selectedProduct, qty) : null;
+  setItem(prev => ({ ...prev, quantity: qty, total, total_weight: weight }));
+};
+  
   const handlePriceChange = (e) => {
-    const price = e.target.value;
-    const total = price && item.quantity ? (parseFloat(item.quantity) * parseFloat(price)).toFixed(2) : "";
-    setItem(prev => ({ ...prev, unit_price: price, total }));
-  };
+  const price = e.target.value;
+  const total = price && item.quantity ? (parseFloat(item.quantity) * parseFloat(price)).toFixed(2) : "";
+  const weight = selectedProduct ? calcWeight(selectedProduct, item.quantity) : null;
+  setItem(prev => ({ ...prev, unit_price: price, total, total_weight: weight }));
+};
 
   const handleQtyChange = (e) => {
   const qty = e.target.value;
