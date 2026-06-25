@@ -44,13 +44,13 @@ app.post('/api/orders', (req, res) => {
       const orderId = result.lastInsertRowid;
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
-  INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total, total_weight)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
         for (const item of items) {
           insertItem.run(orderId, item.product_id || null, item.product_name,
   item.product_code || null, item.supplier || null, item.quantity,
-  item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0);
+  item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0, item.total_weight || null);
         }
       }
       return orderId;
@@ -85,8 +85,8 @@ app.put('/api/orders/:id', (req, res) => {
     `);
     for (const item of items) {
       insertItem.run(req.params.id, item.product_id || null, item.product_name,
-        item.product_code || null, item.supplier || null, item.quantity,
-        item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0);
+  item.product_code || null, item.supplier || null, item.quantity,
+  item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0, item.total_weight || null);
     }
   }
 
