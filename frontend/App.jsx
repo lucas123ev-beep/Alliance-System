@@ -699,6 +699,13 @@ const [f, setF] = useState(initial || {
         </div>
       </Field>
 
+      <Field label="Unit" half>
+  <Select value={f.unit} onChange={set("unit")}>
+    <option value="">Select...</option>
+    {["Unit","Roll","Package","Box"].map(u => <option key={u}>{u}</option>)}
+  </Select>
+</Field>
+
 <Field label="Width" half>
   <div style={{ display: "flex", gap: "6px" }}>
     <Input value={f.width} onChange={set("width")} placeholder="0" style={{ ...inputStyle, flex: 1 }} />
