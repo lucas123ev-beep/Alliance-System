@@ -230,11 +230,21 @@ const selectProduct = (p) => {
     setShowList(false);
   };
   
+const calcMeterage = (product, quantity) => {
+  if (!product || !quantity) return null;
+  const qty = parseFloat(quantity) || 0;
+  const h = parseFloat(product.height) || 0;
+  if (!h || !qty) return null;
+  const heightM = h * (product.height_unit === "cm" ? 0.01 : product.height_unit === "mm" ? 0.001 : 1);
+  return heightM * qty;
+};
+
 const handleQtyChange = (e) => {
   const qty = e.target.value;
   const total = qty && item.unit_price ? (parseFloat(qty) * parseFloat(item.unit_price)).toFixed(2) : "";
   const weight = selectedProduct ? calcWeight(selectedProduct, qty) : null;
-  setItem(prev => ({ ...prev, quantity: qty, total, total_weight: weight }));
+  const meterage = selectedProduct ? calcMeterage(selectedProduct, qty) : null;
+  setItem(prev => ({ ...prev, quantity: qty, total, total_weight: weight, total_meterage: meterage }));
 };
   
   const handlePriceChange = (e) => {
@@ -297,9 +307,14 @@ const handleQtyChange = (e) => {
 <Field label={`Unit Price (${item.currency || "USD"})`} half>
   <Input type="number" value={item.unit_price} onChange={handlePriceChange} placeholder="0.00" />
 </Field>
-        <Field label="Total Weight" half>
+<Field label="Total Weight" half>
   <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: item.total_weight ? "#10b981" : "#475569", fontWeight: item.total_weight ? 700 : 400, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
     {item.total_weight ? `${item.total_weight.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg` : "—"}
+  </div>
+</Field>
+<Field label="Total Meterage" half>
+  <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: item.total_meterage ? "#60a5fa" : "#475569", fontWeight: item.total_meterage ? 700 : 400, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
+    {item.total_meterage ? `${item.total_meterage.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m` : "—"}
   </div>
 </Field>
 <Field label={`Total (${item.currency || "USD"})`}>
