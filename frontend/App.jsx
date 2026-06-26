@@ -668,7 +668,12 @@ const [f, setF] = useState(initial || {
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Product Code" half><Input value={f.code} onChange={set("code")} placeholder="PROD-001" /></Field>
       <Field label="Name" half><Input value={f.name} onChange={set("name")} /></Field>
-      <Field label="Category" half><Input value={f.category} onChange={set("category")} /></Field>
+      <Field label="Category" half>
+  <Select value={f.category} onChange={set("category")}>
+    <option value="">Select...</option>
+    {["Textile","Machine","DTF Film","Chemical","Accessory","Packaging","Other"].map(c => <option key={c}>{c}</option>)}
+  </Select>
+</Field>
 
       <Field label="Supplier" half>
         <div style={{ position: "relative" }}>
