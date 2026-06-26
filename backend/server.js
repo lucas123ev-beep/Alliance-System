@@ -77,18 +77,18 @@ app.put('/api/orders/:id', (req, res) => {
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
     port_of_discharge, notes, req.params.id);
 
-  db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
-  if (items && items.length > 0) {
-    const insertItem = db.prepare(`
-      INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const item of items) {
-      insertItem.run(req.params.id, item.product_id || null, item.product_name,
-  item.product_code || null, item.supplier || null, item.quantity,
-  item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0, item.total_weight || null, item.total_meterage || null);
-    }
+db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
+if (items && items.length > 0) {
+  const insertItem = db.prepare(`
+    INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total, total_weight, total_meterage)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const item of items) {
+    insertItem.run(req.params.id, item.product_id || null, item.product_name,
+      item.product_code || null, item.supplier || null, item.quantity,
+      item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0, item.total_weight || null, item.total_meterage || null);
   }
+}
 
   const order = db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id);
   const savedItems = db.prepare('SELECT * FROM order_items WHERE order_id=?').all(req.params.id);
