@@ -702,7 +702,7 @@ const [f, setF] = useState(initial || {
       <Field label="Unit" half>
   <Select value={f.unit} onChange={set("unit")}>
     <option value="">Select...</option>
-    {["Unit","Roll","Package","Box"].map(u => <option key={u}>{u}</option>)}
+    {["Unit","Roll","Package"].map(u => <option key={u}>{u}</option>)}
   </Select>
 </Field>
 
