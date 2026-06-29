@@ -177,6 +177,13 @@ function ProductItemModal({ onSave, onClose, initial, products }) {
   const [showList, setShowList] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
 
+  useEffect(() => {
+  if (initial?.product_id) {
+    const found = products.find(p => p.id === initial.product_id);
+    if (found) setSelectedProduct(found);
+  }
+}, []);
+
   const filtered = products.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     p.code.toLowerCase().includes(search.toLowerCase())
@@ -296,8 +303,8 @@ const handleQtyChange = (e) => {
           </div>
         </Field>
         <Field label="Unit" half>
-          <Input value={item.unit} onChange={e => setItem(p => ({ ...p, unit: e.target.value }))} placeholder="unit" />
-        </Field>
+  <Input value={item.unit} onChange={e => setItem(p => ({ ...p, unit: e.target.value }))} placeholder="Auto-filled from product" readOnly />
+</Field>
         <Field label="Quantity" half>
           <Input type="number" value={item.quantity} onChange={handleQtyChange} placeholder="0" />
         </Field>
