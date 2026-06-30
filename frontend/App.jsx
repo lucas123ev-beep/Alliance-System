@@ -638,7 +638,7 @@ useEffect(() => {
 
 function ProductForm({ initial, onSave, onClose }) {
 const [f, setF] = useState(initial || {
-  code: "", name: "", description: "", unit: "unit",
+  code: "", name: "", description: "", unit: "unit", ncm: "",
   width: "", width_unit: "cm",
   height: "", height_unit: "cm",
   thickness: "", thickness_unit: "mm",
@@ -683,6 +683,7 @@ const [f, setF] = useState(initial || {
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Product Code" half><Input value={f.code} onChange={set("code")} placeholder="PROD-001" /></Field>
       <Field label="Name" half><Input value={f.name} onChange={set("name")} /></Field>
+      <Field label="NCM" half><Input value={f.ncm} onChange={set("ncm")} placeholder="0000.00.00" /></Field>
       <Field label="Category" half>
   <Select value={f.category} onChange={set("category")}>
     <option value="">Select...</option>
