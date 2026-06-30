@@ -32,15 +32,15 @@ app.get('/api/orders/:id', (req, res) => {
 app.post('/api/orders', (req, res) => {
   const { order_number, client, supplier, product, value, currency, production_lead_time,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
-    port_of_discharge, notes, items } = req.body;
+    port_of_discharge, acquisition_company, notes, items } = req.body;
   try {
     const insert = db.transaction(() => {
       const result = db.prepare(`
         INSERT INTO orders (order_number, client, supplier, product, value, currency, production_lead_time,
-          shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(order_number, client, supplier, product, value, currency || 'USD', production_lead_time,
-        shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, notes);
+  shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, acquisition_company, notes)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(order_number, client, supplier, product, value, currency || 'USD', production_lead_time,
+  shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, acquisition_company || '', notes);
       const orderId = result.lastInsertRowid;
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
@@ -70,12 +70,12 @@ app.put('/api/orders/:id', (req, res) => {
   db.prepare(`
     UPDATE orders SET order_number=?, client=?, supplier=?, product=?, value=?, currency=?,
       production_lead_time=?, shipment_date=?, arrival_date=?, incoterm=?,
-      payment_terms=?, port_of_loading=?, port_of_discharge=?, notes=?,
+      payment_terms=?, port_of_loading=?, port_of_discharge=?, acquisition_company=?, notes=?,
       updated_at=datetime('now')
     WHERE id=?
   `).run(order_number, client, supplier, product, value, currency, production_lead_time,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
-    port_of_discharge, notes, req.params.id);
+    port_of_discharge, acquisition_company || '', notes, req.params.id);
 
 db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
 if (items && items.length > 0) {
