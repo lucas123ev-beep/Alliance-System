@@ -350,7 +350,8 @@ function OrderForm({ initial, onSave, onClose }) {
   const [f, setF] = useState(initial || {
     order_number: "", client: "", supplier: "", value: "", currency: "USD",
     production_lead_time: "", shipment_date: "", arrival_date: "",
-    incoterm: "", payment_terms: "", port_of_loading: "", port_of_discharge: "", notes: "",
+    incoterm: "", payment_terms: "", port_of_loading: "", port_of_discharge: "",
+    acquisition_company: "", notes: "",
   });
   const [items, setItems] = useState(initial?.items || []);
   const [clients, setClients] = useState([]);
@@ -504,6 +505,14 @@ useEffect(() => {
             )}
           </div>
         </Field>
+
+        <Field label="Acquisition Company">
+  <Select value={f.acquisition_company} onChange={set("acquisition_company")}>
+    <option value="">Select...</option>
+    <option value="HK">HONG KONG ALLIANCE GLOBAL TRADING CO., LTD</option>
+    <option value="NINGBO">NINGBO WORLD ALLIANCE TRADING. CO. LTD.</option>
+  </Select>
+</Field>
 
         {/* PRODUCTS LIST */}
         <Field label="Products">
