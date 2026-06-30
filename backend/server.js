@@ -155,12 +155,12 @@ app.get('/api/products', (req, res) => {
 });
 
 app.post('/api/products', (req, res) => {
-  const { code, name, description, unit, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, unit_cost, cost_currency, category, supplier } = req.body;
+  const { code, name, description, unit, ncm, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, unit_cost, cost_currency, category, supplier } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO products (code, name, description, unit, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, unit_cost, cost_currency, category, supplier)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(code, name, description, unit || 'unit', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', unit_cost || 0, cost_currency || 'USD', category, supplier);
+      INSERT INTO products (code, name, description, unit, ncm, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, unit_cost, cost_currency, category, supplier)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(code, name, description, unit || 'unit', ncm || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', unit_cost || 0, cost_currency || 'USD', category, supplier);
     res.status(201).json(db.prepare('SELECT * FROM products WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -168,11 +168,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 });
 
 app.put('/api/products/:id', (req, res) => {
-  const { code, name, description, unit, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, unit_cost, cost_currency, category, supplier } = req.body;
+  const { code, name, description, unit, ncm, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, unit_cost, cost_currency, category, supplier } = req.body;
 db.prepare(`
-  UPDATE products SET code=?, name=?, description=?, unit=?, width=?, width_unit=?, height=?, height_unit=?, thickness=?, thickness_unit=?, weight=?, weight_unit=?, unit_cost=?, cost_currency=?, category=?, supplier=?
+  UPDATE products SET code=?, name=?, description=?, unit=?, ncm=?, width=?, width_unit=?, height=?, height_unit=?, thickness=?, thickness_unit=?, weight=?, weight_unit=?, unit_cost=?, cost_currency=?, category=?, supplier=?
   WHERE id=?
-`).run(code, name, description, unit, width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', unit_cost, cost_currency || 'USD', category, supplier, req.params.id);
+`).run(code, name, description, unit, ncm || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', unit_cost, cost_currency || 'USD', category, supplier, req.params.id);
   res.json(db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id));
 });
 
