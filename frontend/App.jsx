@@ -194,30 +194,38 @@ function ProductItemModal({ onSave, onClose, initial, products }) {
   if (!product || !quantity) return null;
   const qty = parseFloat(quantity) || 0;
   const w = parseFloat(product.weight) || 0;
-  const h = parseFloat(product.height) || 0;
-  const width = parseFloat(product.width) || 0;
   if (!w || !qty) return null;
 
+  const category = product.category || "";
   const wu = product.weight_unit || "kg";
-  let totalKg = 0;
 
-  if (wu === "g/m²") {
-    const heightM = h * (product.height_unit === "cm" ? 0.01 : product.height_unit === "mm" ? 0.001 : 1);
-    const widthM = width * (product.width_unit === "cm" ? 0.01 : product.width_unit === "mm" ? 0.001 : 1);
-    totalKg = (w / 1000) * widthM * heightM * qty;
-  } else if (wu === "g/m") {
-    const heightM = h * (product.height_unit === "cm" ? 0.01 : product.height_unit === "mm" ? 0.001 : 1);
-    totalKg = (w / 1000) * heightM * qty;
-  } else if (wu === "g") {
-    totalKg = (w / 1000) * qty;
-  } else if (wu === "kg") {
-    totalKg = w * qty;
-  } else if (wu === "lb") {
-    totalKg = w * 0.453592 * qty;
-  } else if (wu === "oz") {
-    totalKg = w * 0.0283495 * qty;
+  // Cálculo complexo apenas para Textile e DTF Film
+  if (category === "Textile" || category === "DTF Film") {
+    const h = parseFloat(product.height) || 0;
+    const width = parseFloat(product.width) || 0;
+    if (!h) return null;
+
+    if (wu === "g/m²") {
+      const heightM = h * (product.height_unit === "cm" ? 0.01 : product.height_unit === "mm" ? 0.001 : 1);
+      const widthM = width * (product.width_unit === "cm" ? 0.01 : product.width_unit === "mm" ? 0.001 : 1);
+      return (w / 1000) * widthM * heightM * qty;
+    } else if (wu === "g/m") {
+      const heightM = h * (product.height_unit === "cm" ? 0.01 : product.height_unit === "mm" ? 0.001 : 1);
+      return (w / 1000) * heightM * qty;
+    } else if (wu === "g") {
+      return (w / 1000) * qty;
+    } else if (wu === "kg") {
+      return w * qty;
+    }
+    return null;
   }
-  return totalKg;
+
+  // Cálculo simples para todas as outras categorias
+  if (wu === "kg") return w * qty;
+  if (wu === "g") return (w / 1000) * qty;
+  if (wu === "lb") return w * 0.453592 * qty;
+  if (wu === "oz") return w * 0.0283495 * qty;
+  return w * qty;
 };
 
 const selectProduct = (p) => {
