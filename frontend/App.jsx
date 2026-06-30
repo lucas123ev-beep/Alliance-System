@@ -238,9 +238,9 @@ const selectProduct = (p) => {
       product_code: p.code,
       supplier: p.supplier || "",
       unit: p.unit || "unit",
-      currency: p.sale_currency || "USD",
-      unit_price: p.sale_price || "",
-      total: prev.quantity && p.sale_price ? (parseFloat(prev.quantity) * parseFloat(p.sale_price)).toFixed(2) : "",
+      currency: p.cost_currency || "USD",
+      unit_price: p.unit_cost || "",
+      total: prev.quantity && p.unit_cost ? (parseFloat(prev.quantity) * parseFloat(p.unit_cost)).toFixed(2) : "",
     }));
     setShowList(false);
   };
