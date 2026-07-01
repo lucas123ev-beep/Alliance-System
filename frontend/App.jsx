@@ -1311,6 +1311,7 @@ cols={[
 function Samples() {
  const [samples, setSamples] = useState([]);
   const [modal, setModal] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
   const load = useCallback(() => api("/samples").then(setSamples), []);
   useEffect(() => { load(); }, [load]);
@@ -1339,6 +1340,12 @@ function Samples() {
           <SampleForm onSave={b => api("/samples", "POST", b).then(load)} onClose={() => setModal(false)} />
         </Modal>
       )}
+
+      {editing && (
+  <Modal title="Edit Sample" onClose={() => setEditing(null)}>
+    <SampleForm initial={editing} onSave={b => api(`/samples/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
+  </Modal>
+)}
       <Table
         cols={[
           { label: "Product", render: r => <span style={{ fontWeight: 600 }}>{r.product_name}</span> },
@@ -1354,8 +1361,11 @@ function Samples() {
           )},
           { label: "Notes", key: "notes" },
           { label: "", render: r => (
-            <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/samples/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
-          )},
+  <div style={{ display: "flex", gap: "6px" }}>
+    <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
+    <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/samples/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+  </div>
+)},
         ]}
         rows={filtered}
       />
