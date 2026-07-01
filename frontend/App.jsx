@@ -1342,31 +1342,34 @@ function Samples() {
       )}
 
       {editing && (
+  {editing && (
   <Modal title="Edit Sample" onClose={() => setEditing(null)}>
     <SampleForm initial={editing} onSave={b => api(`/samples/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
   </Modal>
 )}
       <Table
         cols={[
-          { label: "Product", render: r => <span style={{ fontWeight: 600 }}>{r.product_name}</span> },
-          { label: "Client", key: "client" },
-          { label: "Requested", render: r => fmtDate(r.requested_date) },
-          { label: "Sent", render: r => fmtDate(r.sent_date) },
-          { label: "Status", render: r => (
-            <select value={r.status}
-              onChange={async e => { await api(`/samples/${r.id}/status`, "PATCH", { status: e.target.value }); load(); }}
-              style={{ ...inputStyle, padding: "4px 8px", color: sampleColors[r.status] || "#94a3b8", fontSize: "12px", width: "auto" }}>
-              {SAMPLE_STATUSES.map(s => <option key={s}>{s}</option>)}
-            </select>
-          )},
-          { label: "Notes", key: "notes" },
-          { label: "", render: r => (
-  <div style={{ display: "flex", gap: "6px" }}>
-    <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
-    <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/samples/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
-  </div>
-)},
-        ]}
+  { label: "Code", render: r => <span style={{ fontFamily: "monospace", color: "#60a5fa" }}>{r.code || "—"}</span> },
+  { label: "Category", key: "category" },
+  { label: "Product", render: r => <span style={{ fontWeight: 600 }}>{r.product_name}</span> },
+  { label: "Client", key: "client" },
+  { label: "Requested", render: r => fmtDate(r.requested_date) },
+  { label: "Sent", render: r => fmtDate(r.sent_date) },
+  { label: "Status", render: r => (
+    <select value={r.status}
+      onChange={async e => { await api(`/samples/${r.id}/status`, "PATCH", { status: e.target.value }); load(); }}
+      style={{ ...inputStyle, padding: "4px 8px", color: sampleColors[r.status] || "#94a3b8", fontSize: "12px", width: "auto" }}>
+      {SAMPLE_STATUSES.map(s => <option key={s}>{s}</option>)}
+    </select>
+  )},
+  { label: "Notes", key: "notes" },
+  { label: "", render: r => (
+    <div style={{ display: "flex", gap: "6px" }}>
+      <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
+      <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/samples/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+    </div>
+  )},
+]}
         rows={filtered}
       />
     </div>
