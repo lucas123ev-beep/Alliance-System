@@ -782,9 +782,9 @@ const [f, setF] = useState(initial || {
   );
 }
 
-function SampleForm({ onSave, onClose }) {
-  const [f, setF] = useState({ code: "", product_name: "", category: "", client: "", requested_date: "", status: "Requested", notes: "" });
-  const [clients, setClients] = useState([]);
+function SampleForm({ onSave, onClose, initial }) {
+  const [f, setF] = useState(initial || { code: "", product_name: "", category: "", client: "", requested_date: "", status: "Requested", notes: "" });
+const [clientSearch, setClientSearch] = useState(initial?.client || "");
   const [clientSearch, setClientSearch] = useState("");
   const [showClientList, setShowClientList] = useState(false);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
