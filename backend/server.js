@@ -164,6 +164,15 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   res.status(201).json(db.prepare('SELECT * FROM samples WHERE id=?').get(result.lastInsertRowid));
 });
 
+app.put('/api/samples/:id', (req, res) => {
+  const { code, product_name, category, client, requested_date, sent_date, status, notes } = req.body;
+  db.prepare(`
+    UPDATE samples SET code=?, product_name=?, category=?, client=?, requested_date=?, sent_date=?, status=?, notes=?
+    WHERE id=?
+  `).run(code || '', product_name, category || '', client, requested_date, sent_date, status, notes, req.params.id);
+  res.json(db.prepare('SELECT * FROM samples WHERE id=?').get(req.params.id));
+});
+
 app.patch('/api/samples/:id/status', (req, res) => {
   const { status } = req.body;
   db.prepare('UPDATE samples SET status=? WHERE id=?').run(status, req.params.id);
