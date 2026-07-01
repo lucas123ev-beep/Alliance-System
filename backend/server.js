@@ -156,11 +156,11 @@ app.get('/api/samples', (req, res) => {
 });
 
 app.post('/api/samples', (req, res) => {
-  const { product_id, product_name, client, requested_date, sent_date, feedback_date, status, notes } = req.body;
+  const { code, product_id, product_name, category, client, requested_date, sent_date, feedback_date, status, notes } = req.body;
   const result = db.prepare(`
-    INSERT INTO samples (product_id, product_name, client, requested_date, sent_date, feedback_date, status, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(product_id || null, product_name, client, requested_date, sent_date, feedback_date, status || 'Requested', notes);
+    INSERT INTO samples (code, product_id, product_name, category, client, requested_date, sent_date, feedback_date, status, notes)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(code || '', product_id || null, product_name, category || '', client, requested_date, sent_date, feedback_date, status || 'Requested', notes);
   res.status(201).json(db.prepare('SELECT * FROM samples WHERE id=?').get(result.lastInsertRowid));
 });
 
