@@ -783,12 +783,57 @@ const [f, setF] = useState(initial || {
 }
 
 function SampleForm({ onSave, onClose }) {
-  const [f, setF] = useState({ product_name: "", client: "", requested_date: "", status: "Requested", notes: "" });
+  const [f, setF] = useState({ code: "", product_name: "", category: "", client: "", requested_date: "", status: "Requested", notes: "" });
+  const [clients, setClients] = useState([]);
+  const [clientSearch, setClientSearch] = useState("");
+  const [showClientList, setShowClientList] = useState(false);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+
+  useEffect(() => { api("/clients").then(setClients); }, []);
+
+  const filteredClients = clients.filter(c => c.company_name.toLowerCase().includes(clientSearch.toLowerCase()));
+
+  const dropdownStyle = {
+    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+    background: "#1e293b", border: "1px solid #334155", borderRadius: "8px",
+    maxHeight: "180px", overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+  };
+  const dropItemStyle = {
+    padding: "10px 12px", cursor: "pointer", fontSize: "13px", color: "#cbd5e1",
+    borderBottom: "1px solid #0f172a",
+  };
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+      <Field label="Code" half><Input value={f.code} onChange={set("code")} placeholder="SMP-001" /></Field>
+      <Field label="Category" half>
+        <Select value={f.category} onChange={set("category")}>
+          <option value="">Select...</option>
+          {["Textile","Machine","DTF Film","Chemical","Accessory","Packaging","Other"].map(c => <option key={c}>{c}</option>)}
+        </Select>
+      </Field>
       <Field label="Product Name"><Input value={f.product_name} onChange={set("product_name")} /></Field>
-      <Field label="Client" half><Input value={f.client} onChange={set("client")} /></Field>
+      <Field label="Client" half>
+        <div style={{ position: "relative" }}>
+          <Input value={clientSearch}
+            onChange={e => { setClientSearch(e.target.value); setF(p => ({ ...p, client: e.target.value })); setShowClientList(true); }}
+            onFocus={() => setShowClientList(true)}
+            onBlur={() => setTimeout(() => setShowClientList(false), 200)}
+            placeholder="Search client…" />
+          {showClientList && filteredClients.length > 0 && (
+            <div style={dropdownStyle}>
+              {filteredClients.map(c => (
+                <div key={c.id} style={dropItemStyle}
+                  onMouseDown={() => { setClientSearch(c.company_name); setF(p => ({ ...p, client: c.company_name })); setShowClientList(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  {c.company_name}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Field>
       <Field label="Requested Date" half><Input type="date" value={f.requested_date} onChange={set("requested_date")} /></Field>
       <Field label="Sent Date" half><Input type="date" value={f.sent_date || ""} onChange={set("sent_date")} /></Field>
       <Field label="Status" half>
