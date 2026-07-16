@@ -11,6 +11,94 @@ const fmt = (n, cur = "USD") =>
 
 const fmtDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-US") : "—");
 
+// The two Alliance Global trading entities used to issue Proformas, Commercial
+// Invoices and Packing Lists. Since the business is a trader, the "Manufacturer"
+// shown on client-facing documents is always one of these — never the real
+// factory/supplier. Mirrors backend/pdf/acquisitionCompanies.js.
+const ACQUISITION_COMPANIES = {
+  HK: {
+    name: "HONG KONG ALLIANCE GLOBAL TRADING CO., LTD",
+    address: "Unit 6, 10/Floor, Siu On Plaza. | 482 Jaffe Road, Causeway Bay. | Hong Kong",
+    tel: "+ 856 2528 2801",
+  },
+  NINGBO: {
+    name: "NINGBO WORLD ALLIANCE TRADING. CO. LTD.",
+    address: "715, Changxing Road, 501, Jiangbei District | Ningbo - Zhejiang - China | Zip Code: 315000",
+    tel: "+86 15888552349",
+  },
+};
+const getAcqCompany = (code) => ACQUISITION_COMPANIES[code] || ACQUISITION_COMPANIES.HK;
+
+// Shared searchable-dropdown ports lists (used by OrderForm and ProformaForm
+// for Port of Loading / Port of Discharge).
+const CHINA_PORTS_OPTIONS = [
+  "Shanghai, CN", "Shenzhen, CN", "Ningbo, CN", "Guangzhou, CN", "Qingdao, CN",
+  "Tianjin, CN", "Dalian, CN", "Xiamen, CN", "Suzhou, CN", "Foshan, CN",
+  "Dongguan, CN", "Zhongshan, CN", "Zhuhai, CN", "Shantou, CN", "Quanzhou, CN",
+  "Fuzhou, CN", "Wenzhou, CN", "Nanjing, CN", "Wuhan, CN", "Chongqing, CN",
+  "Chengdu, CN", "Hangzhou, CN", "Nantong, CN", "Lianyungang, CN", "Yantai, CN",
+  "Qinhuangdao, CN", "Tangshan, CN", "Rizhao, CN", "Zhanjiang, CN", "Huangpu, CN",
+  "Chiwan, CN", "Yantian, CN", "Shekou, CN", "Nansha, CN", "Taicang, CN",
+  "Zhoushan, CN", "Jinzhou, CN", "Yingkou, CN", "Dandong, CN", "Fangchenggang, CN",
+  "Beihai, CN", "Haikou, CN", "Sanya, CN", "Lanzhou, CN", "Urumqi, CN",
+];
+
+const BRAZIL_PORTS_OPTIONS = [
+  "Santos, BR", "Paranaguá, BR", "Rio de Janeiro, BR", "Itajaí, BR", "Suape, BR",
+  "Manaus, BR", "Salvador, BR", "Fortaleza, BR", "Belém, BR", "Rio Grande, BR",
+  "Vitória, BR", "São Francisco do Sul, BR", "Navegantes, BR", "Imbituba, BR",
+  "Porto Alegre, BR", "Recife, BR", "Maceió, BR", "Natal, BR", "São Luís, BR",
+  "Aratu, BR", "Angra dos Reis, BR", "Sepetiba, BR", "Presidente Epitácio, BR",
+  "Santarém, BR", "Porto Velho, BR", "Corumbá, BR", "Ladário, BR",
+  "Ilhéus, BR", "Cabedelo, BR", "Pecém, BR",
+];
+
+const PORT_DROPDOWN_STYLE = {
+  position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+  background: "#1e293b", border: "1px solid #334155", borderRadius: "8px",
+  maxHeight: "180px", overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+};
+const PORT_DROP_ITEM_STYLE = {
+  padding: "10px 12px", cursor: "pointer", fontSize: "13px", color: "#cbd5e1",
+  borderBottom: "1px solid #0f172a",
+};
+
+// Reusable searchable port input, used for Port of Loading / Port of Discharge
+// on both OrderForm and ProformaForm.
+function PortAutocomplete({ value, onChange, options, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const filtered = options.filter(p => p.toLowerCase().includes((value || "").toLowerCase()));
+  return (
+    <div style={{ position: "relative" }}>
+      <Input value={value || ""}
+        onChange={e => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+        placeholder={placeholder} />
+      {open && filtered.length > 0 && (
+        <div style={PORT_DROPDOWN_STYLE}>
+          {filtered.map((p, i) => (
+            <div key={i} style={PORT_DROP_ITEM_STYLE}
+              onMouseDown={() => { onChange(p); setOpen(false); }}
+              onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{p}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// For Textile / DTF Film items, the roll price is derived from a per-meter
+// rate — show that rate alongside the roll total so it's clear where the
+// number came from. `field` is "sale_per_meter" or "cost_per_meter".
+const perMeterLabel = (item, field, cur) => {
+  const isTextile = item?.category === "Textile" || item?.category === "DTF Film";
+  const rate = item?.[field];
+  if (!isTextile || !rate) return null;
+  return `${fmt(parseFloat(rate), cur)}/m`;
+};
+
 async function api(path, method = "GET", body) {
   const res = await fetch(`${API}${path}`, {
     method,
@@ -274,6 +362,9 @@ const selectProduct = (p) => {
     cost_price: costPrice,
     cost_currency: p.cost_currency || "USD",
     total: prev.quantity && salePrice ? (parseFloat(prev.quantity) * parseFloat(salePrice)).toFixed(2) : "",
+    category: p.category || "",
+    sale_per_meter: isTextile ? (p.sale_per_meter || null) : null,
+    cost_per_meter: isTextile ? (p.cost_per_meter || null) : null,
   }));
   setShowList(false);
 };
@@ -398,8 +489,6 @@ function OrderForm({ initial, onSave, onClose }) {
   const [showClientList, setShowClientList] = useState(false);
   const [showSupplierList, setShowSupplierList] = useState(false);
   const [showPaymentList, setShowPaymentList] = useState(false);
-  const [showLoadingList, setShowLoadingList] = useState(false);
-  const [showDischargeList, setShowDischargeList] = useState(false);
   const [itemModal, setItemModal] = useState(null);
   const [editingItemIdx, setEditingItemIdx] = useState(null);
 
@@ -460,28 +549,6 @@ useEffect(() => {
     "30% ADV 70% BS – 30% Advance and 70% Before Shipment",
     "30%ADV/70%DP B. SHIP – 30% Advance, 70%DP Before Shipment",
     "30%ADV/70%DP BL – 30% Advance, 70%DP Under BL Copy",
-  ];
-
-  const chinaPortsOptions = [
-    "Shanghai, CN", "Shenzhen, CN", "Ningbo, CN", "Guangzhou, CN", "Qingdao, CN",
-    "Tianjin, CN", "Dalian, CN", "Xiamen, CN", "Suzhou, CN", "Foshan, CN",
-    "Dongguan, CN", "Zhongshan, CN", "Zhuhai, CN", "Shantou, CN", "Quanzhou, CN",
-    "Fuzhou, CN", "Wenzhou, CN", "Nanjing, CN", "Wuhan, CN", "Chongqing, CN",
-    "Chengdu, CN", "Hangzhou, CN", "Nantong, CN", "Lianyungang, CN", "Yantai, CN",
-    "Qinhuangdao, CN", "Tangshan, CN", "Rizhao, CN", "Zhanjiang, CN", "Huangpu, CN",
-    "Chiwan, CN", "Yantian, CN", "Shekou, CN", "Nansha, CN", "Taicang, CN",
-    "Zhoushan, CN", "Jinzhou, CN", "Yingkou, CN", "Dandong, CN", "Fangchenggang, CN",
-    "Beihai, CN", "Haikou, CN", "Sanya, CN", "Lanzhou, CN", "Urumqi, CN",
-  ];
-
-  const brazilPortsOptions = [
-    "Santos, BR", "Paranaguá, BR", "Rio de Janeiro, BR", "Itajaí, BR", "Suape, BR",
-    "Manaus, BR", "Salvador, BR", "Fortaleza, BR", "Belém, BR", "Rio Grande, BR",
-    "Vitória, BR", "São Francisco do Sul, BR", "Navegantes, BR", "Imbituba, BR",
-    "Porto Alegre, BR", "Recife, BR", "Maceió, BR", "Natal, BR", "São Luís, BR",
-    "Aratu, BR", "Angra dos Reis, BR", "Sepetiba, BR", "Presidente Epitácio, BR",
-    "Santarém, BR", "Porto Velho, BR", "Corumbá, BR", "Ladário, BR",
-    "Ilhéus, BR", "Cabedelo, BR", "Pecém, BR",
   ];
 
   const filteredClients = clients.filter(c => c.company_name.toLowerCase().includes(clientSearch.toLowerCase()));
@@ -562,6 +629,9 @@ useEffect(() => {
                   <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
                   <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
                   <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit} × {item.unit_price}</span>
+                  {perMeterLabel(item, "sale_per_meter", item.currency) && (
+                    <span style={{ color: "#a78bfa", marginLeft: "8px", fontSize: "11px" }}>({perMeterLabel(item, "sale_per_meter", item.currency)})</span>
+                  )}
                 </div>
                  <span style={{ color: "#10b981", fontWeight: 600, fontSize: "13px", whiteSpace: "nowrap" }}>
                  {fmt(parseFloat(item.total), item.currency || f.currency)}
@@ -613,43 +683,15 @@ useEffect(() => {
 </Field>
 
         <Field label="Port of Loading" half>
-          <div style={{ position: "relative" }}>
-            <Input value={f.port_of_loading}
-              onChange={e => { setF(p => ({ ...p, port_of_loading: e.target.value })); setShowLoadingList(true); }}
-              onFocus={() => setShowLoadingList(true)}
-              onBlur={() => setTimeout(() => setShowLoadingList(false), 200)}
-              placeholder="Search China ports or type any…" />
-            {showLoadingList && (
-              <div style={dropdownStyle}>
-                {chinaPortsOptions.filter(p => p.toLowerCase().includes((f.port_of_loading || "").toLowerCase())).map((p, i) => (
-                  <div key={i} style={dropItemStyle}
-                    onMouseDown={() => { setF(prev => ({ ...prev, port_of_loading: p })); setShowLoadingList(false); }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#334155"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{p}</div>
-                ))}
-              </div>
-            )}
-          </div>
+          <PortAutocomplete value={f.port_of_loading} options={CHINA_PORTS_OPTIONS}
+            onChange={v => setF(p => ({ ...p, port_of_loading: v }))}
+            placeholder="Search China ports or type any…" />
         </Field>
 
         <Field label="Port of Discharge" half>
-          <div style={{ position: "relative" }}>
-            <Input value={f.port_of_discharge}
-              onChange={e => { setF(p => ({ ...p, port_of_discharge: e.target.value })); setShowDischargeList(true); }}
-              onFocus={() => setShowDischargeList(true)}
-              onBlur={() => setTimeout(() => setShowDischargeList(false), 200)}
-              placeholder="Search Brazil ports or type any…" />
-            {showDischargeList && (
-              <div style={dropdownStyle}>
-                {brazilPortsOptions.filter(p => p.toLowerCase().includes((f.port_of_discharge || "").toLowerCase())).map((p, i) => (
-                  <div key={i} style={dropItemStyle}
-                    onMouseDown={() => { setF(prev => ({ ...prev, port_of_discharge: p })); setShowDischargeList(false); }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#334155"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{p}</div>
-                ))}
-              </div>
-            )}
-          </div>
+          <PortAutocomplete value={f.port_of_discharge} options={BRAZIL_PORTS_OPTIONS}
+            onChange={v => setF(p => ({ ...p, port_of_discharge: v }))}
+            placeholder="Search Brazil ports or type any…" />
         </Field>
 
         <Field label="Shipment Date" half>
@@ -1102,7 +1144,7 @@ setMedia(prev => [...prev, ...validResults]);
 function ProformaForm({ onSave, onClose, orders, initial }) {
   const [f, setF] = useState(initial || {
     order_id: "", number: "", issue_date: "", validity: "", client: "", total: "", currency: "USD", status: "Draft", notes: "",
-    acquisition_company: "", incoterm: "", way_of_shipment: "By Sea", port_of_loading: "", port_of_discharge: "", supplier: "",
+    acquisition_company: "", incoterm: "", way_of_shipment: "By Sea", port_of_loading: "", port_of_discharge: "",
   });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   return (
@@ -1138,7 +1180,6 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
           <option value="NINGBO">NINGBO WORLD ALLIANCE TRADING. CO. LTD.</option>
         </Select>
       </Field>
-      <Field label="Manufacturer / Supplier" half><Input value={f.supplier} onChange={set("supplier")} /></Field>
       <Field label="Incoterm" half>
         <Select value={f.incoterm} onChange={set("incoterm")}>
           <option value="">Select...</option>
@@ -1150,8 +1191,16 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
           <option>By Sea</option><option>By Air</option><option>By Land</option>
         </Select>
       </Field>
-      <Field label="Port of Loading" half><Input value={f.port_of_loading} onChange={set("port_of_loading")} /></Field>
-      <Field label="Port of Discharge" half><Input value={f.port_of_discharge} onChange={set("port_of_discharge")} /></Field>
+      <Field label="Port of Loading" half>
+        <PortAutocomplete value={f.port_of_loading} options={CHINA_PORTS_OPTIONS}
+          onChange={v => setF(p => ({ ...p, port_of_loading: v }))}
+          placeholder="Search China ports or type any…" />
+      </Field>
+      <Field label="Port of Discharge" half>
+        <PortAutocomplete value={f.port_of_discharge} options={BRAZIL_PORTS_OPTIONS}
+          onChange={v => setF(p => ({ ...p, port_of_discharge: v }))}
+          placeholder="Search Brazil ports or type any…" />
+      </Field>
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
@@ -1199,6 +1248,9 @@ function ContractForm({ onSave, onClose, orders, initial }) {
                 <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
                 <span style={{ color: "#f1f5f9", marginLeft: "8px", fontWeight: 600 }}>{item.product_name}</span>
                 <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
+                {perMeterLabel(item, "cost_per_meter", item.cost_currency || item.currency) && (
+                  <span style={{ color: "#a78bfa", marginLeft: "8px", fontSize: "11px" }}>({perMeterLabel(item, "cost_per_meter", item.cost_currency || item.currency)})</span>
+                )}
               </div>
               <span style={{ color: "#10b981", fontWeight: 600 }}>{item.cost_currency || item.currency} {parseFloat(item.cost_price || item.unit_price).toFixed(2)} × {item.quantity} = {fmt(parseFloat((item.cost_price || item.unit_price) * item.quantity), item.cost_currency || item.currency)}</span>
             </div>
@@ -1427,6 +1479,9 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
                   <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
                   <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
                   <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit} × {item.unit_price}</span>
+                  {perMeterLabel(item, "sale_per_meter", item.currency) && (
+                    <span style={{ color: "#a78bfa", marginLeft: "8px", fontSize: "11px" }}>({perMeterLabel(item, "sale_per_meter", item.currency)})</span>
+                  )}
                 </div>
                 <span style={{ color: "#10b981", fontWeight: 600, fontSize: "13px", whiteSpace: "nowrap" }}>
                   {fmt(parseFloat(item.total), item.currency || f.currency)}
@@ -1521,8 +1576,6 @@ const [modal, setModal] = useState(false);
 const [editing, setEditing] = useState(null);
 const [search, setSearch] = useState("");
 const [orders, setOrders] = useState([]);
-const [ordersCreated, setOrdersCreated] = useState([]);
-const [orderNotification, setOrderNotification] = useState(null);
   const load = useCallback(async () => {
   try {
     console.log('loading quotations...');
@@ -1534,10 +1587,7 @@ const [quotations, orders, proformas] = await Promise.all([
 setProformas(proformas);
     setQuotations(quotations || []);
 console.log('quotations set:', quotations?.length);
-    const created = (quotations || [])
-  .filter(q => (orders || []).some(o => (o.notes || "").includes(`Quotation ${q.number}`)))
-  .map(q => q.id);
-setOrdersCreated(created);
+    setOrders(orders || []);
   } catch(e) {
     console.error('load error:', e);
   }
@@ -1572,26 +1622,6 @@ setOrdersCreated(created);
       media: editing.media ? (typeof editing.media === 'string' ? JSON.parse(editing.media) : editing.media) : [],
     }} onSave={async b => { await api(`/quotations/${editing.id}`, "PUT", b); load(); }} onClose={() => setEditing(null)} />
   </Modal>
-)}
-
-{orderNotification && (
-  <div style={{
-    position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
-    zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center",
-  }}>
-    <div style={{
-      background: "#0f172a", border: "1px solid #10b981", borderRadius: "16px",
-      padding: "32px 40px", maxWidth: "420px", textAlign: "center",
-      boxShadow: "0 25px 60px rgba(0,0,0,0.6)",
-    }}>
-      <div style={{ fontSize: "48px", marginBottom: "16px" }}>🛒</div>
-      <h3 style={{ margin: "0 0 8px", color: "#10b981", fontSize: "18px", fontWeight: 700 }}>Order Created!</h3>
-      <p style={{ color: "#94a3b8", fontSize: "14px", margin: "0 0 24px" }}>
-        Order <strong style={{ color: "#f1f5f9" }}>{orderNotification}</strong> was created successfully!
-      </p>
-      <Btn color="#10b981" onClick={() => setOrderNotification(null)}>OK</Btn>
-    </div>
-  </div>
 )}
 
       {proformaModal && (
@@ -1638,7 +1668,6 @@ setOrdersCreated(created);
             </select>
           )},
          { label: "Actions", render: r => {
-  const hasOrder = ordersCreated.includes(r.id);
   const hasProforma = proformas.find(p => Number(p.quotation_id) === Number(r.id));
   return (
     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
@@ -1657,23 +1686,6 @@ setOrdersCreated(created);
         })}>
         📋 {hasProforma ? "Proforma ✓" : "Proforma"}
       </Btn>
-      <Btn small color={hasOrder ? "#10b981" : "#334155"} onClick={async () => {
-        const items = (() => { try { return JSON.parse(r.items || "[]"); } catch { return []; } })();
-        const orderNumber = `ORD-${r.number || Date.now().toString().slice(-6)}`;
-        const total = items.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0);
-        await api("/orders", "POST", {
-  order_number: orderNumber,
-  client: r.client || "",
-  supplier: r.suppliers || "",
-  value: r.total || total.toFixed(2),
-  currency: r.currency || "USD",
-  status: "Pending",
-  notes: `Created from Quotation ${r.number}`,
-  items,
-});
-        setOrdersCreated(prev => [...prev, r.id]);
-        setOrderNotification(orderNumber);
-      }}>🛒 {hasOrder ? "Order ✓" : "Create Order"}</Btn>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/quotations/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
     </div>
@@ -1990,8 +2002,7 @@ setPackingLists(packingLists);
         cbm: "",
       };
     });
-    const supplierNames = [...new Set((order.items || []).map(i => i.supplier).filter(Boolean))];
-    const supplierRow = suppliersList.find(s => s.company_name === (supplierNames[0] || order.supplier));
+    const acq = getAcqCompany(order.acquisition_company || "HK");
     const totals = items.reduce((acc, i) => ({
       totalLength: acc.totalLength + (parseFloat(i.totalLength) || 0),
       totalRoll: acc.totalRoll + (parseFloat(i.roll) || 0),
@@ -2010,8 +2021,8 @@ setPackingLists(packingLists);
       port_of_origin: order.port_of_loading || "",
       port_of_destination: order.port_of_discharge || "",
       incoterm: order.incoterm || "",
-      manufacturer: supplierRow?.company_name || supplierNames[0] || order.supplier || "",
-      manufacturer_address: supplierRow ? [supplierRow.address, supplierRow.address2].filter(Boolean).join(", ") : "",
+      manufacturer: acq.name,
+      manufacturer_address: acq.address,
       _items: items,
       items_json: JSON.stringify(items),
       total_length: totals.totalLength, total_roll: totals.totalRoll,
@@ -2213,6 +2224,9 @@ const generatePackingList = (order) => setPackingListModal(buildPackingListDraft
                     <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
                     <span style={{ color: "#f1f5f9", marginLeft: "8px" }}>{item.product_name}</span>
                     <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
+                    {perMeterLabel(item, "cost_per_meter", item.cost_currency || item.currency) && (
+                      <span style={{ color: "#a78bfa", marginLeft: "8px", fontSize: "11px" }}>({perMeterLabel(item, "cost_per_meter", item.cost_currency || item.currency)})</span>
+                    )}
                   </div>
               <span style={{ color: "#10b981", fontWeight: 600 }}>{item.cost_currency || item.currency} {parseFloat(item.cost_price || item.unit_price).toFixed(2)} × {item.quantity}</span>
                 </div>
@@ -2512,12 +2526,15 @@ function Samples() {
 function Proformas() {
 const [proformas, setProformas] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [quotations, setQuotations] = useState([]);
   const [modal, setModal] = useState(false);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(null);
+  const [orderNotification, setOrderNotification] = useState(null);
   const load = useCallback(() => {
     api("/proformas").then(setProformas);
     api("/orders").then(setOrders);
+    api("/quotations").then(setQuotations);
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -2526,6 +2543,35 @@ const [proformas, setProformas] = useState([]);
     p.client.toLowerCase().includes(search.toLowerCase()) ||
     (p.status || "").toLowerCase().includes(search.toLowerCase())
   );
+
+  // Builds an Order from the Proforma's own shipment fields plus the linked
+  // Quotation's items/client/currency/supplier — pulling as much info as
+  // possible from both, per the trader workflow (Proforma → Order).
+  const createOrderFromProforma = async (pf) => {
+    const quotation = quotations.find(q => Number(q.id) === Number(pf.quotation_id));
+    const items = quotation
+      ? (typeof quotation.items === 'string' ? (JSON.parse(quotation.items || "[]")) : (quotation.items || []))
+      : [];
+    const itemsTotal = items.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0);
+    const orderNumber = `ORD-${pf.number}`;
+    const order = await api("/orders", "POST", {
+      order_number: orderNumber,
+      client: pf.client || quotation?.client || "",
+      supplier: quotation?.suppliers || "",
+      value: pf.total || itemsTotal.toFixed(2),
+      currency: pf.currency || quotation?.currency || "USD",
+      incoterm: pf.incoterm || "",
+      port_of_loading: pf.port_of_loading || "",
+      port_of_discharge: pf.port_of_discharge || "",
+      acquisition_company: pf.acquisition_company || "",
+      status: "Pending",
+      notes: `Created from Proforma ${pf.number}${quotation ? ` (Quotation ${quotation.number})` : ""}`,
+      items,
+    });
+    await api(`/proformas/${pf.id}`, "PUT", { ...pf, order_id: order.id });
+    setOrderNotification(orderNumber);
+    load();
+  };
 
   return (
     <div>
@@ -2536,6 +2582,25 @@ const [proformas, setProformas] = useState([]);
         <Modal title="Edit Proforma" onClose={() => setEditing(null)} wide>
           <ProformaForm orders={orders} initial={editing} onSave={b => api(`/proformas/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
         </Modal>
+      )}
+      {orderNotification && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
+          zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <div style={{
+            background: "#0f172a", border: "1px solid #10b981", borderRadius: "16px",
+            padding: "32px 40px", maxWidth: "420px", textAlign: "center",
+            boxShadow: "0 25px 60px rgba(0,0,0,0.6)",
+          }}>
+            <div style={{ fontSize: "48px", marginBottom: "16px" }}>🛒</div>
+            <h3 style={{ margin: "0 0 8px", color: "#10b981", fontSize: "18px", fontWeight: 700 }}>Order Created!</h3>
+            <p style={{ color: "#94a3b8", fontSize: "14px", margin: "0 0 24px" }}>
+              Order <strong style={{ color: "#f1f5f9" }}>{orderNotification}</strong> was created successfully!
+            </p>
+            <Btn color="#10b981" onClick={() => setOrderNotification(null)}>OK</Btn>
+          </div>
+        </div>
       )}
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by number, client or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
@@ -2557,7 +2622,10 @@ cols={[
     </select>
   )},
   { label: "Actions", render: r => (
-    <div style={{ display: "flex", gap: "6px" }}>
+    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+      <Btn small color={r.order_id ? "#10b981" : "#334155"} onClick={() => !r.order_id && createOrderFromProforma(r)}>
+        🛒 {r.order_id ? "Order ✓" : "Create Order"}
+      </Btn>
       <Btn small outline color="#10b981" onClick={() => window.open(`${API}/proformas/${r.id}/pdf`, "_blank")}>📄 PDF</Btn>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/proformas/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
@@ -3017,8 +3085,8 @@ function CommercialInvoices() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
             <Field label="Number" half><Input value={editing.number} onChange={e => setEditing(p => ({ ...p, number: e.target.value }))} /></Field>
             <Field label="Issue Date" half><Input type="date" value={editing.issue_date} onChange={e => setEditing(p => ({ ...p, issue_date: e.target.value }))} /></Field>
-            <Field label="Total" half><input value={editCommercial.total} readOnly onChange={() => {}} style={{ ...inputStyle, opacity: 0.6, cursor: "not-allowed" }} /></Field>
-      <Field label="Currency" half><input value={editCommercial.currency} readOnly onChange={() => {}} style={{ ...inputStyle, opacity: 0.6, cursor: "not-allowed" }} /></Field>
+            <Field label="Total" half><input value={editing.total} readOnly onChange={() => {}} style={{ ...inputStyle, opacity: 0.6, cursor: "not-allowed" }} /></Field>
+      <Field label="Currency" half><input value={editing.currency} readOnly onChange={() => {}} style={{ ...inputStyle, opacity: 0.6, cursor: "not-allowed" }} /></Field>
             <Field label="Status" half>
               <Select value={editing.status} onChange={e => setEditing(p => ({ ...p, status: e.target.value }))}>
                 <option>Pending</option><option>Paid</option>

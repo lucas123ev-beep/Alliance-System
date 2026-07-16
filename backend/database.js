@@ -75,7 +75,10 @@ db.exec(`
     total_weight REAL,
     total_meterage REAL,
     cost_price REAL,
-    cost_currency TEXT
+    cost_currency TEXT,
+    category TEXT,
+    sale_per_meter REAL,
+    cost_per_meter REAL
   );
 
   CREATE TABLE IF NOT EXISTS samples (
@@ -293,6 +296,9 @@ const migrations = [
   ['order_items', 'total_meterage', 'REAL'],
   ['order_items', 'cost_price', 'REAL'],
   ['order_items', 'cost_currency', 'TEXT'],
+  ['order_items', 'category', 'TEXT'],
+  ['order_items', 'sale_per_meter', 'REAL'],
+  ['order_items', 'cost_per_meter', 'REAL'],
   ['samples', 'code', "TEXT DEFAULT ''"],
   ['samples', 'product_id', 'INTEGER'],
   ['samples', 'feedback_date', 'TEXT'],

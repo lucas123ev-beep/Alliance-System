@@ -67,13 +67,13 @@ app.post('/api/orders', (req, res) => {
       const orderId = result.lastInsertRowid;
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
-          INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total, total_weight, total_meterage, cost_price, cost_currency)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total, total_weight, total_meterage, cost_price, cost_currency, category, sale_per_meter, cost_per_meter)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         for (const item of items) {
           insertItem.run(orderId, item.product_id || null, item.product_name,
             item.product_code || null, item.supplier || null, item.quantity,
-            item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0, item.total_weight || null, item.total_meterage || null, item.cost_price || null, item.cost_currency || null);
+            item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0, item.total_weight || null, item.total_meterage || null, item.cost_price || null, item.cost_currency || null, item.category || null, item.sale_per_meter || null, item.cost_per_meter || null);
         }
       }
       return orderId;
@@ -103,13 +103,13 @@ app.put('/api/orders/:id', (req, res) => {
 db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
 if (items && items.length > 0) {
 const insertItem = db.prepare(`
-  INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total, total_weight, total_meterage, cost_price, cost_currency)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total, total_weight, total_meterage, cost_price, cost_currency, category, sale_per_meter, cost_per_meter)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
   for (const item of items) {
 insertItem.run(req.params.id, item.product_id || null, item.product_name,
   item.product_code || null, item.supplier || null, item.quantity,
-  item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0, item.total_weight || null, item.total_meterage || null, item.cost_price || null, item.cost_currency || null);
+  item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0, item.total_weight || null, item.total_meterage || null, item.cost_price || null, item.cost_currency || null, item.category || null, item.sale_per_meter || null, item.cost_per_meter || null);
   }
 }
 
@@ -719,8 +719,6 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
 
     const acqCode = pf.acquisition_company || order?.acquisition_company || 'HK';
     const acq = getAcq(acqCode);
-    const supplierName = pf.supplier || order?.supplier || quotation?.suppliers || '';
-    const supplierRow = findSupplierByName(supplierName.split(',')[0]?.trim());
     const clientRow = findClientByName(pf.client);
 
     const html = renderSalesInvoice({
@@ -733,7 +731,10 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
       portOfDestination: pf.port_of_discharge || order?.port_of_discharge,
       incoterm: pf.incoterm || order?.incoterm,
       acq,
-      manufacturer: { name: supplierRow?.company_name || supplierName, address: [supplierRow?.address, supplierRow?.address2].filter(Boolean).join(', '), tel: supplierRow?.phone },
+      // The company is a trading company (trader) — the "Manufacturer" shown on
+      // client-facing docs is always the selected Acquisition Company, never
+      // the real factory/supplier.
+      manufacturer: { name: acq.name, address: acq.addressLine, tel: acq.tel },
       items,
       totalLength,
       totalAmount,
@@ -763,7 +764,6 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
     const totalAmount = ci.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
 
     const acq = getAcq(order?.acquisition_company || 'HK');
-    const supplierRow = findSupplierByName(order?.supplier);
     const clientRow = findClientByName(ci.client);
     const pl = db.prepare('SELECT * FROM packing_lists WHERE order_id=? ORDER BY created_at DESC LIMIT 1').get(order?.id);
     const plSummary = pl ? `Rolls: ${pl.total_roll || 0} | Gross Weight: ${pl.total_gross_weight || 0} kg | Net Weight: ${pl.total_net_weight || 0} kg | CBM: ${pl.total_cbm || 0}` : '';
@@ -778,7 +778,8 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
       portOfDestination: order?.port_of_discharge,
       incoterm: order?.incoterm,
       acq,
-      manufacturer: { name: supplierRow?.company_name || order?.supplier, address: [supplierRow?.address, supplierRow?.address2].filter(Boolean).join(', '), tel: supplierRow?.phone },
+      // Trader company: "Manufacturer" is always the Acquisition Company, not the real supplier.
+      manufacturer: { name: acq.name, address: acq.addressLine, tel: acq.tel },
       items,
       totalLength,
       totalAmount,
