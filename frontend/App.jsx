@@ -116,6 +116,78 @@ const parseLocaleNumber = (v) => {
   return Number.isNaN(n) ? null : n;
 };
 
+// Converts a product's registered `height` (roll length) into meters,
+// regardless of the unit it was entered in. Used to convert between the
+// per-meter rate and the per-roll price.
+const heightMOf = (product) => {
+  if (!product) return 0;
+  const h = parseFloat(product.height) || 0;
+  return product.height_unit === "cm" ? h * 0.01 : product.height_unit === "mm" ? h * 0.001 : h;
+};
+
+// The registered per-meter sale price on the product record — the 0%
+// reference point the item's Markup % is measured against.
+const registeredPerMeter = (product) => {
+  const v = product ? parseFloat(product.sale_per_meter) : NaN;
+  return Number.isFinite(v) && v > 0 ? v : null;
+};
+
+// Recomputes an item's roll price, total, per-meter rate, and markup % when
+// one of the three editable pricing fields changes — used inline in the
+// Quotation screen's item list (where the final sale price to the client is
+// actually decided) for Textile / DTF Film items. `field` is one of
+// "sale_pct", "sale_per_meter", or "total"; `rawValue` is the raw text the
+// user typed (may be Brazilian-formatted, e.g. "1.000,00").
+function recalcTextileItem(item, product, field, rawValue) {
+  const heightM = heightMOf(product);
+  const qty = parseFloat(item.quantity) || 0;
+  const base = registeredPerMeter(product);
+
+  if (field === "sale_pct") {
+    const pct = parseLocaleNumber(rawValue);
+    const spm = base != null && pct != null ? base * (1 + pct / 100) : null;
+    const unitPrice = spm != null && heightM ? spm * heightM : null;
+    const total = unitPrice != null && qty ? unitPrice * qty : null;
+    return {
+      ...item,
+      sale_pct: rawValue,
+      sale_per_meter: spm != null ? spm.toFixed(2) : item.sale_per_meter,
+      unit_price: unitPrice != null ? unitPrice.toFixed(2) : item.unit_price,
+      total: total != null ? total.toFixed(2) : item.total,
+    };
+  }
+
+  if (field === "sale_per_meter") {
+    const spm = parseLocaleNumber(rawValue);
+    const unitPrice = spm != null && heightM ? spm * heightM : null;
+    const total = unitPrice != null && qty ? unitPrice * qty : null;
+    const pct = base != null && spm != null ? ((spm / base) - 1) * 100 : null;
+    return {
+      ...item,
+      sale_per_meter: rawValue,
+      unit_price: unitPrice != null ? unitPrice.toFixed(2) : item.unit_price,
+      total: total != null ? total.toFixed(2) : item.total,
+      sale_pct: pct != null ? pct.toFixed(2) : item.sale_pct,
+    };
+  }
+
+  if (field === "total") {
+    const total = parseLocaleNumber(rawValue);
+    const price = total != null && qty ? total / qty : null;
+    const spm = price != null && heightM ? price / heightM : null;
+    const pct = base != null && spm != null ? ((spm / base) - 1) * 100 : null;
+    return {
+      ...item,
+      total: rawValue,
+      unit_price: price != null ? price.toFixed(4) : item.unit_price,
+      sale_per_meter: spm != null ? spm.toFixed(2) : item.sale_per_meter,
+      sale_pct: pct != null ? pct.toFixed(2) : item.sale_pct,
+    };
+  }
+
+  return item;
+}
+
 // For Textile / DTF Film items, the roll price is derived from a per-meter
 // rate — show that rate alongside the roll total so it's clear where the
 // number came from. `field` is "sale_per_meter" or "cost_per_meter".
@@ -313,18 +385,7 @@ const [selectedProduct, setSelectedProduct] = useState(null); // ← adicionar e
   useEffect(() => {
   if (initial?.product_id) {
     const found = products.find(p => p.id === initial.product_id);
-    if (found) {
-      setSelectedProduct(found);
-      // Backward compatibility: items saved before the markup-% field
-      // existed don't have sale_pct stored — derive it once from the
-      // product's registered per-meter price vs. the saved sale_per_meter.
-      const base = parseFloat(found.sale_per_meter);
-      const spm = parseFloat(initial.sale_per_meter);
-      if (Number.isFinite(base) && base > 0 && Number.isFinite(spm) && (initial.sale_pct == null || initial.sale_pct === "")) {
-        const pct = ((spm / base) - 1) * 100;
-        setItem(prev => ({ ...prev, sale_pct: pct.toFixed(2) }));
-      }
-    }
+    if (found) setSelectedProduct(found);
   }
 }, []);
 
@@ -370,19 +431,6 @@ const [selectedProduct, setSelectedProduct] = useState(null); // ← adicionar e
   if (wu === "lb") return w * 0.453592 * qty;
   if (wu === "oz") return w * 0.0283495 * qty;
   return w * qty;
-};
-
-const heightMOf = (product) => {
-  if (!product) return 0;
-  const h = parseFloat(product.height) || 0;
-  return product.height_unit === "cm" ? h * 0.01 : product.height_unit === "mm" ? h * 0.001 : h;
-};
-
-// The registered per-meter sale price on the product record — the 0%
-// reference point the Markup % field is measured against.
-const basePerMeter = () => {
-  const v = selectedProduct ? parseFloat(selectedProduct.sale_per_meter) : NaN;
-  return Number.isFinite(v) && v > 0 ? v : null;
 };
 
 const selectProduct = (p) => {
@@ -446,65 +494,9 @@ const handleQtyChange = (e) => {
 };
 
   const handleTotalChange = (e) => {
-  const raw = e.target.value;
-  const total = parseLocaleNumber(raw);
-  const qty = parseFloat(item.quantity) || 0;
-  const isTextile = item.category === "Textile" || item.category === "DTF Film";
-  const heightM = heightMOf(selectedProduct);
-  const base = basePerMeter();
-  const price = total != null && qty ? total / qty : null;
-  const spm = isTextile && price != null && heightM ? price / heightM : null;
-  const pct = isTextile && base != null && spm != null ? ((spm / base) - 1) * 100 : null;
-  setItem(prev => ({
-    ...prev,
-    total: raw,
-    unit_price: price != null ? price.toFixed(4) : prev.unit_price,
-    sale_per_meter: spm != null ? spm.toFixed(2) : prev.sale_per_meter,
-    sale_pct: pct != null ? pct.toFixed(2) : prev.sale_pct,
-  }));
-};
-
-  // Editable "Value per Meter" field for Textile / DTF Film items — changing
-  // it recalculates the roll price, total, and markup % automatically (and
-  // vice-versa via handleTotalChange / handlePctChange).
-  const handleSalePerMeterChange = (e) => {
-  const raw = e.target.value;
-  const spm = parseLocaleNumber(raw);
-  const heightM = heightMOf(selectedProduct);
-  const qty = parseFloat(item.quantity) || 0;
-  const base = basePerMeter();
-  const unitPrice = spm != null && heightM ? spm * heightM : null;
-  const total = unitPrice != null && qty ? unitPrice * qty : null;
-  const pct = base != null && spm != null ? ((spm / base) - 1) * 100 : null;
-  setItem(prev => ({
-    ...prev,
-    sale_per_meter: raw,
-    unit_price: unitPrice != null ? unitPrice.toFixed(2) : prev.unit_price,
-    total: total != null ? total.toFixed(2) : prev.total,
-    sale_pct: pct != null ? pct.toFixed(2) : prev.sale_pct,
-  }));
-};
-
-  // Markup % field: the salesperson types an extra premium (e.g. 15) to add
-  // on top of the product's registered per-meter sale price for this
-  // specific negotiation — not tied to cost, since cost/tax data isn't
-  // reliably available for every product. 0% = the registered price as-is.
-  const handlePctChange = (e) => {
-  const raw = e.target.value;
-  const pct = parseLocaleNumber(raw);
-  const base = basePerMeter();
-  const heightM = heightMOf(selectedProduct);
-  const qty = parseFloat(item.quantity) || 0;
-  const spm = base != null && pct != null ? base * (1 + pct / 100) : null;
-  const unitPrice = spm != null && heightM ? spm * heightM : null;
-  const total = unitPrice != null && qty ? unitPrice * qty : null;
-  setItem(prev => ({
-    ...prev,
-    sale_pct: raw,
-    sale_per_meter: spm != null ? spm.toFixed(2) : prev.sale_per_meter,
-    unit_price: unitPrice != null ? unitPrice.toFixed(2) : prev.unit_price,
-    total: total != null ? total.toFixed(2) : prev.total,
-  }));
+  const total = e.target.value;
+  const price = total && item.quantity ? (parseFloat(total) / parseFloat(item.quantity)).toFixed(4) : item.unit_price;
+  setItem(prev => ({ ...prev, total, unit_price: price }));
 };
 
   const dropdownStyle = {
@@ -567,36 +559,12 @@ const handleQtyChange = (e) => {
     {item.total_meterage ? `${item.total_meterage.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m` : "—"}
   </div>
 </Field>
-{(item.category === "Textile" || item.category === "DTF Film") && (
-  <>
-    <Field label="Markup % (over registered price)" half>
-      <Input type="text" inputMode="decimal" value={item.sale_pct ?? ""} onChange={handlePctChange} placeholder="0" disabled={!basePerMeter()} />
-      {!basePerMeter() && <div style={{ fontSize: "11px", color: "#475569", marginTop: "4px" }}>Product has no registered per-meter price.</div>}
-    </Field>
-    <Field label={`Value per Meter (${item.currency || "USD"})`} half>
-      <Input type="text" inputMode="decimal" value={item.sale_per_meter ?? ""} onChange={handleSalePerMeterChange} placeholder="0,00" />
-    </Field>
-  </>
-)}
-<Field label={`Total (${item.currency || "USD"})`} half={item.category === "Textile" || item.category === "DTF Film"}>
-  <Input type="text" inputMode="decimal" value={item.total} onChange={handleTotalChange} placeholder="0,00" />
+<Field label={`Total (${item.currency || "USD"})`}>
+  <Input type="number" value={item.total} onChange={handleTotalChange} placeholder="0.00" />
 </Field>
         <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
           <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-          <Btn onClick={() => {
-            // Normalize any BR-formatted text ("1.000,00") typed into the
-            // per-meter/total/percentage fields into plain numbers before
-            // saving, so downstream displays (which use parseFloat) stay
-            // correct.
-            const cleaned = {
-              ...item,
-              total: item.total !== "" && item.total != null ? (parseLocaleNumber(item.total) ?? item.total) : item.total,
-              sale_per_meter: item.sale_per_meter !== "" && item.sale_per_meter != null ? (parseLocaleNumber(item.sale_per_meter) ?? item.sale_per_meter) : item.sale_per_meter,
-              sale_pct: item.sale_pct !== "" && item.sale_pct != null ? (parseLocaleNumber(item.sale_pct) ?? item.sale_pct) : item.sale_pct,
-            };
-            onSave(cleaned);
-            onClose();
-          }}>
+          <Btn onClick={() => { onSave(item); onClose(); }}>
             {initial ? "Update Item" : "Add Item"}
           </Btn>
         </div>
@@ -1496,7 +1464,7 @@ function QuotationForm({ onSave, onClose, initial }) {
   }, []);
 
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
-  const itemsTotal = items.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0);
+  const itemsTotal = items.reduce((sum, i) => sum + (parseLocaleNumber(i.total) || 0), 0);
 const [initialLoad, setInitialLoad] = useState(true);
 useEffect(() => {
   if (initialLoad) { setInitialLoad(false); return; }
@@ -1605,23 +1573,48 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
             {items.length === 0 && (
               <div style={{ padding: "12px 14px", color: "#475569", fontSize: "13px" }}>No products added yet.</div>
             )}
-            {items.map((item, idx) => (
-              <div key={idx} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderBottom: "1px solid #0f172a" }}>
-                <div style={{ flex: 1, fontSize: "13px" }}>
-                  <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
-                  <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
-                  <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit} × {item.unit_price}</span>
-                  {perMeterLabel(item, "sale_per_meter", item.currency) && (
-                    <span style={{ color: "#a78bfa", marginLeft: "8px", fontSize: "11px" }}>({perMeterLabel(item, "sale_per_meter", item.currency)})</span>
+            {items.map((item, idx) => {
+              const isTextile = item.category === "Textile" || item.category === "DTF Film";
+              const product = products.find(p => Number(p.id) === Number(item.product_id));
+              const onPriceField = (field) => (e) => updateItem(idx, recalcTextileItem(item, product, field, e.target.value));
+              return (
+                <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid #0f172a" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ flex: 1, fontSize: "13px" }}>
+                      <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
+                      <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
+                      <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit} × {item.unit_price}</span>
+                    </div>
+                    {!isTextile && (
+                      <span style={{ color: "#10b981", fontWeight: 600, fontSize: "13px", whiteSpace: "nowrap" }}>
+                        {fmt(parseFloat(item.total), item.currency || f.currency)}
+                      </span>
+                    )}
+                    <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
+                    <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
+                  </div>
+                  {isTextile && (
+                    <div style={{ display: "flex", gap: "12px", alignItems: "flex-end", marginTop: "8px", flexWrap: "wrap" }}>
+                      <label style={{ fontSize: "11px", color: "#64748b" }}>Markup %
+                        <input type="text" inputMode="decimal" value={item.sale_pct ?? ""} onChange={onPriceField("sale_pct")}
+                          placeholder="0"
+                          style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "70px" }} />
+                      </label>
+                      <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Meter ({item.currency || f.currency})
+                        <input type="text" inputMode="decimal" value={item.sale_per_meter ?? ""} onChange={onPriceField("sale_per_meter")}
+                          placeholder="0,00"
+                          style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
+                      </label>
+                      <label style={{ fontSize: "11px", color: "#64748b" }}>Total ({item.currency || f.currency})
+                        <input type="text" inputMode="decimal" value={item.total ?? ""} onChange={onPriceField("total")}
+                          placeholder="0,00"
+                          style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "110px", fontWeight: 700, color: "#10b981" }} />
+                      </label>
+                    </div>
                   )}
                 </div>
-                <span style={{ color: "#10b981", fontWeight: 600, fontSize: "13px", whiteSpace: "nowrap" }}>
-                  {fmt(parseFloat(item.total), item.currency || f.currency)}
-                </span>
-                <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
-                <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
-              </div>
-            ))}
+              );
+            })}
             <div style={{ padding: "10px 14px" }}>
               <Btn small color="#3b82f6" onClick={() => { setEditingItemIdx(null); setItemModal("new"); }}>+ Add Product</Btn>
             </div>
@@ -1693,7 +1686,20 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
 
         <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
           <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-          <Btn onClick={async () => { await onSave({ ...f, items: JSON.stringify(items), media: JSON.stringify(media) }); onClose(); }}>Save Quotation</Btn>
+          <Btn onClick={async () => {
+            // Normalize any BR-formatted text ("1.000,00") typed into the
+            // inline Markup %/Value-per-Meter/Total fields into plain
+            // numbers before saving, so downstream displays (which use
+            // parseFloat) stay correct.
+            const cleanedItems = items.map(item => ({
+              ...item,
+              total: item.total !== "" && item.total != null ? (parseLocaleNumber(item.total) ?? item.total) : item.total,
+              sale_per_meter: item.sale_per_meter !== "" && item.sale_per_meter != null ? (parseLocaleNumber(item.sale_per_meter) ?? item.sale_per_meter) : item.sale_per_meter,
+              sale_pct: item.sale_pct !== "" && item.sale_pct != null ? (parseLocaleNumber(item.sale_pct) ?? item.sale_pct) : item.sale_pct,
+            }));
+            await onSave({ ...f, items: JSON.stringify(cleanedItems), media: JSON.stringify(media) });
+            onClose();
+          }}>Save Quotation</Btn>
         </div>
       </div>
     </>
