@@ -89,6 +89,33 @@ function PortAutocomplete({ value, onChange, options, placeholder }) {
   );
 }
 
+// Parses a number typed with Brazilian formatting (e.g. "1.000,00" or
+// "1000,00") or plain JS-style decimal ("1000.00") into a standard float.
+// Used on money/rate inputs so users can type either style and land on the
+// same value. Whichever of "," or "." appears LAST is treated as the
+// decimal separator; the other is treated as a thousands separator.
+const parseLocaleNumber = (v) => {
+  if (v == null) return null;
+  if (typeof v === "number") return v;
+  let s = String(v).trim();
+  if (!s) return null;
+  s = s.replace(/[^\d,.\-]/g, "");
+  if (!s || s === "-") return null;
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+  if (lastComma > -1 && lastDot > -1) {
+    if (lastComma > lastDot) s = s.replace(/\./g, "").replace(",", ".");
+    else s = s.replace(/,/g, "");
+  } else if (lastComma > -1) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else if (lastDot > -1) {
+    const parts = s.split(".");
+    if (parts.length > 2 || (parts[1] && parts[1].length === 3)) s = parts.join("");
+  }
+  const n = parseFloat(s);
+  return Number.isNaN(n) ? null : n;
+};
+
 // For Textile / DTF Film items, the roll price is derived from a per-meter
 // rate — show that rate alongside the roll total so it's clear where the
 // number came from. `field` is "sale_per_meter" or "cost_per_meter".
@@ -286,7 +313,18 @@ const [selectedProduct, setSelectedProduct] = useState(null); // ← adicionar e
   useEffect(() => {
   if (initial?.product_id) {
     const found = products.find(p => p.id === initial.product_id);
-    if (found) setSelectedProduct(found);
+    if (found) {
+      setSelectedProduct(found);
+      // Backward compatibility: items saved before the markup-% field
+      // existed don't have sale_pct stored — derive it once from the
+      // product's registered per-meter price vs. the saved sale_per_meter.
+      const base = parseFloat(found.sale_per_meter);
+      const spm = parseFloat(initial.sale_per_meter);
+      if (Number.isFinite(base) && base > 0 && Number.isFinite(spm) && (initial.sale_pct == null || initial.sale_pct === "")) {
+        const pct = ((spm / base) - 1) * 100;
+        setItem(prev => ({ ...prev, sale_pct: pct.toFixed(2) }));
+      }
+    }
   }
 }, []);
 
@@ -334,6 +372,19 @@ const [selectedProduct, setSelectedProduct] = useState(null); // ← adicionar e
   return w * qty;
 };
 
+const heightMOf = (product) => {
+  if (!product) return 0;
+  const h = parseFloat(product.height) || 0;
+  return product.height_unit === "cm" ? h * 0.01 : product.height_unit === "mm" ? h * 0.001 : h;
+};
+
+// The registered per-meter sale price on the product record — the 0%
+// reference point the Markup % field is measured against.
+const basePerMeter = () => {
+  const v = selectedProduct ? parseFloat(selectedProduct.sale_per_meter) : NaN;
+  return Number.isFinite(v) && v > 0 ? v : null;
+};
+
 const selectProduct = (p) => {
   setSelectedProduct(p);
   setSearch(`${p.code} – ${p.name}`);
@@ -365,6 +416,7 @@ const selectProduct = (p) => {
     category: p.category || "",
     sale_per_meter: isTextile ? (p.sale_per_meter || null) : null,
     cost_per_meter: isTextile ? (p.cost_per_meter || null) : null,
+    sale_pct: isTextile ? "0" : null,
   }));
   setShowList(false);
 };
@@ -394,9 +446,65 @@ const handleQtyChange = (e) => {
 };
 
   const handleTotalChange = (e) => {
-  const total = e.target.value;
-  const price = total && item.quantity ? (parseFloat(total) / parseFloat(item.quantity)).toFixed(4) : item.unit_price;
-  setItem(prev => ({ ...prev, total, unit_price: price }));
+  const raw = e.target.value;
+  const total = parseLocaleNumber(raw);
+  const qty = parseFloat(item.quantity) || 0;
+  const isTextile = item.category === "Textile" || item.category === "DTF Film";
+  const heightM = heightMOf(selectedProduct);
+  const base = basePerMeter();
+  const price = total != null && qty ? total / qty : null;
+  const spm = isTextile && price != null && heightM ? price / heightM : null;
+  const pct = isTextile && base != null && spm != null ? ((spm / base) - 1) * 100 : null;
+  setItem(prev => ({
+    ...prev,
+    total: raw,
+    unit_price: price != null ? price.toFixed(4) : prev.unit_price,
+    sale_per_meter: spm != null ? spm.toFixed(2) : prev.sale_per_meter,
+    sale_pct: pct != null ? pct.toFixed(2) : prev.sale_pct,
+  }));
+};
+
+  // Editable "Value per Meter" field for Textile / DTF Film items — changing
+  // it recalculates the roll price, total, and markup % automatically (and
+  // vice-versa via handleTotalChange / handlePctChange).
+  const handleSalePerMeterChange = (e) => {
+  const raw = e.target.value;
+  const spm = parseLocaleNumber(raw);
+  const heightM = heightMOf(selectedProduct);
+  const qty = parseFloat(item.quantity) || 0;
+  const base = basePerMeter();
+  const unitPrice = spm != null && heightM ? spm * heightM : null;
+  const total = unitPrice != null && qty ? unitPrice * qty : null;
+  const pct = base != null && spm != null ? ((spm / base) - 1) * 100 : null;
+  setItem(prev => ({
+    ...prev,
+    sale_per_meter: raw,
+    unit_price: unitPrice != null ? unitPrice.toFixed(2) : prev.unit_price,
+    total: total != null ? total.toFixed(2) : prev.total,
+    sale_pct: pct != null ? pct.toFixed(2) : prev.sale_pct,
+  }));
+};
+
+  // Markup % field: the salesperson types an extra premium (e.g. 15) to add
+  // on top of the product's registered per-meter sale price for this
+  // specific negotiation — not tied to cost, since cost/tax data isn't
+  // reliably available for every product. 0% = the registered price as-is.
+  const handlePctChange = (e) => {
+  const raw = e.target.value;
+  const pct = parseLocaleNumber(raw);
+  const base = basePerMeter();
+  const heightM = heightMOf(selectedProduct);
+  const qty = parseFloat(item.quantity) || 0;
+  const spm = base != null && pct != null ? base * (1 + pct / 100) : null;
+  const unitPrice = spm != null && heightM ? spm * heightM : null;
+  const total = unitPrice != null && qty ? unitPrice * qty : null;
+  setItem(prev => ({
+    ...prev,
+    sale_pct: raw,
+    sale_per_meter: spm != null ? spm.toFixed(2) : prev.sale_per_meter,
+    unit_price: unitPrice != null ? unitPrice.toFixed(2) : prev.unit_price,
+    total: total != null ? total.toFixed(2) : prev.total,
+  }));
 };
 
   const dropdownStyle = {
@@ -459,12 +567,36 @@ const handleQtyChange = (e) => {
     {item.total_meterage ? `${item.total_meterage.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m` : "—"}
   </div>
 </Field>
-<Field label={`Total (${item.currency || "USD"})`}>
-  <Input type="number" value={item.total} onChange={handleTotalChange} placeholder="0.00" />
+{(item.category === "Textile" || item.category === "DTF Film") && (
+  <>
+    <Field label="Markup % (over registered price)" half>
+      <Input type="text" inputMode="decimal" value={item.sale_pct ?? ""} onChange={handlePctChange} placeholder="0" disabled={!basePerMeter()} />
+      {!basePerMeter() && <div style={{ fontSize: "11px", color: "#475569", marginTop: "4px" }}>Product has no registered per-meter price.</div>}
+    </Field>
+    <Field label={`Value per Meter (${item.currency || "USD"})`} half>
+      <Input type="text" inputMode="decimal" value={item.sale_per_meter ?? ""} onChange={handleSalePerMeterChange} placeholder="0,00" />
+    </Field>
+  </>
+)}
+<Field label={`Total (${item.currency || "USD"})`} half={item.category === "Textile" || item.category === "DTF Film"}>
+  <Input type="text" inputMode="decimal" value={item.total} onChange={handleTotalChange} placeholder="0,00" />
 </Field>
         <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
           <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-          <Btn onClick={() => { onSave(item); onClose(); }}>
+          <Btn onClick={() => {
+            // Normalize any BR-formatted text ("1.000,00") typed into the
+            // per-meter/total/percentage fields into plain numbers before
+            // saving, so downstream displays (which use parseFloat) stay
+            // correct.
+            const cleaned = {
+              ...item,
+              total: item.total !== "" && item.total != null ? (parseLocaleNumber(item.total) ?? item.total) : item.total,
+              sale_per_meter: item.sale_per_meter !== "" && item.sale_per_meter != null ? (parseLocaleNumber(item.sale_per_meter) ?? item.sale_per_meter) : item.sale_per_meter,
+              sale_pct: item.sale_pct !== "" && item.sale_pct != null ? (parseLocaleNumber(item.sale_pct) ?? item.sale_pct) : item.sale_pct,
+            };
+            onSave(cleaned);
+            onClose();
+          }}>
             {initial ? "Update Item" : "Add Item"}
           </Btn>
         </div>

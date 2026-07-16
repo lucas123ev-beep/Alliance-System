@@ -7,7 +7,7 @@
   },
   "scripts": {
     "start": "node server.js",
-    "postinstall": "npx puppeteer browsers install chrome"
+    "postinstall": "node ./scripts/installChrome.js"
   },
   "dependencies": {
     "better-sqlite3": "^9.4.3",
