@@ -16,6 +16,7 @@ db.exec(`
     value REAL NOT NULL,
     currency TEXT DEFAULT 'USD',
     production_lead_time INTEGER,
+    delivery_days INTEGER,
     shipment_date TEXT,
     arrival_date TEXT,
     incoterm TEXT,
@@ -132,6 +133,9 @@ db.exec(`
     port_of_loading TEXT,
     port_of_discharge TEXT,
     supplier TEXT,
+    payment_terms TEXT,
+    production_days INTEGER,
+    delivery_days INTEGER,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -323,6 +327,17 @@ const migrations = [
   ['proformas', 'port_of_loading', 'TEXT'],
   ['proformas', 'port_of_discharge', 'TEXT'],
   ['proformas', 'supplier', 'TEXT'],
+  // Payment terms + production/delivery day counts, entered on the Proforma
+  // (before an Order necessarily exists) so they can be pulled straight into
+  // the Order when it's generated, and used correctly on the Proforma PDF
+  // instead of the previous hardcoded 28/33-day fallback.
+  ['proformas', 'payment_terms', 'TEXT'],
+  ['proformas', 'production_days', 'INTEGER'],
+  ['proformas', 'delivery_days', 'INTEGER'],
+  // Mirrors proformas.delivery_days on the Order, so Commercial Invoice PDFs
+  // (which read from the Order, not the Proforma) also get a real value
+  // instead of the hardcoded fallback.
+  ['orders', 'delivery_days', 'INTEGER'],
 ];
 
 for (const [table, column, definition] of migrations) {

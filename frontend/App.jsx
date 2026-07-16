@@ -188,6 +188,60 @@ function recalcTextileItem(item, product, field, rawValue) {
   return item;
 }
 
+// Same idea as recalcTextileItem but for every other category (machines,
+// chemicals, etc.) — no per-meter/markup concept, just a two-way Total <->
+// Unit Price link. The sale price for ALL categories is now decided here,
+// inline in the Quotation screen's item list — Add Product only holds cost
+// data. `field` is "total" or "unit_price"; `rawValue` may be BR-formatted.
+function recalcSimpleItem(item, field, rawValue) {
+  const qty = parseFloat(item.quantity) || 0;
+  if (field === "total") {
+    const total = parseLocaleNumber(rawValue);
+    const price = total != null && qty ? total / qty : null;
+    return { ...item, total: rawValue, unit_price: price != null ? price.toFixed(4) : item.unit_price };
+  }
+  if (field === "unit_price") {
+    const price = parseLocaleNumber(rawValue);
+    const total = price != null && qty ? price * qty : null;
+    return { ...item, unit_price: rawValue, total: total != null ? total.toFixed(2) : item.total };
+  }
+  return item;
+}
+
+// Options for the "Target Price refers to" selector shown next to each
+// item's Target Price field — always offers the item's Total and its own
+// registered package unit (Rolls, kg, etc.), plus Per Meter for
+// Textile/DTF Film items where that's the natural pricing unit.
+function targetPriceUnitOptions(item) {
+  const isTextile = item?.category === "Textile" || item?.category === "DTF Film";
+  const opts = [{ value: "total", label: "Total" }];
+  if (isTextile) opts.push({ value: "meter", label: "Per Meter" });
+  opts.push({ value: "unit", label: `Per ${item?.unit || "Unit"}` });
+  return opts;
+}
+
+const targetPriceUnitSuffix = (item) => {
+  if (item.target_price_unit === "meter") return "/m";
+  if (item.target_price_unit === "unit") return `/${item.unit || "un"}`;
+  return "";
+};
+
+// Shared list of trade payment-term presets, used by both OrderForm and
+// ProformaForm's searchable Payment Terms field.
+const PAYMENT_TERMS_OPTIONS = [
+  "100% ADV – 100% Advance",
+  "100% AFTER D. SALE – 100% After Domestic Sale",
+  "100% ARRIVAL – 100% At Destination Port",
+  "100%ADV B. SHIP. – 100% Advance Before Shipment",
+  "100%DP BL – 100%DP Under BL Copy",
+  "20%ADV/80%DP B. SHIP – 20% Advance, 80%DP Before Shipment",
+  "20%ADV/80%DP BL – 20% Advance, 80%DP Under BL Copy",
+  "30% ADV 70% BL – 30% Advance and 70% 30 Days After Shipment",
+  "30% ADV 70% BS – 30% Advance and 70% Before Shipment",
+  "30%ADV/70%DP B. SHIP – 30% Advance, 70%DP Before Shipment",
+  "30%ADV/70%DP BL – 30% Advance, 70%DP Under BL Copy",
+];
+
 // For Textile / DTF Film items, the roll price is derived from a per-meter
 // rate — show that rate alongside the roll total so it's clear where the
 // number came from. `field` is "sale_per_meter" or "cost_per_meter".
@@ -486,19 +540,6 @@ const handleQtyChange = (e) => {
   setItem(prev => ({ ...prev, quantity: qty, total, total_weight: weight, total_meterage: meterage }));
 };
   
-  const handlePriceChange = (e) => {
-  const price = e.target.value;
-  const total = price && item.quantity ? (parseFloat(item.quantity) * parseFloat(price)).toFixed(2) : "";
-  const weight = selectedProduct ? calcWeight(selectedProduct, item.quantity) : null;
-  setItem(prev => ({ ...prev, unit_price: price, total, total_weight: weight }));
-};
-
-  const handleTotalChange = (e) => {
-  const total = e.target.value;
-  const price = total && item.quantity ? (parseFloat(total) / parseFloat(item.quantity)).toFixed(4) : item.unit_price;
-  setItem(prev => ({ ...prev, total, unit_price: price }));
-};
-
   const dropdownStyle = {
     position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200,
     background: "#1e293b", border: "1px solid #334155", borderRadius: "8px",
@@ -543,10 +584,7 @@ const handleQtyChange = (e) => {
         <Field label="Supplier">
           <Input value={item.supplier || ""} onChange={e => setItem(p => ({ ...p, supplier: e.target.value }))} placeholder="Auto-filled from product" />
         </Field>
-<Field label={`Sale Price (${item.currency || "USD"})`} half>
-  <Input type="number" value={item.unit_price} onChange={handlePriceChange} placeholder="0.00" />
-</Field>
-<Field label={`Cost Price (${item.cost_currency || "USD"})`} half>
+<Field label={`Cost Price (${item.cost_currency || "USD"})`}>
   <Input type="number" value={item.cost_price || ""} onChange={e => setItem(prev => ({ ...prev, cost_price: e.target.value }))} placeholder="0.00" />
 </Field>
 <Field label="Total Weight" half>
@@ -558,9 +596,6 @@ const handleQtyChange = (e) => {
   <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: item.total_meterage ? "#60a5fa" : "#475569", fontWeight: item.total_meterage ? 700 : 400, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
     {item.total_meterage ? `${item.total_meterage.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m` : "—"}
   </div>
-</Field>
-<Field label={`Total (${item.currency || "USD"})`}>
-  <Input type="number" value={item.total} onChange={handleTotalChange} placeholder="0.00" />
 </Field>
         <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
           <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
@@ -576,7 +611,7 @@ const handleQtyChange = (e) => {
 function OrderForm({ initial, onSave, onClose }) {
   const [f, setF] = useState(initial || {
     order_number: "", client: "", supplier: "", value: "", currency: "USD",
-    production_lead_time: "", shipment_date: "", arrival_date: "",
+    production_lead_time: "", delivery_days: "", shipment_date: "", arrival_date: "",
     incoterm: "", payment_terms: "", port_of_loading: "", port_of_discharge: "",
     acquisition_company: "", container: "", container_qty: "", notes: "",
   });
@@ -637,22 +672,8 @@ useEffect(() => {
     });
   };
 
-  const paymentOptions = [
-    "100% ADV – 100% Advance",
-    "100% AFTER D. SALE – 100% After Domestic Sale",
-    "100% ARRIVAL – 100% At Destination Port",
-    "100%ADV B. SHIP. – 100% Advance Before Shipment",
-    "100%DP BL – 100%DP Under BL Copy",
-    "20%ADV/80%DP B. SHIP – 20% Advance, 80%DP Before Shipment",
-    "20%ADV/80%DP BL – 20% Advance, 80%DP Under BL Copy",
-    "30% ADV 70% BL – 30% Advance and 70% 30 Days After Shipment",
-    "30% ADV 70% BS – 30% Advance and 70% Before Shipment",
-    "30%ADV/70%DP B. SHIP – 30% Advance, 70%DP Before Shipment",
-    "30%ADV/70%DP BL – 30% Advance, 70%DP Under BL Copy",
-  ];
-
   const filteredClients = clients.filter(c => c.company_name.toLowerCase().includes(clientSearch.toLowerCase()));
-  const filteredPayments = paymentOptions.filter(p => p.toLowerCase().includes((f.payment_terms || "").toLowerCase()));
+  const filteredPayments = PAYMENT_TERMS_OPTIONS.filter(p => p.toLowerCase().includes((f.payment_terms || "").toLowerCase()));
 
   const dropdownStyle = {
     position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
@@ -763,6 +784,9 @@ useEffect(() => {
         </Field>
         <Field label="Prod. Lead Time (days)" half>
           <Input type="number" value={f.production_lead_time} onChange={set("production_lead_time")} />
+        </Field>
+        <Field label="Delivery Days (after TT payment)" half>
+          <Input type="number" value={f.delivery_days || ""} onChange={set("delivery_days")} placeholder="33" />
         </Field>
         <Field label="Incoterm" half>
           <Select value={f.incoterm} onChange={set("incoterm")}>
@@ -1245,8 +1269,11 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
   const [f, setF] = useState(initial || {
     order_id: "", number: "", issue_date: "", validity: "", client: "", total: "", currency: "USD", status: "Draft", notes: "",
     acquisition_company: "", incoterm: "", way_of_shipment: "By Sea", port_of_loading: "", port_of_discharge: "",
+    payment_terms: "", production_days: "", delivery_days: "",
   });
+  const [showPaymentList, setShowPaymentList] = useState(false);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const filteredPayments = PAYMENT_TERMS_OPTIONS.filter(p => p.toLowerCase().includes((f.payment_terms || "").toLowerCase()));
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Linked Order" half>
@@ -1301,6 +1328,33 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
           onChange={v => setF(p => ({ ...p, port_of_discharge: v }))}
           placeholder="Search Brazil ports or type any…" />
       </Field>
+
+      <Field label="Payment Terms">
+        <div style={{ position: "relative" }}>
+          <Input value={f.payment_terms}
+            onChange={e => { setF(p => ({ ...p, payment_terms: e.target.value })); setShowPaymentList(true); }}
+            onFocus={() => setShowPaymentList(true)}
+            onBlur={() => setTimeout(() => setShowPaymentList(false), 200)}
+            placeholder="Search or type payment terms…" />
+          {showPaymentList && filteredPayments.length > 0 && (
+            <div style={PORT_DROPDOWN_STYLE}>
+              {filteredPayments.map((pt, i) => (
+                <div key={i} style={PORT_DROP_ITEM_STYLE}
+                  onMouseDown={() => { setF(p => ({ ...p, payment_terms: pt })); setShowPaymentList(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{pt}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Field>
+      <Field label="End of Production (days after TT payment)" half>
+        <Input type="number" value={f.production_days || ""} onChange={set("production_days")} placeholder="28" />
+      </Field>
+      <Field label="Delivery at Port (days after TT payment)" half>
+        <Input type="number" value={f.delivery_days || ""} onChange={set("delivery_days")} placeholder="33" />
+      </Field>
+
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
@@ -1432,7 +1486,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
 function QuotationForm({ onSave, onClose, initial }) {
   const [f, setF] = useState(initial || {
   number: "", client: "", suppliers: "", currency: "USD", deadline: "",
-  target_price: "", total: "",
+  total: "",
   specifications: "", notes: "", status: "Pending",
 });
   const [items, setItems] = useState(Array.isArray(initial?.items) ? initial.items : []);
@@ -1563,9 +1617,6 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
           </div>
         </Field>
 
-<Field label="Target Price" half>
-  <Input type="number" value={f.target_price || ""} onChange={set("target_price")} placeholder="0.00" />
-</Field>
         <Field label="Deadline" half><Input type="date" value={f.deadline} onChange={set("deadline")} /></Field>
 
         <Field label="Products">
@@ -1577,23 +1628,21 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
               const isTextile = item.category === "Textile" || item.category === "DTF Film";
               const product = products.find(p => Number(p.id) === Number(item.product_id));
               const onPriceField = (field) => (e) => updateItem(idx, recalcTextileItem(item, product, field, e.target.value));
+              const onSimpleField = (field) => (e) => updateItem(idx, recalcSimpleItem(item, field, e.target.value));
+              const onTargetField = (e) => updateItem(idx, { ...item, target_price: e.target.value });
+              const onTargetUnitField = (e) => updateItem(idx, { ...item, target_price_unit: e.target.value });
               return (
                 <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid #0f172a" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <div style={{ flex: 1, fontSize: "13px" }}>
                       <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
                       <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
-                      <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit} × {item.unit_price}</span>
+                      <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
                     </div>
-                    {!isTextile && (
-                      <span style={{ color: "#10b981", fontWeight: 600, fontSize: "13px", whiteSpace: "nowrap" }}>
-                        {fmt(parseFloat(item.total), item.currency || f.currency)}
-                      </span>
-                    )}
                     <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
                     <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
                   </div>
-                  {isTextile && (
+                  {isTextile ? (
                     <div style={{ display: "flex", gap: "12px", alignItems: "flex-end", marginTop: "8px", flexWrap: "wrap" }}>
                       <label style={{ fontSize: "11px", color: "#64748b" }}>Markup %
                         <input type="text" inputMode="decimal" value={item.sale_pct ?? ""} onChange={onPriceField("sale_pct")}
@@ -1611,7 +1660,31 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
                           style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "110px", fontWeight: 700, color: "#10b981" }} />
                       </label>
                     </div>
+                  ) : (
+                    <div style={{ display: "flex", gap: "12px", alignItems: "flex-end", marginTop: "8px", flexWrap: "wrap" }}>
+                      <label style={{ fontSize: "11px", color: "#64748b" }}>Unit Price ({item.currency || f.currency})
+                        <input type="text" inputMode="decimal" value={item.unit_price ?? ""} onChange={onSimpleField("unit_price")}
+                          placeholder="0,00"
+                          style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
+                      </label>
+                      <label style={{ fontSize: "11px", color: "#64748b" }}>Total ({item.currency || f.currency})
+                        <input type="text" inputMode="decimal" value={item.total ?? ""} onChange={onSimpleField("total")}
+                          placeholder="0,00"
+                          style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "110px", fontWeight: 700, color: "#10b981" }} />
+                      </label>
+                    </div>
                   )}
+                  <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", marginTop: "8px" }}>
+                    <label style={{ fontSize: "11px", color: "#64748b" }}>Target Price
+                      <input type="text" inputMode="decimal" value={item.target_price ?? ""} onChange={onTargetField}
+                        placeholder="0,00"
+                        style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
+                    </label>
+                    <select value={item.target_price_unit || "total"} onChange={onTargetUnitField}
+                      style={{ ...inputStyle, padding: "6px 8px", fontSize: "12px", width: "auto" }}>
+                      {targetPriceUnitOptions(item).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
                 </div>
               );
             })}
@@ -1632,9 +1705,6 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
   <Select value={f.currency} onChange={set("currency")}>
     {["USD","EUR","BRL","CNY"].map(c => <option key={c}>{c}</option>)}
   </Select>
-</Field>
-<Field label="Total" half>
-  <Input type="number" value={f.total || ""} onChange={set("total")} placeholder="0.00" />
 </Field>
 <Field label="Specifications"><Textarea value={f.specifications || ""} onChange={set("specifications")} /></Field>
         <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
@@ -1694,8 +1764,10 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
             const cleanedItems = items.map(item => ({
               ...item,
               total: item.total !== "" && item.total != null ? (parseLocaleNumber(item.total) ?? item.total) : item.total,
+              unit_price: item.unit_price !== "" && item.unit_price != null ? (parseLocaleNumber(item.unit_price) ?? item.unit_price) : item.unit_price,
               sale_per_meter: item.sale_per_meter !== "" && item.sale_per_meter != null ? (parseLocaleNumber(item.sale_per_meter) ?? item.sale_per_meter) : item.sale_per_meter,
               sale_pct: item.sale_pct !== "" && item.sale_pct != null ? (parseLocaleNumber(item.sale_pct) ?? item.sale_pct) : item.sale_pct,
+              target_price: item.target_price !== "" && item.target_price != null ? (parseLocaleNumber(item.target_price) ?? item.target_price) : item.target_price,
             }));
             await onSave({ ...f, items: JSON.stringify(cleanedItems), media: JSON.stringify(media) });
             onClose();
@@ -1789,7 +1861,15 @@ console.log('quotations set:', quotations?.length);
           { label: "Client", key: "client" },
           { label: "Suppliers", key: "suppliers" },
           { label: "Qty", render: r => `${r.quantity || "—"} ${r.unit || ""}` },
-          { label: "Target Price", render: r => r.target_price ? fmt(r.target_price, r.currency) : "—" },
+          { label: "Target Price", render: r => {
+  try {
+    const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
+    const withTarget = items.filter(i => i.target_price !== "" && i.target_price != null);
+    if (withTarget.length === 0) return "—";
+    const label = i => `${fmt(parseFloat(i.target_price), r.currency)}${targetPriceUnitSuffix(i)}`;
+    return withTarget.length > 1 ? `${label(withTarget[0])} +${withTarget.length - 1}` : label(withTarget[0]);
+  } catch { return "—"; }
+}},
           { label: "Total", render: r => {
   try {
     const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
@@ -2702,6 +2782,9 @@ const [proformas, setProformas] = useState([]);
       port_of_loading: pf.port_of_loading || "",
       port_of_discharge: pf.port_of_discharge || "",
       acquisition_company: pf.acquisition_company || "",
+      payment_terms: pf.payment_terms || "",
+      production_lead_time: pf.production_days || "",
+      delivery_days: pf.delivery_days || "",
       status: "Pending",
       notes: `Created from Proforma ${pf.number}${quotation ? ` (Quotation ${quotation.number})` : ""}`,
       items,

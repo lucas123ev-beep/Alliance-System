@@ -53,16 +53,16 @@ app.get('/api/orders/:id', (req, res) => {
 });
 
 app.post('/api/orders', (req, res) => {
-  const { order_number, client, supplier, product, value, currency, production_lead_time,
+  const { order_number, client, supplier, product, value, currency, production_lead_time, delivery_days,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
     port_of_discharge, acquisition_company, container, container_qty, notes, items } = req.body;
   try {
     const insert = db.transaction(() => {
       const result = db.prepare(`
-        INSERT INTO orders (order_number, client, supplier, product, value, currency, production_lead_time,
+        INSERT INTO orders (order_number, client, supplier, product, value, currency, production_lead_time, delivery_days,
           shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, acquisition_company, container, container_qty, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(order_number, client, supplier, product, value, currency || 'USD', production_lead_time,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(order_number, client, supplier, product, value, currency || 'USD', production_lead_time || null, delivery_days || null,
         shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, acquisition_company || '', container || '', container_qty, notes);
       const orderId = result.lastInsertRowid;
       if (items && items.length > 0) {
@@ -87,16 +87,16 @@ app.post('/api/orders', (req, res) => {
 });
 
 app.put('/api/orders/:id', (req, res) => {
-  const { order_number, client, supplier, product, value, currency, production_lead_time,
+  const { order_number, client, supplier, product, value, currency, production_lead_time, delivery_days,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
     port_of_discharge, acquisition_company, container, notes, items } = req.body;
   db.prepare(`
     UPDATE orders SET order_number=?, client=?, supplier=?, product=?, value=?, currency=?,
-      production_lead_time=?, shipment_date=?, arrival_date=?, incoterm=?,
+      production_lead_time=?, delivery_days=?, shipment_date=?, arrival_date=?, incoterm=?,
       payment_terms=?, port_of_loading=?, port_of_discharge=?, acquisition_company=?, container=?, notes=?,
       updated_at=datetime('now')
     WHERE id=?
-  `).run(order_number, client, supplier, product, value, currency, production_lead_time,
+  `).run(order_number, client, supplier, product, value, currency, production_lead_time || null, delivery_days || null,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
     port_of_discharge, acquisition_company || '', container || '', notes, req.params.id);
 
@@ -222,14 +222,17 @@ app.get('/api/proformas', (req, res) => {
 
 app.post('/api/proformas', (req, res) => {
   const { order_id, quotation_id, number, issue_date, validity, client, total, currency, status, notes,
-    acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier } = req.body;
+    acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier,
+    payment_terms, production_days, delivery_days } = req.body;
   try {
     const result = db.prepare(`
 INSERT INTO proformas (order_id, quotation_id, number, issue_date, validity, client, total, currency, status, notes,
-  acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier,
+  payment_terms, production_days, delivery_days)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `).run(order_id || null, quotation_id || null, number, issue_date, validity, client, total, currency || 'USD', status || 'Draft', notes,
-      acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', supplier || '');
+      acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', supplier || '',
+      payment_terms || null, production_days || null, delivery_days || null);
     res.status(201).json(db.prepare('SELECT * FROM proformas WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -238,13 +241,16 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
 app.put('/api/proformas/:id', (req, res) => {
   const { order_id, number, issue_date, validity, client, total, currency, status, notes,
-    acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier } = req.body;
+    acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier,
+    payment_terms, production_days, delivery_days } = req.body;
   db.prepare(`
     UPDATE proformas SET order_id=?, number=?, issue_date=?, validity=?, client=?, total=?, currency=?, status=?, notes=?,
-      acquisition_company=?, incoterm=?, way_of_shipment=?, port_of_loading=?, port_of_discharge=?, supplier=?
+      acquisition_company=?, incoterm=?, way_of_shipment=?, port_of_loading=?, port_of_discharge=?, supplier=?,
+      payment_terms=?, production_days=?, delivery_days=?
     WHERE id=?
   `).run(order_id || null, number, issue_date, validity, client, total, currency, status, notes,
-    acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', supplier || '', req.params.id);
+    acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', supplier || '',
+    payment_terms || null, production_days || null, delivery_days || null, req.params.id);
   res.json(db.prepare('SELECT * FROM proformas WHERE id=?').get(req.params.id));
 });
 
@@ -739,7 +745,12 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
       totalLength,
       totalAmount,
       currency,
-      paymentTerms: order?.payment_terms || pf.notes,
+      // Payment terms / production / delivery days: prefer whatever was
+      // filled in on the Proforma itself (it usually exists before any Order
+      // does); fall back to the linked Order once one has been created.
+      paymentTerms: pf.payment_terms || order?.payment_terms,
+      productionDays: pf.production_days || order?.production_lead_time,
+      deliveryDays: pf.delivery_days || order?.delivery_days,
       importer: { name: pf.client, address: [clientRow?.address, clientRow?.address2].filter(Boolean).join(', '), taxId: clientRow?.tax_id, tel: clientRow?.phone },
     });
 
@@ -785,6 +796,8 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
       totalAmount,
       currency,
       paymentTerms: order?.payment_terms || ci.notes,
+      productionDays: order?.production_lead_time,
+      deliveryDays: order?.delivery_days,
       extraShipmentLine: plSummary,
       importer: { name: ci.client, address: [clientRow?.address, clientRow?.address2].filter(Boolean).join(', '), taxId: clientRow?.tax_id, tel: clientRow?.phone },
     });
