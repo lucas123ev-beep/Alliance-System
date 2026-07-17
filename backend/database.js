@@ -143,6 +143,7 @@ db.exec(`
     payment_terms TEXT,
     production_days INTEGER,
     delivery_days INTEGER,
+    items TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -227,6 +228,12 @@ db.exec(`
     company_name TEXT NOT NULL,
     address TEXT,
     address2 TEXT,
+    address_number TEXT,
+    neighborhood TEXT,
+    city TEXT,
+    state TEXT,
+    zip_code TEXT,
+    country TEXT,
     email TEXT,
     phone TEXT,
     contact_name TEXT,
@@ -265,6 +272,12 @@ db.exec(`
     company_name TEXT NOT NULL,
     address TEXT,
     address2 TEXT,
+    address_number TEXT,
+    neighborhood TEXT,
+    city TEXT,
+    state TEXT,
+    zip_code TEXT,
+    country TEXT,
     email TEXT,
     phone TEXT,
     contact_name TEXT,
@@ -341,6 +354,21 @@ const migrations = [
   ['financial_suppliers', 'contract_id', 'INTEGER'],
   ['financial_suppliers', 'items_json', 'TEXT'],
   ['suppliers', 'beneficiary_name', 'TEXT'],
+  // Structured address fields — previously address/address2 were the only
+  // fields, forcing everything (street, number, city, state, zip...) into
+  // two freeform lines. Both clients and suppliers get the same breakdown.
+  ['suppliers', 'address_number', 'TEXT'],
+  ['suppliers', 'neighborhood', 'TEXT'],
+  ['suppliers', 'city', 'TEXT'],
+  ['suppliers', 'state', 'TEXT'],
+  ['suppliers', 'zip_code', 'TEXT'],
+  ['suppliers', 'country', 'TEXT'],
+  ['clients', 'address_number', 'TEXT'],
+  ['clients', 'neighborhood', 'TEXT'],
+  ['clients', 'city', 'TEXT'],
+  ['clients', 'state', 'TEXT'],
+  ['clients', 'zip_code', 'TEXT'],
+  ['clients', 'country', 'TEXT'],
   ['suppliers', 'bank_name', 'TEXT'],
   ['suppliers', 'bank_branch', 'TEXT'],
   ['suppliers', 'account_number', 'TEXT'],
@@ -363,6 +391,12 @@ const migrations = [
   ['proformas', 'payment_terms', 'TEXT'],
   ['proformas', 'production_days', 'INTEGER'],
   ['proformas', 'delivery_days', 'INTEGER'],
+  // Proformas can now be created directly (not only generated from a
+  // Quotation), so they need their own items snapshot — same JSON-blob
+  // pattern as quotations.items. When generated from a Quotation the items
+  // are copied in at creation time; from then on they're independently
+  // editable, same as Order items already are.
+  ['proformas', 'items', 'TEXT'],
   // Mirrors proformas.delivery_days on the Order, so Commercial Invoice PDFs
   // (which read from the Order, not the Proforma) also get a real value
   // instead of the hardcoded fallback.

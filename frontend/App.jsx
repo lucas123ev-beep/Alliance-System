@@ -407,6 +407,12 @@ const PACKAGE_UNIT_OPTIONS = [
   "Steel Drums / Barrels",
 ];
 
+// Shared list of product categories — used by Product registration, Sample
+// registration, and the Supplier's Product Types field (so a supplier's
+// declared specialties line up with the same categories products actually
+// get registered under).
+const PRODUCT_CATEGORIES = ["Textile", "Machine", "DTF Film", "Chemical", "Accessory", "Packaging", "Other"];
+
 // Shared list of trade payment-term presets, used by both OrderForm and
 // ProformaForm's searchable Payment Terms field.
 const PAYMENT_TERMS_OPTIONS = [
@@ -1205,6 +1211,24 @@ const handleUpload = async (e) => {
     api("/suppliers").then(setSuppliers);
   }, []);
 
+  // Auto-generate the next sequential Product Code for new products (never
+  // overwrites an existing product's code when editing). Looks at every
+  // purely-numeric code already registered and picks the next number,
+  // starting at 001 if none exist yet — still editable afterwards in case
+  // a manual code is needed.
+  useEffect(() => {
+    if (initial) return;
+    api("/products").then(products => {
+      const maxNum = (products || []).reduce((max, p) => {
+        const match = String(p.code || "").trim().match(/^(\d+)$/);
+        if (!match) return max;
+        return Math.max(max, parseInt(match[1], 10));
+      }, 0);
+      const next = String(maxNum + 1).padStart(3, "0");
+      setF(p => (p.code ? p : { ...p, code: next }));
+    });
+  }, []);
+
   const filteredSuppliers = suppliers.filter(s =>
     s.company_name.toLowerCase().includes(supplierSearch.toLowerCase())
   );
@@ -1320,7 +1344,7 @@ const handleSalePerLiterChange = (e) => {
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-      <Field label="Product Code" half><Input value={f.code} onChange={set("code")} placeholder="PROD-001" /></Field>
+      <Field label="Product Code" half><Input value={f.code} onChange={set("code")} placeholder="001" /></Field>
       <Field label="Name" half><Input value={f.name} onChange={set("name")} /></Field>
       <Field label="NCM" half><Input value={f.ncm} onChange={set("ncm")} placeholder="0000.00.00" /></Field>
       <Field label="HS Code" half><Input value={f.hs_code || ""} onChange={set("hs_code")} placeholder="0000.00" /></Field>
@@ -1328,7 +1352,7 @@ const handleSalePerLiterChange = (e) => {
       <Field label="Category" half>
   <Select value={f.category} onChange={set("category")}>
     <option value="">Select...</option>
-    {["Textile","Machine","DTF Film","Chemical","Accessory","Packaging","Other"].map(c => <option key={c}>{c}</option>)}
+    {PRODUCT_CATEGORIES.map(c => <option key={c}>{c}</option>)}
   </Select>
 </Field>
 
@@ -1557,7 +1581,7 @@ setMedia(prev => [...prev, ...validResults]);
       <Field label="Category" half>
         <Select value={f.category} onChange={set("category")}>
           <option value="">Select...</option>
-          {["Textile","Machine","DTF Film","Chemical","Accessory","Packaging","Other"].map(c => <option key={c}>{c}</option>)}
+          {PRODUCT_CATEGORIES.map(c => <option key={c}>{c}</option>)}
         </Select>
       </Field>
       <Field label="Product Name"><Input value={f.product_name} onChange={set("product_name")} /></Field>
@@ -1661,14 +1685,67 @@ setMedia(prev => [...prev, ...validResults]);
 
 function ProformaForm({ onSave, onClose, orders, initial }) {
   const [f, setF] = useState(initial || {
-    order_id: "", number: "", issue_date: "", validity: "", client: "", total: "", currency: "USD", status: "Draft", notes: "",
+    order_id: "", quotation_id: "", number: "", issue_date: "", validity: "", client: "", total: "", currency: "USD", status: "Draft", notes: "",
     acquisition_company: "", incoterm: "", way_of_shipment: "By Sea", port_of_loading: "", port_of_discharge: "",
     payment_terms: "", production_days: "", delivery_days: "",
   });
+  const [items, setItems] = useState(() => {
+    if (Array.isArray(initial?.items)) return initial.items;
+    if (typeof initial?.items === "string") { try { return JSON.parse(initial.items || "[]"); } catch { return []; } }
+    return [];
+  });
+  const [products, setProducts] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [clientSearch, setClientSearch] = useState(initial?.client || "");
+  const [showClientList, setShowClientList] = useState(false);
+  const [itemModal, setItemModal] = useState(null);
+  const [editingItemIdx, setEditingItemIdx] = useState(null);
   const [showPaymentList, setShowPaymentList] = useState(false);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const filteredPayments = PAYMENT_TERMS_OPTIONS.filter(p => p.toLowerCase().includes((f.payment_terms || "").toLowerCase()));
+
+  useEffect(() => {
+    api("/products").then(setProducts);
+    api("/clients").then(setClients);
+  }, []);
+
+  const addItem = (item) => setItems(prev => [...prev, item]);
+  const updateItem = (idx, item) => setItems(prev => { const u = [...prev]; u[idx] = item; return u; });
+  const removeItem = (idx) => setItems(prev => prev.filter((_, i) => i !== idx));
+  const filteredClients = clients.filter(c => c.company_name.toLowerCase().includes(clientSearch.toLowerCase()));
+
+  // Items are the Proforma's own snapshot — its Total stays in sync with
+  // them automatically, same pattern as Quotation/Order.
+  const itemsTotal = items.reduce((sum, i) => sum + (parseLocaleNumber(i.total) || 0), 0);
+  const [initialLoad, setInitialLoad] = useState(true);
+  useEffect(() => {
+    if (initialLoad) { setInitialLoad(false); return; }
+    if (items.length > 0) setF(p => ({ ...p, total: itemsTotal.toFixed(2) }));
+  }, [itemsTotal]);
+
+  const dropdownStyle = {
+    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+    background: "#1e293b", border: "1px solid #334155", borderRadius: "8px",
+    maxHeight: "180px", overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+  };
+  const dropItemStyle = {
+    padding: "10px 12px", cursor: "pointer", fontSize: "13px", color: "#cbd5e1",
+    borderBottom: "1px solid #0f172a",
+  };
+
   return (
+    <>
+      {itemModal !== null && (
+        <ProductItemModal
+          products={products}
+          initial={editingItemIdx !== null ? items[editingItemIdx] : null}
+          onSave={(item) => {
+            if (editingItemIdx !== null) { updateItem(editingItemIdx, item); setEditingItemIdx(null); }
+            else addItem(item);
+          }}
+          onClose={() => { setItemModal(null); setEditingItemIdx(null); }}
+        />
+      )}
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Linked Order" half>
         <Select value={f.order_id} onChange={set("order_id")}>
@@ -1677,14 +1754,77 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
         </Select>
       </Field>
       <Field label="Proforma Number" half><Input value={f.number} onChange={set("number")} placeholder="PI-2024-001" /></Field>
-      <Field label="Client" half><Input value={f.client} onChange={set("client")} /></Field>
+      <Field label="Client" half>
+        <div style={{ position: "relative" }}>
+          <Input value={clientSearch}
+            onChange={e => { setClientSearch(e.target.value); setF(p => ({ ...p, client: e.target.value })); setShowClientList(true); }}
+            onFocus={() => setShowClientList(true)}
+            onBlur={() => setTimeout(() => setShowClientList(false), 200)}
+            placeholder="Search client…" />
+          {showClientList && filteredClients.length > 0 && (
+            <div style={dropdownStyle}>
+              {filteredClients.map(c => (
+                <div key={c.id} style={dropItemStyle}
+                  onMouseDown={() => { setClientSearch(c.company_name); setF(p => ({ ...p, client: c.company_name })); setShowClientList(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  {c.company_name}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Field>
       <Field label="Issue Date" half><Input type="date" value={f.issue_date} onChange={set("issue_date")} /></Field>
       <Field label="Validity Date" half><Input type="date" value={f.validity} onChange={set("validity")} /></Field>
+
+      <Field label="Products">
+        <div style={{ background: "#1e293b", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>
+          {items.length === 0 && (
+            <div style={{ padding: "12px 14px", color: "#475569", fontSize: "13px" }}>No products added yet.</div>
+          )}
+          {items.map((item, idx) => {
+            const product = products.find(p => Number(p.id) === Number(item.product_id));
+            return (
+              <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid #0f172a" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div style={{ flex: 1, fontSize: "13px" }}>
+                    <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
+                    <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
+                    <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
+                  </div>
+                  <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
+                  <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
+                </div>
+                <PricingRow item={item} product={product} currency={item.currency || f.currency}
+                  onChange={updated => updateItem(idx, updated)} />
+              </div>
+            );
+          })}
+          <div style={{ padding: "10px 14px" }}>
+            <Btn small color="#3b82f6" onClick={() => { setEditingItemIdx(null); setItemModal("new"); }}>+ Add Product</Btn>
+          </div>
+        </div>
+      </Field>
+
+      {items.length > 0 && (
+        <div style={{ gridColumn: "span 2", background: "#0f172a", borderRadius: "8px", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ color: "#64748b", fontSize: "13px" }}>Items Total</span>
+          <span style={{ color: "#10b981", fontWeight: 700, fontSize: "18px" }}>{fmt(itemsTotal, f.currency)}</span>
+        </div>
+      )}
+
       <Field label="Total Amount" half>
   <input value={f.total} disabled onChange={() => {}} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 12px", color: "#94a3b8", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", cursor: "not-allowed" }} />
 </Field>
 <Field label="Currency" half>
-  <input value={currencyLabel(f.currency)} disabled onChange={() => {}} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 12px", color: "#94a3b8", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", cursor: "not-allowed" }} />
+  <Select value={f.currency} onChange={e => {
+    const cur = e.target.value;
+    setF(p => ({ ...p, currency: cur }));
+    setItems(prev => prev.map(i => ({ ...i, currency: cur })));
+  }}>
+    {["USD","EUR","BRL","CNY"].map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
+  </Select>
 </Field>
       <Field label="Status" half>
         <Select value={f.status} onChange={set("status")}>
@@ -1753,9 +1893,10 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
         {f.id && <Btn outline color="#10b981" onClick={() => window.open(`${API}/proformas/${f.id}/pdf`, "_blank")}>📄 Download PDF</Btn>}
-        <Btn onClick={async () => { await onSave(f); onClose(); }}>Save Proforma</Btn>
+        <Btn onClick={async () => { await onSave({ ...f, items: JSON.stringify(items) }); onClose(); }}>Save Proforma</Btn>
       </div>
     </div>
+    </>
   );
 }
 
@@ -2260,6 +2401,10 @@ console.log('quotations set:', quotations?.length);
           currency: r.currency || "USD",
           status: "Draft",
           notes: r.notes || "",
+          // Copy the Quotation's items in as the Proforma's own snapshot —
+          // from this point on they're independently editable, same as how
+          // Order items work once created from a Proforma.
+          items: r.items || "[]",
         })}>
         📋 {hasProforma ? "Proforma ✓" : "Proforma"}
       </Btn>
@@ -3014,14 +3159,18 @@ const [proformas, setProformas] = useState([]);
     (p.status || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  // Builds an Order from the Proforma's own shipment fields plus the linked
-  // Quotation's items/client/currency/supplier — pulling as much info as
-  // possible from both, per the trader workflow (Proforma → Order).
+  // Builds an Order from the Proforma's own shipment fields plus its items
+  // — the Proforma's own items snapshot takes priority (present whether it
+  // was created manually or generated from a Quotation), falling back to
+  // the linked Quotation's items only for older Proformas saved before
+  // Proformas carried their own items.
   const createOrderFromProforma = async (pf) => {
     const quotation = quotations.find(q => Number(q.id) === Number(pf.quotation_id));
-    const items = quotation
-      ? (typeof quotation.items === 'string' ? (JSON.parse(quotation.items || "[]")) : (quotation.items || []))
-      : [];
+    const parseItems = (raw) => {
+      if (!raw) return [];
+      return typeof raw === 'string' ? (JSON.parse(raw || "[]")) : raw;
+    };
+    const items = pf.items ? parseItems(pf.items) : parseItems(quotation?.items);
     const itemsTotal = items.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0);
     // Suppliers now live per item (each product in the quotation can have
     // its own), not as a single field on the quotation — join whatever
@@ -3054,7 +3203,13 @@ const [proformas, setProformas] = useState([]);
     <div>
 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Proforma Invoices</h2>
+        <Btn onClick={() => setModal(true)}>+ New Proforma</Btn>
       </div>
+      {modal && (
+        <Modal title="New Proforma" onClose={() => setModal(false)} wide>
+          <ProformaForm orders={orders} onSave={b => api("/proformas", "POST", b).then(load)} onClose={() => setModal(false)} />
+        </Modal>
+      )}
       {editing && (
         <Modal title="Edit Proforma" onClose={() => setEditing(null)} wide>
           <ProformaForm orders={orders} initial={editing} onSave={b => api(`/proformas/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
@@ -3272,7 +3427,8 @@ cols={[
 }
 function ClientForm({ initial, onSave, onClose }) {
   const [f, setF] = useState(initial || {
-    company_name: "", address: "", address2: "", email: "",
+    company_name: "", address: "", address2: "", address_number: "", neighborhood: "",
+    city: "", state: "", zip_code: "", country: "", email: "",
     phone: "", contact_name: "", payment_terms: "", tax_id: "", notes: "",
   });
   const [showPaymentList, setShowPaymentList] = useState(false);
@@ -3335,8 +3491,14 @@ function ClientForm({ initial, onSave, onClose }) {
           )}
         </div>
       </Field>
-      <Field label="Address"><Input value={f.address} onChange={set("address")} /></Field>
-      <Field label="Address 2"><Input value={f.address2} onChange={set("address2")} /></Field>
+      <Field label="Street / Address" half><Input value={f.address} onChange={set("address")} placeholder="Street name" /></Field>
+      <Field label="Number" half><Input value={f.address_number} onChange={set("address_number")} placeholder="No." /></Field>
+      <Field label="Address 2 / Complement"><Input value={f.address2} onChange={set("address2")} placeholder="Suite, floor, unit…" /></Field>
+      <Field label="Neighborhood" half><Input value={f.neighborhood} onChange={set("neighborhood")} placeholder="Bairro" /></Field>
+      <Field label="City" half><Input value={f.city} onChange={set("city")} /></Field>
+      <Field label="State / Province" half><Input value={f.state} onChange={set("state")} /></Field>
+      <Field label="ZIP / Postal Code" half><Input value={f.zip_code} onChange={set("zip_code")} placeholder="CEP" /></Field>
+      <Field label="Country" half><Input value={f.country} onChange={set("country")} /></Field>
       <Field label="Tax ID / CNPJ" half><Input value={f.tax_id} onChange={set("tax_id")} placeholder="For Proforma / Commercial Invoice" /></Field>
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
@@ -3398,7 +3560,8 @@ function Clients() {
 
 function SupplierForm({ initial, onSave, onClose }) {
   const [f, setF] = useState(initial || {
-    company_name: "", address: "", address2: "", email: "",
+    company_name: "", address: "", address2: "", address_number: "", neighborhood: "",
+    city: "", state: "", zip_code: "", country: "", email: "",
     phone: "", contact_name: "", payment_terms: "", product_types: "", notes: "",
     beneficiary_name: "", bank_name: "", bank_branch: "", account_number: "", swift_code: "",
   });
@@ -3462,9 +3625,37 @@ function SupplierForm({ initial, onSave, onClose }) {
           )}
         </div>
       </Field>
-      <Field label="Address"><Input value={f.address} onChange={set("address")} /></Field>
-      <Field label="Address 2"><Input value={f.address2} onChange={set("address2")} /></Field>
-      <Field label="Product Types"><Input value={f.product_types} onChange={set("product_types")} placeholder="e.g. Furniture, Textiles, Electronics" /></Field>
+      <Field label="Street / Address" half><Input value={f.address} onChange={set("address")} placeholder="Street name" /></Field>
+      <Field label="Number" half><Input value={f.address_number} onChange={set("address_number")} placeholder="No." /></Field>
+      <Field label="Address 2 / Complement"><Input value={f.address2} onChange={set("address2")} placeholder="Suite, floor, unit…" /></Field>
+      <Field label="Neighborhood" half><Input value={f.neighborhood} onChange={set("neighborhood")} placeholder="Bairro" /></Field>
+      <Field label="City" half><Input value={f.city} onChange={set("city")} /></Field>
+      <Field label="State / Province" half><Input value={f.state} onChange={set("state")} /></Field>
+      <Field label="ZIP / Postal Code" half><Input value={f.zip_code} onChange={set("zip_code")} placeholder="CEP" /></Field>
+      <Field label="Country" half><Input value={f.country} onChange={set("country")} /></Field>
+      <Field label="Product Types">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+          {PRODUCT_CATEGORIES.map(cat => {
+            const selected = (f.product_types || "").split(",").map(s => s.trim()).filter(Boolean).includes(cat);
+            return (
+              <button type="button" key={cat}
+                onClick={() => {
+                  const current = (f.product_types || "").split(",").map(s => s.trim()).filter(Boolean);
+                  const next = selected ? current.filter(c => c !== cat) : [...current, cat];
+                  setF(p => ({ ...p, product_types: next.join(", ") }));
+                }}
+                style={{
+                  padding: "7px 14px", borderRadius: "999px", fontSize: "12px", cursor: "pointer",
+                  border: `1px solid ${selected ? "#8b5cf6" : "#334155"}`,
+                  background: selected ? "rgba(139,92,246,0.15)" : "#1e293b",
+                  color: selected ? "#c4b5fd" : "#94a3b8", fontWeight: selected ? 600 : 400,
+                }}>
+                {cat}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
       <div style={{ gridColumn: "span 2", marginTop: "4px", marginBottom: "-4px", fontSize: "12px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
         Bank Information (for Contracts &amp; Payment Notices)
       </div>

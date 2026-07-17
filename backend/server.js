@@ -159,7 +159,7 @@ app.post('/api/products', (req, res) => {
   try {
     const result = db.prepare(`
       INSERT INTO products (code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `).run(code, name, description, unit || 'unit', ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', volume || null, volume_unit || 'L', unit_cost || 0, cost_currency || 'USD', category, supplier, sale_price || 0, sale_currency || 'USD', cost_per_meter || 0, sale_per_meter || 0, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null);
     res.status(201).json(db.prepare('SELECT * FROM products WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
@@ -225,16 +225,16 @@ app.get('/api/proformas', (req, res) => {
 app.post('/api/proformas', (req, res) => {
   const { order_id, quotation_id, number, issue_date, validity, client, total, currency, status, notes,
     acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier,
-    payment_terms, production_days, delivery_days } = req.body;
+    payment_terms, production_days, delivery_days, items } = req.body;
   try {
     const result = db.prepare(`
 INSERT INTO proformas (order_id, quotation_id, number, issue_date, validity, client, total, currency, status, notes,
   acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier,
-  payment_terms, production_days, delivery_days)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  payment_terms, production_days, delivery_days, items)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `).run(order_id || null, quotation_id || null, number, issue_date, validity, client, total, currency || 'USD', status || 'Draft', notes,
       acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', supplier || '',
-      payment_terms || null, production_days || null, delivery_days || null);
+      payment_terms || null, production_days || null, delivery_days || null, items || null);
     res.status(201).json(db.prepare('SELECT * FROM proformas WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -244,15 +244,15 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 app.put('/api/proformas/:id', (req, res) => {
   const { order_id, number, issue_date, validity, client, total, currency, status, notes,
     acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier,
-    payment_terms, production_days, delivery_days } = req.body;
+    payment_terms, production_days, delivery_days, items } = req.body;
   db.prepare(`
     UPDATE proformas SET order_id=?, number=?, issue_date=?, validity=?, client=?, total=?, currency=?, status=?, notes=?,
       acquisition_company=?, incoterm=?, way_of_shipment=?, port_of_loading=?, port_of_discharge=?, supplier=?,
-      payment_terms=?, production_days=?, delivery_days=?
+      payment_terms=?, production_days=?, delivery_days=?, items=?
     WHERE id=?
   `).run(order_id || null, number, issue_date, validity, client, total, currency, status, notes,
     acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', supplier || '',
-    payment_terms || null, production_days || null, delivery_days || null, req.params.id);
+    payment_terms || null, production_days || null, delivery_days || null, items || null, req.params.id);
   res.json(db.prepare('SELECT * FROM proformas WHERE id=?').get(req.params.id));
 });
 
@@ -598,12 +598,14 @@ app.get('/api/clients', (req, res) => {
 });
 
 app.post('/api/clients', (req, res) => {
-  const { company_name, address, address2, email, phone, contact_name, payment_terms, tax_id, notes } = req.body;
+  const { company_name, address, address2, address_number, neighborhood, city, state, zip_code, country,
+    email, phone, contact_name, payment_terms, tax_id, notes } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO clients (company_name, address, address2, email, phone, contact_name, payment_terms, tax_id, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(company_name, address, address2, email, phone, contact_name, payment_terms, tax_id || '', notes);
+      INSERT INTO clients (company_name, address, address2, address_number, neighborhood, city, state, zip_code, country, email, phone, contact_name, payment_terms, tax_id, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(company_name, address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
+      email, phone, contact_name, payment_terms, tax_id || '', notes);
     res.status(201).json(db.prepare('SELECT * FROM clients WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -611,11 +613,13 @@ app.post('/api/clients', (req, res) => {
 });
 
 app.put('/api/clients/:id', (req, res) => {
-  const { company_name, address, address2, email, phone, contact_name, payment_terms, tax_id, notes } = req.body;
+  const { company_name, address, address2, address_number, neighborhood, city, state, zip_code, country,
+    email, phone, contact_name, payment_terms, tax_id, notes } = req.body;
   db.prepare(`
-    UPDATE clients SET company_name=?, address=?, address2=?, email=?, phone=?, contact_name=?, payment_terms=?, tax_id=?, notes=?
+    UPDATE clients SET company_name=?, address=?, address2=?, address_number=?, neighborhood=?, city=?, state=?, zip_code=?, country=?, email=?, phone=?, contact_name=?, payment_terms=?, tax_id=?, notes=?
     WHERE id=?
-  `).run(company_name, address, address2, email, phone, contact_name, payment_terms, tax_id || '', notes, req.params.id);
+  `).run(company_name, address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
+    email, phone, contact_name, payment_terms, tax_id || '', notes, req.params.id);
   res.json(db.prepare('SELECT * FROM clients WHERE id=?').get(req.params.id));
 });
 
@@ -631,14 +635,16 @@ app.get('/api/suppliers', (req, res) => {
 });
 
 app.post('/api/suppliers', (req, res) => {
-  const { company_name, address, address2, email, phone, contact_name, payment_terms, product_types, notes,
+  const { company_name, address, address2, address_number, neighborhood, city, state, zip_code, country,
+    email, phone, contact_name, payment_terms, product_types, notes,
     beneficiary_name, bank_name, bank_branch, account_number, swift_code } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO suppliers (company_name, address, address2, email, phone, contact_name, payment_terms, product_types, notes,
+      INSERT INTO suppliers (company_name, address, address2, address_number, neighborhood, city, state, zip_code, country, email, phone, contact_name, payment_terms, product_types, notes,
         beneficiary_name, bank_name, bank_branch, account_number, swift_code)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(company_name, address, address2, email, phone, contact_name, payment_terms, product_types, notes,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(company_name, address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
+      email, phone, contact_name, payment_terms, product_types, notes,
       beneficiary_name || '', bank_name || '', bank_branch || '', account_number || '', swift_code || '');
     res.status(201).json(db.prepare('SELECT * FROM suppliers WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
@@ -647,13 +653,15 @@ app.post('/api/suppliers', (req, res) => {
 });
 
 app.put('/api/suppliers/:id', (req, res) => {
-  const { company_name, address, address2, email, phone, contact_name, payment_terms, product_types, notes,
+  const { company_name, address, address2, address_number, neighborhood, city, state, zip_code, country,
+    email, phone, contact_name, payment_terms, product_types, notes,
     beneficiary_name, bank_name, bank_branch, account_number, swift_code } = req.body;
   db.prepare(`
-    UPDATE suppliers SET company_name=?, address=?, address2=?, email=?, phone=?, contact_name=?, payment_terms=?, product_types=?, notes=?,
+    UPDATE suppliers SET company_name=?, address=?, address2=?, address_number=?, neighborhood=?, city=?, state=?, zip_code=?, country=?, email=?, phone=?, contact_name=?, payment_terms=?, product_types=?, notes=?,
       beneficiary_name=?, bank_name=?, bank_branch=?, account_number=?, swift_code=?
     WHERE id=?
-  `).run(company_name, address, address2, email, phone, contact_name, payment_terms, product_types, notes,
+  `).run(company_name, address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
+    email, phone, contact_name, payment_terms, product_types, notes,
     beneficiary_name || '', bank_name || '', bank_branch || '', account_number || '', swift_code || '', req.params.id);
   res.json(db.prepare('SELECT * FROM suppliers WHERE id=?').get(req.params.id));
 });
@@ -678,6 +686,19 @@ function findClientByName(name) {
 function findSupplierByName(name) {
   if (!name) return null;
   return db.prepare('SELECT * FROM suppliers WHERE company_name=?').get(name) || null;
+}
+
+// Joins a client/supplier row's structured address fields into one display
+// string for PDFs — street + number, complement, neighborhood, city/state,
+// zip, country. Falls back gracefully when older records only have the
+// original free-text address/address2 fields filled in.
+function fullAddress(row) {
+  if (!row) return '';
+  const line1 = [row.address, row.address_number].filter(Boolean).join(', ');
+  const line2 = row.address2;
+  const line3 = [row.neighborhood, row.city, row.state].filter(Boolean).join(', ');
+  const line4 = [row.zip_code, row.country].filter(Boolean).join(' - ');
+  return [line1, line2, line3, line4].filter(Boolean).join(', ');
 }
 
 function getAcq(code) {
@@ -732,8 +753,15 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
     const order = pf.order_id ? db.prepare('SELECT * FROM orders WHERE id=?').get(pf.order_id) : null;
     const quotation = pf.quotation_id ? db.prepare('SELECT * FROM quotations WHERE id=?').get(pf.quotation_id) : null;
 
+    // Items priority: a linked Order is the most authoritative (it's
+    // downstream and may have been edited independently); otherwise use the
+    // Proforma's own items snapshot (present for both manually-created
+    // Proformas and ones generated from a Quotation, which copy the
+    // Quotation's items in at creation time); finally fall back to the
+    // linked Quotation's items for older Proformas saved before this existed.
     let rawItems = [];
     if (order) rawItems = orderItemsFor(order.id);
+    else if (pf.items) rawItems = parseJsonSafe(pf.items, []);
     else if (quotation) rawItems = parseJsonSafe(quotation.items, []);
 
     const currency = pf.currency || order?.currency || quotation?.currency || 'USD';
@@ -771,7 +799,7 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
       paymentTerms: pf.payment_terms || order?.payment_terms,
       productionDays: pf.production_days || order?.production_lead_time,
       deliveryDays: pf.delivery_days || order?.delivery_days,
-      importer: { name: pf.client, address: [clientRow?.address, clientRow?.address2].filter(Boolean).join(', '), taxId: clientRow?.tax_id, tel: clientRow?.phone },
+      importer: { name: pf.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
     });
 
     const pdf = await renderPdfBuffer(html);
@@ -821,7 +849,7 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
       productionDays: order?.production_lead_time,
       deliveryDays: order?.delivery_days,
       extraShipmentLine: plSummary,
-      importer: { name: ci.client, address: [clientRow?.address, clientRow?.address2].filter(Boolean).join(', '), taxId: clientRow?.tax_id, tel: clientRow?.phone },
+      importer: { name: ci.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
     });
 
     const pdf = await renderPdfBuffer(html);
@@ -857,7 +885,7 @@ app.get('/api/packing-lists/:id/pdf', async (req, res) => {
         totalLength: pl.total_length, totalRoll: pl.total_roll,
         totalGrossWeight: pl.total_gross_weight, totalNetWeight: pl.total_net_weight, totalCbm: pl.total_cbm,
       },
-      importer: { name: order?.client, address: [clientRow?.address, clientRow?.address2].filter(Boolean).join(', '), taxId: clientRow?.tax_id, tel: clientRow?.phone },
+      importer: { name: order?.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
     });
 
     const pdf = await renderPdfBuffer(html);
