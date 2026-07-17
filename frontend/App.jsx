@@ -188,22 +188,124 @@ function recalcTextileItem(item, product, field, rawValue) {
   return item;
 }
 
-// Same idea as recalcTextileItem but for every other category (machines,
-// chemicals, etc.) — no per-meter/markup concept, just a two-way Total <->
-// Unit Price link. The sale price for ALL categories is now decided here,
-// inline in the Quotation screen's item list — Add Product only holds cost
-// data. `field` is "total" or "unit_price"; `rawValue` may be BR-formatted.
-function recalcSimpleItem(item, field, rawValue) {
+// The registered flat sale price on the product record — the 0% reference
+// point for Markup % on every non-Textile/non-Chemical category (machines,
+// accessories, etc.), mirroring registeredPerMeter()/registeredPerLiter().
+const registeredUnitPrice = (product) => {
+  const v = product ? parseFloat(product.sale_price) : NaN;
+  return Number.isFinite(v) && v > 0 ? v : null;
+};
+
+// Same idea as recalcTextileItem but for every category with a flat unit
+// price (machines, accessories, packaging, etc. — anything that isn't sold
+// by the meter or by the liter). `field` is "sale_pct", "unit_price" or
+// "total"; `rawValue` may be BR-formatted. The sale price for ALL categories
+// is decided here, inline in the Quotation screen's item list — Add Product
+// only holds cost data.
+function recalcSimpleItem(item, product, field, rawValue) {
   const qty = parseFloat(item.quantity) || 0;
-  if (field === "total") {
-    const total = parseLocaleNumber(rawValue);
-    const price = total != null && qty ? total / qty : null;
-    return { ...item, total: rawValue, unit_price: price != null ? price.toFixed(4) : item.unit_price };
+  const base = registeredUnitPrice(product);
+
+  if (field === "sale_pct") {
+    const pct = parseLocaleNumber(rawValue);
+    const price = base != null && pct != null ? base * (1 + pct / 100) : null;
+    const total = price != null && qty ? price * qty : null;
+    return {
+      ...item,
+      sale_pct: rawValue,
+      unit_price: price != null ? price.toFixed(2) : item.unit_price,
+      total: total != null ? total.toFixed(2) : item.total,
+    };
   }
   if (field === "unit_price") {
     const price = parseLocaleNumber(rawValue);
     const total = price != null && qty ? price * qty : null;
-    return { ...item, unit_price: rawValue, total: total != null ? total.toFixed(2) : item.total };
+    const pct = base != null && price != null ? ((price / base) - 1) * 100 : null;
+    return {
+      ...item,
+      unit_price: rawValue,
+      total: total != null ? total.toFixed(2) : item.total,
+      sale_pct: pct != null ? pct.toFixed(2) : item.sale_pct,
+    };
+  }
+  if (field === "total") {
+    const total = parseLocaleNumber(rawValue);
+    const price = total != null && qty ? total / qty : null;
+    const pct = base != null && price != null ? ((price / base) - 1) * 100 : null;
+    return {
+      ...item,
+      total: rawValue,
+      unit_price: price != null ? price.toFixed(4) : item.unit_price,
+      sale_pct: pct != null ? pct.toFixed(2) : item.sale_pct,
+    };
+  }
+  return item;
+}
+
+// Converts a product's registered `volume` (e.g. liters per drum/barrel)
+// into liters, regardless of the unit it was entered in — the liquid-goods
+// equivalent of heightMOf() for Textile rolls.
+const volumeLOf = (product) => {
+  if (!product) return 0;
+  const v = parseFloat(product.volume) || 0;
+  if (product.volume_unit === "mL") return v * 0.001;
+  if (product.volume_unit === "gal") return v * 3.78541;
+  return v; // L
+};
+
+// The registered per-liter sale price on the product record — the 0%
+// reference point Markup % is measured against for Chemical/liquid items.
+const registeredPerLiter = (product) => {
+  const v = product ? parseFloat(product.sale_per_liter) : NaN;
+  return Number.isFinite(v) && v > 0 ? v : null;
+};
+
+// Liquid-goods (Chemical category — sold in drums/barrels) equivalent of
+// recalcTextileItem: two-way Markup % / Value-per-Liter / Total, converting
+// through the product's registered drum volume.
+function recalcLiquidItem(item, product, field, rawValue) {
+  const volumeL = volumeLOf(product);
+  const qty = parseFloat(item.quantity) || 0;
+  const base = registeredPerLiter(product);
+
+  if (field === "sale_pct") {
+    const pct = parseLocaleNumber(rawValue);
+    const spl = base != null && pct != null ? base * (1 + pct / 100) : null;
+    const unitPrice = spl != null && volumeL ? spl * volumeL : null;
+    const total = unitPrice != null && qty ? unitPrice * qty : null;
+    return {
+      ...item,
+      sale_pct: rawValue,
+      sale_per_liter: spl != null ? spl.toFixed(2) : item.sale_per_liter,
+      unit_price: unitPrice != null ? unitPrice.toFixed(2) : item.unit_price,
+      total: total != null ? total.toFixed(2) : item.total,
+    };
+  }
+  if (field === "sale_per_liter") {
+    const spl = parseLocaleNumber(rawValue);
+    const unitPrice = spl != null && volumeL ? spl * volumeL : null;
+    const total = unitPrice != null && qty ? unitPrice * qty : null;
+    const pct = base != null && spl != null ? ((spl / base) - 1) * 100 : null;
+    return {
+      ...item,
+      sale_per_liter: rawValue,
+      unit_price: unitPrice != null ? unitPrice.toFixed(2) : item.unit_price,
+      total: total != null ? total.toFixed(2) : item.total,
+      sale_pct: pct != null ? pct.toFixed(2) : item.sale_pct,
+    };
+  }
+  if (field === "total") {
+    const total = parseLocaleNumber(rawValue);
+    const price = total != null && qty ? total / qty : null;
+    const spl = price != null && volumeL ? price / volumeL : null;
+    const pct = base != null && spl != null ? ((spl / base) - 1) * 100 : null;
+    return {
+      ...item,
+      total: rawValue,
+      unit_price: price != null ? price.toFixed(4) : item.unit_price,
+      sale_per_liter: spl != null ? spl.toFixed(2) : item.sale_per_liter,
+      sale_pct: pct != null ? pct.toFixed(2) : item.sale_pct,
+    };
   }
   return item;
 }
@@ -211,20 +313,46 @@ function recalcSimpleItem(item, field, rawValue) {
 // Options for the "Target Price refers to" selector shown next to each
 // item's Target Price field — always offers the item's Total and its own
 // registered package unit (Rolls, kg, etc.), plus Per Meter for
-// Textile/DTF Film items where that's the natural pricing unit.
+// Textile/DTF Film items or Per Liter for Chemical (liquid) items where
+// those are the natural pricing units.
 function targetPriceUnitOptions(item) {
   const isTextile = item?.category === "Textile" || item?.category === "DTF Film";
+  const isLiquid = item?.category === "Chemical";
   const opts = [{ value: "total", label: "Total" }];
   if (isTextile) opts.push({ value: "meter", label: "Per Meter" });
+  if (isLiquid) opts.push({ value: "liter", label: "Per Liter" });
   opts.push({ value: "unit", label: `Per ${item?.unit || "Unit"}` });
   return opts;
 }
 
 const targetPriceUnitSuffix = (item) => {
   if (item.target_price_unit === "meter") return "/m";
+  if (item.target_price_unit === "liter") return "/L";
   if (item.target_price_unit === "unit") return `/${item.unit || "un"}`;
   return "";
 };
+
+// Package/unit options a product can be sold in — shared between the
+// Product Registry's "Package" field and the Add Product modal's Unit
+// field, so an ad-hoc item (not tied to a registered product) can still
+// pick a real package type instead of being stuck with whatever the last
+// selected product had.
+const PACKAGE_UNIT_OPTIONS = [
+  "Bags / Sacks - 25kg",
+  "Bags / Sacks - 50kg",
+  "Boxes / Cartons - Large",
+  "Boxes / Cartons - Medium",
+  "Boxes / Cartons - Small",
+  "Wooden Crates - Large",
+  "Wooden Crates - Medium",
+  "Wooden Crates - Small",
+  "Fiber Drums / Barrels",
+  "Pallet - America",
+  "Pallet - Europe",
+  "Plastic Drums / Barrels",
+  "Rolls",
+  "Steel Drums / Barrels",
+];
 
 // Shared list of trade payment-term presets, used by both OrderForm and
 // ProformaForm's searchable Payment Terms field.
@@ -492,15 +620,21 @@ const selectProduct = (p) => {
   setSearch(`${p.code} – ${p.name}`);
 
   const isTextile = p.category === "Textile" || p.category === "DTF Film";
+  const isLiquid = p.category === "Chemical";
   const h = parseFloat(p.height) || 0;
   const heightM = p.height_unit === "cm" ? h * 0.01 : p.height_unit === "mm" ? h * 0.001 : h;
+  const volL = volumeLOf(p);
 
   const salePrice = isTextile && p.sale_per_meter && heightM
     ? (parseFloat(p.sale_per_meter) * heightM).toFixed(2)
+    : isLiquid && p.sale_per_liter && volL
+    ? (parseFloat(p.sale_per_liter) * volL).toFixed(2)
     : p.sale_price || p.unit_cost || "";
 
   const costPrice = isTextile && p.cost_per_meter && heightM
     ? (parseFloat(p.cost_per_meter) * heightM).toFixed(2)
+    : isLiquid && p.cost_per_liter && volL
+    ? (parseFloat(p.cost_per_liter) * volL).toFixed(2)
     : p.unit_cost || "";
 
   setItem(prev => ({
@@ -518,7 +652,10 @@ const selectProduct = (p) => {
     category: p.category || "",
     sale_per_meter: isTextile ? (p.sale_per_meter || null) : null,
     cost_per_meter: isTextile ? (p.cost_per_meter || null) : null,
-    sale_pct: isTextile ? "0" : null,
+    sale_per_liter: isLiquid ? (p.sale_per_liter || null) : null,
+    cost_per_liter: isLiquid ? (p.cost_per_liter || null) : null,
+    // Markup % now applies to every category, not just Textile/DTF.
+    sale_pct: "0",
   }));
   setShowList(false);
 };
@@ -576,7 +713,10 @@ const handleQtyChange = (e) => {
           </div>
         </Field>
         <Field label="Unit" half>
-  <Input value={item.unit} onChange={e => setItem(p => ({ ...p, unit: e.target.value }))} placeholder="Auto-filled from product" readOnly />
+  <Select value={item.unit || ""} onChange={e => setItem(p => ({ ...p, unit: e.target.value }))}>
+    <option value="">Select...</option>
+    {PACKAGE_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
+  </Select>
 </Field>
         <Field label="Quantity" half>
           <Input type="number" value={item.quantity} onChange={handleQtyChange} placeholder="0" />
@@ -865,9 +1005,11 @@ const [f, setF] = useState(initial || {
   height: "", height_unit: "cm",
   thickness: "", thickness_unit: "mm",
   weight: "", weight_unit: "kg",
+  volume: "", volume_unit: "L",
   unit_cost: "", cost_currency: "USD",
   sale_price: "", sale_currency: "USD",
   cost_per_meter: "", sale_per_meter: "",
+  cost_per_liter: "", sale_per_liter: "",
   category: "", supplier: "",
 });
   const [suppliers, setSuppliers] = useState([]);
@@ -905,16 +1047,28 @@ const handleCostChange = (e) => {
   const cost = parseFloat(e.target.value) || 0;
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
+  const volL = volumeLOf(f);
   const cpm = heightM > 0 ? (cost / heightM).toFixed(4) : f.cost_per_meter;
-  setF((p) => ({ ...p, unit_cost: e.target.value, cost_per_meter: heightM > 0 ? cpm : p.cost_per_meter }));
+  const cpl = volL > 0 ? (cost / volL).toFixed(4) : f.cost_per_liter;
+  setF((p) => ({
+    ...p, unit_cost: e.target.value,
+    cost_per_meter: heightM > 0 ? cpm : p.cost_per_meter,
+    cost_per_liter: volL > 0 ? cpl : p.cost_per_liter,
+  }));
 };
 
   const handleSalePriceChange = (e) => {
   const sale = parseFloat(e.target.value) || 0;
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
+  const volL = volumeLOf(f);
   const spm = heightM > 0 ? (sale / heightM).toFixed(4) : f.sale_per_meter;
-  setF((p) => ({ ...p, sale_price: e.target.value, sale_per_meter: heightM > 0 ? spm : p.sale_per_meter }));
+  const spl = volL > 0 ? (sale / volL).toFixed(4) : f.sale_per_liter;
+  setF((p) => ({
+    ...p, sale_price: e.target.value,
+    sale_per_meter: heightM > 0 ? spm : p.sale_per_meter,
+    sale_per_liter: volL > 0 ? spl : p.sale_per_liter,
+  }));
 };
 
 const handleCostPerMeterChange = (e) => {
@@ -931,6 +1085,20 @@ const handleSalePerMeterChange = (e) => {
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const sale_price = (spm * heightM).toFixed(2);
   setF((p) => ({ ...p, sale_per_meter: e.target.value, sale_price: heightM > 0 ? sale_price : p.sale_price }));
+};
+
+const handleCostPerLiterChange = (e) => {
+  const cpl = parseFloat(e.target.value) || 0;
+  const volL = volumeLOf(f);
+  const unit_cost = (cpl * volL).toFixed(2);
+  setF((p) => ({ ...p, cost_per_liter: e.target.value, unit_cost: volL > 0 ? unit_cost : p.unit_cost }));
+};
+
+const handleSalePerLiterChange = (e) => {
+  const spl = parseFloat(e.target.value) || 0;
+  const volL = volumeLOf(f);
+  const sale_price = (spl * volL).toFixed(2);
+  setF((p) => ({ ...p, sale_per_liter: e.target.value, sale_price: volL > 0 ? sale_price : p.sale_price }));
 };
 
   const currencies = ["USD", "BRL", "CNY", "EUR", "GBP", "JPY"];
@@ -986,22 +1154,7 @@ const handleSalePerMeterChange = (e) => {
       <Field label="Package" half>
   <Select value={f.unit} onChange={set("unit")}>
     <option value="">Select...</option>
-    {[
-      "Bags / Sacks - 25kg",
-      "Bags / Sacks - 50kg",
-      "Boxes / Cartons - Large",
-      "Boxes / Cartons - Medium",
-      "Boxes / Cartons - Small",
-      "Wooden Crates - Large",
-      "Wooden Crates - Medium",
-      "Wooden Crates - Small",
-      "Fiber Drums / Barrels",
-      "Pallet - America",
-      "Pallet - Europe",
-      "Plastic Drums / Barrels",
-      "Rolls",
-      "Steel Drums / Barrels",
-    ].map(u => <option key={u}>{u}</option>)}
+    {PACKAGE_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
   </Select>
 </Field>
 
@@ -1038,6 +1191,17 @@ const handleSalePerMeterChange = (e) => {
   </div>
 </Field>
 
+{f.category === "Chemical" && (
+  <Field label="Volume (per package)" half>
+    <div style={{ display: "flex", gap: "6px" }}>
+      <Input value={f.volume || ""} onChange={set("volume")} placeholder="e.g. 200 for a 200L drum" style={{ ...inputStyle, flex: 1 }} />
+      <Select value={f.volume_unit || "L"} onChange={set("volume_unit")} style={{ ...inputStyle, width: "80px", cursor: "pointer" }}>
+        {["mL","L","gal"].map(u => <option key={u}>{u}</option>)}
+      </Select>
+    </div>
+  </Field>
+)}
+
 <Field label="Cost Currency" half>
   <Select value={f.cost_currency} onChange={set("cost_currency")}>
     {currencies.map(c => <option key={c}>{c}</option>)}
@@ -1056,6 +1220,17 @@ const handleSalePerMeterChange = (e) => {
     </Field>
     <Field label="Sale per Meter" half>
       <Input type="number" value={f.sale_per_meter || ""} onChange={handleSalePerMeterChange} placeholder="0.00" />
+    </Field>
+  </>
+)}
+
+{f.category === "Chemical" && (
+  <>
+    <Field label="Cost per Liter" half>
+      <Input type="number" value={f.cost_per_liter || ""} onChange={handleCostPerLiterChange} placeholder="0.00" />
+    </Field>
+    <Field label="Sale per Liter" half>
+      <Input type="number" value={f.sale_per_liter || ""} onChange={handleSalePerLiterChange} placeholder="0.00" />
     </Field>
   </>
 )}
@@ -1485,7 +1660,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
 
 function QuotationForm({ onSave, onClose, initial }) {
   const [f, setF] = useState(initial || {
-  number: "", client: "", suppliers: "", currency: "USD", deadline: "",
+  number: "", client: "", currency: "USD", deadline: "",
   total: "",
   specifications: "", notes: "", status: "Pending",
 });
@@ -1493,9 +1668,6 @@ function QuotationForm({ onSave, onClose, initial }) {
   const [clients, setClients] = useState([]);
   const [clientSearch, setClientSearch] = useState(initial?.client || "");
   const [showClientList, setShowClientList] = useState(false);
-  const [suppliersList, setSuppliersList] = useState([]);
-  const [supplierSearch, setSupplierSearch] = useState(initial?.suppliers || "");
-  const [showSupplierList, setShowSupplierList] = useState(false);
   const [products, setProducts] = useState([]);
   const [media, setMedia] = useState(() => {
   if (!initial?.media) return [];
@@ -1513,7 +1685,6 @@ function QuotationForm({ onSave, onClose, initial }) {
 
   useEffect(() => {
     api("/clients").then(setClients);
-    api("/suppliers").then(setSuppliersList);
     api("/products").then(setProducts);
   }, []);
 
@@ -1530,7 +1701,6 @@ useEffect(() => {
   const removeItem = (idx) => setItems(prev => prev.filter((_, i) => i !== idx));
 
   const filteredClients = clients.filter(c => c.company_name.toLowerCase().includes(clientSearch.toLowerCase()));
-  const filteredSuppliers = suppliersList.filter(s => s.company_name.toLowerCase().includes(supplierSearch.toLowerCase()));
 
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files);
@@ -1595,28 +1765,6 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
           </div>
         </Field>
 
-        <Field label="Supplier" half>
-          <div style={{ position: "relative" }}>
-            <Input value={supplierSearch}
-              onChange={e => { setSupplierSearch(e.target.value); setF(p => ({ ...p, suppliers: e.target.value })); setShowSupplierList(true); }}
-              onFocus={() => setShowSupplierList(true)}
-              onBlur={() => setTimeout(() => setShowSupplierList(false), 200)}
-              placeholder="Search supplier…" />
-            {showSupplierList && filteredSuppliers.length > 0 && (
-              <div style={dropdownStyle}>
-                {filteredSuppliers.map(s => (
-                  <div key={s.id} style={dropItemStyle}
-                    onMouseDown={() => { setSupplierSearch(s.company_name); setF(p => ({ ...p, suppliers: s.company_name })); setShowSupplierList(false); }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#334155"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    {s.company_name}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </Field>
-
         <Field label="Deadline" half><Input type="date" value={f.deadline} onChange={set("deadline")} /></Field>
 
         <Field label="Products">
@@ -1626,11 +1774,14 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
             )}
             {items.map((item, idx) => {
               const isTextile = item.category === "Textile" || item.category === "DTF Film";
+              const isLiquid = item.category === "Chemical";
               const product = products.find(p => Number(p.id) === Number(item.product_id));
               const onPriceField = (field) => (e) => updateItem(idx, recalcTextileItem(item, product, field, e.target.value));
-              const onSimpleField = (field) => (e) => updateItem(idx, recalcSimpleItem(item, field, e.target.value));
+              const onLiquidField = (field) => (e) => updateItem(idx, recalcLiquidItem(item, product, field, e.target.value));
+              const onSimpleField = (field) => (e) => updateItem(idx, recalcSimpleItem(item, product, field, e.target.value));
               const onTargetField = (e) => updateItem(idx, { ...item, target_price: e.target.value });
               const onTargetUnitField = (e) => updateItem(idx, { ...item, target_price_unit: e.target.value });
+              const pctHandler = isTextile ? onPriceField("sale_pct") : isLiquid ? onLiquidField("sale_pct") : onSimpleField("sale_pct");
               return (
                 <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid #0f172a" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -1642,38 +1793,38 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
                     <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
                     <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
                   </div>
-                  {isTextile ? (
-                    <div style={{ display: "flex", gap: "12px", alignItems: "flex-end", marginTop: "8px", flexWrap: "wrap" }}>
-                      <label style={{ fontSize: "11px", color: "#64748b" }}>Markup %
-                        <input type="text" inputMode="decimal" value={item.sale_pct ?? ""} onChange={onPriceField("sale_pct")}
-                          placeholder="0"
-                          style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "70px" }} />
-                      </label>
+                  <div style={{ display: "flex", gap: "12px", alignItems: "flex-end", marginTop: "8px", flexWrap: "wrap" }}>
+                    <label style={{ fontSize: "11px", color: "#64748b" }}>Markup %
+                      <input type="text" inputMode="decimal" value={item.sale_pct ?? ""} onChange={pctHandler}
+                        placeholder="0"
+                        style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "70px" }} />
+                    </label>
+                    {isTextile ? (
                       <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Meter ({item.currency || f.currency})
                         <input type="text" inputMode="decimal" value={item.sale_per_meter ?? ""} onChange={onPriceField("sale_per_meter")}
                           placeholder="0,00"
                           style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
                       </label>
-                      <label style={{ fontSize: "11px", color: "#64748b" }}>Total ({item.currency || f.currency})
-                        <input type="text" inputMode="decimal" value={item.total ?? ""} onChange={onPriceField("total")}
+                    ) : isLiquid ? (
+                      <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Liter ({item.currency || f.currency})
+                        <input type="text" inputMode="decimal" value={item.sale_per_liter ?? ""} onChange={onLiquidField("sale_per_liter")}
                           placeholder="0,00"
-                          style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "110px", fontWeight: 700, color: "#10b981" }} />
+                          style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
                       </label>
-                    </div>
-                  ) : (
-                    <div style={{ display: "flex", gap: "12px", alignItems: "flex-end", marginTop: "8px", flexWrap: "wrap" }}>
+                    ) : (
                       <label style={{ fontSize: "11px", color: "#64748b" }}>Unit Price ({item.currency || f.currency})
                         <input type="text" inputMode="decimal" value={item.unit_price ?? ""} onChange={onSimpleField("unit_price")}
                           placeholder="0,00"
                           style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
                       </label>
-                      <label style={{ fontSize: "11px", color: "#64748b" }}>Total ({item.currency || f.currency})
-                        <input type="text" inputMode="decimal" value={item.total ?? ""} onChange={onSimpleField("total")}
-                          placeholder="0,00"
-                          style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "110px", fontWeight: 700, color: "#10b981" }} />
-                      </label>
-                    </div>
-                  )}
+                    )}
+                    <label style={{ fontSize: "11px", color: "#64748b" }}>Total ({item.currency || f.currency})
+                      <input type="text" inputMode="decimal" value={item.total ?? ""}
+                        onChange={isTextile ? onPriceField("total") : isLiquid ? onLiquidField("total") : onSimpleField("total")}
+                        placeholder="0,00"
+                        style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "110px", fontWeight: 700, color: "#10b981" }} />
+                    </label>
+                  </div>
                   <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", marginTop: "8px" }}>
                     <label style={{ fontSize: "11px", color: "#64748b" }}>Target Price
                       <input type="text" inputMode="decimal" value={item.target_price ?? ""} onChange={onTargetField}
@@ -1766,6 +1917,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
               total: item.total !== "" && item.total != null ? (parseLocaleNumber(item.total) ?? item.total) : item.total,
               unit_price: item.unit_price !== "" && item.unit_price != null ? (parseLocaleNumber(item.unit_price) ?? item.unit_price) : item.unit_price,
               sale_per_meter: item.sale_per_meter !== "" && item.sale_per_meter != null ? (parseLocaleNumber(item.sale_per_meter) ?? item.sale_per_meter) : item.sale_per_meter,
+              sale_per_liter: item.sale_per_liter !== "" && item.sale_per_liter != null ? (parseLocaleNumber(item.sale_per_liter) ?? item.sale_per_liter) : item.sale_per_liter,
               sale_pct: item.sale_pct !== "" && item.sale_pct != null ? (parseLocaleNumber(item.sale_pct) ?? item.sale_pct) : item.sale_pct,
               target_price: item.target_price !== "" && item.target_price != null ? (parseLocaleNumber(item.target_price) ?? item.target_price) : item.target_price,
             }));
@@ -1859,7 +2011,13 @@ console.log('quotations set:', quotations?.length);
           { label: "Number", render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
           { label: "Product", key: "product_name" },
           { label: "Client", key: "client" },
-          { label: "Suppliers", key: "suppliers" },
+          { label: "Suppliers", render: r => {
+  try {
+    const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
+    const suppliers = [...new Set(items.map(i => i.supplier).filter(Boolean))];
+    return suppliers.length > 0 ? suppliers.join(", ") : "—";
+  } catch { return "—"; }
+}},
           { label: "Qty", render: r => `${r.quantity || "—"} ${r.unit || ""}` },
           { label: "Target Price", render: r => {
   try {
@@ -2771,11 +2929,15 @@ const [proformas, setProformas] = useState([]);
       ? (typeof quotation.items === 'string' ? (JSON.parse(quotation.items || "[]")) : (quotation.items || []))
       : [];
     const itemsTotal = items.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0);
+    // Suppliers now live per item (each product in the quotation can have
+    // its own), not as a single field on the quotation — join whatever
+    // unique suppliers show up across the items being carried into the Order.
+    const itemSuppliers = [...new Set(items.map(i => i.supplier).filter(Boolean))];
     const orderNumber = `ORD-${pf.number}`;
     const order = await api("/orders", "POST", {
       order_number: orderNumber,
       client: pf.client || quotation?.client || "",
-      supplier: quotation?.suppliers || "",
+      supplier: itemSuppliers.join(", "),
       value: pf.total || itemsTotal.toFixed(2),
       currency: pf.currency || quotation?.currency || "USD",
       incoterm: pf.incoterm || "",
