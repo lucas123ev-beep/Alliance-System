@@ -18,7 +18,8 @@ function renderContract(params) {
       <td>${escapeHtml(item.code || "—")}</td>
       <td>${escapeHtml(item.thickness || "—")}</td>
       <td>${escapeHtml(item.width || "—")}</td>
-      <td class="num">${fmtNumber(item.quantity, 2)} ${escapeHtml(item.unit || "")}</td>
+      <td>${escapeHtml(item.gramatura || "—")}</td>
+      <td class="num">${item.quantityTons != null ? `${fmtNumber(item.quantityTons, 3)} t` : "—"}</td>
       <td class="num">${fmtMoney(item.unitPrice, item.currency || currency)}</td>
       <td class="num">${fmtMoney(item.total, item.currency || currency)}</td>
     </tr>
@@ -68,13 +69,13 @@ function renderContract(params) {
       <thead>
         <tr>
           <th>项目</th><th>品名</th><th>颜色</th><th>编号</th><th>厚度</th><th>有效门幅</th>
-          <th>数量</th><th>含税单价</th><th>金额</th>
+          <th>克重 Gramatura</th><th>总重量(吨) Total Weight (Tons)</th><th>含税单价</th><th>金额</th>
         </tr>
       </thead>
       <tbody>
         ${rows}
         <tr class="totals-row">
-          <td colspan="8" style="text-align:right;">总计 (Total)</td>
+          <td colspan="9" style="text-align:right;">总计 (Total)</td>
           <td class="num">${fmtMoney(total, currency)}</td>
         </tr>
       </tbody>

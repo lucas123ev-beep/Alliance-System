@@ -324,6 +324,11 @@ const migrations = [
   // always starting at 0), since it's usually the same standard margin
   // reused quote after quote.
   ['products', 'sale_pct', 'REAL'],
+  // Weight of the empty cardboard/plastic tube core inside a Textile/DTF
+  // Film roll — needed to compute an accurate Gross Weight in the Packing
+  // List (Gross = Net + tube_weight × roll count), since the tube itself
+  // isn't part of the sellable net goods weight.
+  ['products', 'tube_weight', 'REAL'],
   ['order_items', 'product_code', 'TEXT'],
   ['order_items', 'supplier', 'TEXT'],
   ['order_items', 'currency', "TEXT DEFAULT 'USD'"],

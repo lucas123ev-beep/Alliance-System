@@ -155,12 +155,12 @@ app.get('/api/products', (req, res) => {
 });
 
 app.post('/api/products', (req, res) => {
-  const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media } = req.body;
+  const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, tube_weight, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO products (code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(code, name, description, unit || 'unit', ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', volume || null, volume_unit || 'L', unit_cost || 0, cost_currency || 'USD', category, supplier, sale_price || 0, sale_currency || 'USD', cost_per_meter || 0, sale_per_meter || 0, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null);
+      INSERT INTO products (code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, tube_weight, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(code, name, description, unit || 'unit', ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', tube_weight || null, volume || null, volume_unit || 'L', unit_cost || 0, cost_currency || 'USD', category, supplier, sale_price || 0, sale_currency || 'USD', cost_per_meter || 0, sale_per_meter || 0, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null);
     res.status(201).json(db.prepare('SELECT * FROM products WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -168,11 +168,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 });
 
 app.put('/api/products/:id', (req, res) => {
-  const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media } = req.body;
+  const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, tube_weight, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media } = req.body;
   db.prepare(`
-    UPDATE products SET code=?, name=?, description=?, unit=?, ncm=?, hs_code=?, color=?, width=?, width_unit=?, height=?, height_unit=?, thickness=?, thickness_unit=?, weight=?, weight_unit=?, volume=?, volume_unit=?, unit_cost=?, cost_currency=?, category=?, supplier=?, sale_price=?, sale_currency=?, cost_per_meter=?, sale_per_meter=?, cost_per_liter=?, sale_per_liter=?, sale_pct=?, media=?
+    UPDATE products SET code=?, name=?, description=?, unit=?, ncm=?, hs_code=?, color=?, width=?, width_unit=?, height=?, height_unit=?, thickness=?, thickness_unit=?, weight=?, weight_unit=?, tube_weight=?, volume=?, volume_unit=?, unit_cost=?, cost_currency=?, category=?, supplier=?, sale_price=?, sale_currency=?, cost_per_meter=?, sale_per_meter=?, cost_per_liter=?, sale_per_liter=?, sale_pct=?, media=?
 WHERE id=?
-`).run(code, name, description, unit, ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', volume || null, volume_unit || 'L', unit_cost, cost_currency || 'USD', category, supplier, sale_price, sale_currency || 'USD', cost_per_meter, sale_per_meter, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, req.params.id);
+`).run(code, name, description, unit, ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', tube_weight || null, volume || null, volume_unit || 'L', unit_cost, cost_currency || 'USD', category, supplier, sale_price, sale_currency || 'USD', cost_per_meter, sale_per_meter, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, req.params.id);
   res.json(db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id));
 });
 
@@ -712,10 +712,24 @@ function descriptionBullets(product) {
 
 // Normalizes an order_item / quotation item row (+ its linked product) into
 // the shape the Proforma / Commercial Invoice / Packing List templates need.
+function metersOf(value, unit) {
+  const v = parseFloat(value);
+  if (!v) return null;
+  if (unit === 'cm') return v * 0.01;
+  if (unit === 'mm') return v * 0.001;
+  return v;
+}
+
 function normalizeSalesItem(item, fallbackCurrency) {
   const product = getProduct(item.product_id);
   const category = item.category || product?.category || '';
   const isTextile = category === 'Textile' || category === 'DTF Film';
+  // Meters per roll — the roll length used for this specific item (may
+  // differ from the product's registered default when a custom length was
+  // requested), shown as its own column for Textile/DTF Film.
+  const metersPerRoll = isTextile
+    ? (metersOf(item.height, item.height_unit) ?? metersOf(product?.height, product?.height_unit))
+    : null;
   return {
     description: product?.name || item.product_name || '—',
     bullets: descriptionBullets(product),
@@ -727,13 +741,20 @@ function normalizeSalesItem(item, fallbackCurrency) {
     isTextile,
     quantity: item.quantity ?? null,
     unit: item.unit || '',
+    metersPerRoll,
     // "Total Length" (in meters) only means something for Textile/DTF Film
     // rolls — for other categories (machines, chemicals...) leave it blank
     // on the PDF instead of showing the raw quantity, which isn't a length.
     // They get a Total Weight + Quantity column instead (see salesInvoice.js).
     totalLength: isTextile ? (item.total_meterage ?? item.quantity ?? 0) : null,
     totalWeight: item.total_weight ?? null,
-    unitPrice: item.unit_price ?? 0,
+    // For Textile/DTF Film the Unit Price shown on client-facing docs is the
+    // per-meter rate (what was actually quoted), not the per-roll total —
+    // fall back to unit_price/length if sale_per_meter wasn't saved on the
+    // item (older records).
+    unitPrice: isTextile
+      ? (item.sale_per_meter ?? (metersPerRoll ? (item.unit_price || 0) / metersPerRoll : item.unit_price ?? 0))
+      : (item.unit_price ?? 0),
     total: item.total ?? ((item.unit_price || 0) * (item.quantity || 0)),
     currency: item.currency || fallbackCurrency,
     _product: product,
@@ -768,6 +789,7 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
     const items = rawItems.map(i => normalizeSalesItem(i, currency));
     const totalLength = items.reduce((s, i) => s + (parseFloat(i.totalLength) || 0), 0);
     const totalWeight = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.totalWeight) || 0), 0);
+    const totalQuantity = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
     const totalAmount = pf.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
 
     const acqCode = pf.acquisition_company || order?.acquisition_company || 'HK';
@@ -791,6 +813,7 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
       items,
       totalLength,
       totalWeight,
+      totalQuantity,
       totalAmount,
       currency,
       // Payment terms / production / delivery days: prefer whatever was
@@ -821,6 +844,7 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
     const items = rawItems.map(i => normalizeSalesItem(i, currency));
     const totalLength = items.reduce((s, i) => s + (parseFloat(i.totalLength) || 0), 0);
     const totalWeight = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.totalWeight) || 0), 0);
+    const totalQuantity = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
     const totalAmount = ci.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
 
     const acq = getAcq(order?.acquisition_company || 'HK');
@@ -843,6 +867,7 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
       items,
       totalLength,
       totalWeight,
+      totalQuantity,
       totalAmount,
       currency,
       paymentTerms: order?.payment_terms || ci.notes,
@@ -909,13 +934,26 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
       const product = getProduct(item.product_id);
       const unitPrice = parseFloat(item.cost_price ?? item.unit_price) || 0;
       const qty = parseFloat(item.quantity) || 0;
+      const category = item.category || product?.category || '';
+      const isTextile = category === 'Textile' || category === 'DTF Film';
+      // Gramatura (GSM) only applies to Textile/DTF Film, registered on the
+      // product as weight g/m² or g/m.
+      const gramatura = isTextile && product?.weight && (product.weight_unit === 'g/m²' || product.weight_unit === 'g/m')
+        ? `${product.weight} ${product.weight_unit}` : '';
+      // Total quantity in tons (replacing the roll count) — Gross Weight =
+      // Net Weight (item.total_weight) + tube core weight × roll count.
+      const netWeight = item.total_weight != null && item.total_weight !== '' ? parseFloat(item.total_weight) : null;
+      const tubeWeightPerRoll = isTextile ? (parseFloat(product?.tube_weight) || 0) : 0;
+      const grossWeightKg = netWeight != null ? netWeight + tubeWeightPerRoll * qty : null;
+      const quantityTons = grossWeightKg != null ? grossWeightKg / 1000 : null;
       return {
         productName: product?.name || item.product_name || '—',
         color: product?.color || '',
         code: item.product_code || product?.code || '',
         thickness: product?.thickness ? `${product.thickness}${product.thickness_unit || ''}` : '',
         width: product?.width ? `${product.width}${product.width_unit || ''}` : '',
-        quantity: qty,
+        gramatura,
+        quantityTons,
         unit: item.unit || '',
         unitPrice,
         currency: item.cost_currency || item.currency || contract.currency,

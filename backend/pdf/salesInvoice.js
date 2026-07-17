@@ -12,15 +12,15 @@ const { escapeHtml, fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLab
 //   acq: acquisition company object (see acquisitionCompanies.js)
 //   manufacturer: { name, address, tel }
 //   items: [{ description, bullets: [], color, width, weightSpec, category, isTextile,
-//             quantity, unit, totalLength, totalWeight, unitPrice, total, currency, ncm }]
-//   totalLength, totalWeight, totalAmount, currency
+//             quantity, unit, metersPerRoll, totalLength, totalWeight, unitPrice, total, currency, ncm }]
+//   totalLength, totalWeight, totalQuantity, totalAmount, currency
 //   paymentTerms, productionDays, deliveryDays
 //   importer: { name, address, taxId, tel }
 //   extraShipmentLine: optional extra line for Shipment Details column (e.g. Packing List summary)
 function renderSalesInvoice(params) {
   const {
     title, number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
-    incoterm, acq, manufacturer, items, totalLength, totalWeight, totalAmount, currency,
+    incoterm, acq, manufacturer, items, totalLength, totalWeight, totalQuantity, totalAmount, currency,
     paymentTerms, productionDays, deliveryDays, importer, extraShipmentLine,
   } = params;
 
@@ -47,6 +47,7 @@ function renderSalesInvoice(params) {
       <td>${escapeHtml(item.color || "—")}</td>
       <td>${escapeHtml(item.width || "—")}</td>
       <td>${escapeHtml(item.weightSpec || "—")}</td>
+      <td class="num">${item.metersPerRoll ? fmtNumber(item.metersPerRoll, 2) : "—"}</td>
       <td class="num">${fmtNumber(item.totalLength, 3)}</td>
       <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
       <td class="num">${fmtMoney(item.total, currency)}</td>
@@ -75,10 +76,11 @@ function renderSalesInvoice(params) {
     <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
-          <th style="width:28%">Descriptions of Goods</th>
+          <th style="width:26%">Descriptions of Goods</th>
           <th>Color</th>
           <th>Width</th>
           <th>Weight</th>
+          <th>Meters/Roll</th>
           <th>Total Length</th>
           <th>Unit Price</th>
           <th>Total Amount (${escapeHtml(currencyLabel(currency))} ${escapeHtml(incoterm || "")})</th>
@@ -86,11 +88,6 @@ function renderSalesInvoice(params) {
       </thead>
       <tbody>
         ${textileRows}
-        <tr class="totals-row">
-          <td colspan="4"></td>
-          <td class="num">Total Meters: ${fmtNumber(totalLength, 3)}</td>
-          <td colspan="2"></td>
-        </tr>
       </tbody>
     </table>
   `;
@@ -112,20 +109,24 @@ function renderSalesInvoice(params) {
       </thead>
       <tbody>
         ${otherRows}
-        <tr class="totals-row">
-          <td colspan="4"></td>
-          <td class="num">Total Weight: ${fmtNumber(totalWeight, 1)} kg</td>
-          <td colspan="2"></td>
-        </tr>
       </tbody>
     </table>
   `;
   }
 
+  // Total Length (Textile/DTF Film) or Total Quantity (everything else) now
+  // shares the same row as Grand Total Amount instead of living in its own
+  // separate table below — when the order mixes both kinds of goods, Total
+  // Length takes priority since it's the primary quoted measure.
+  const summaryLabel = textileItems.length > 0
+    ? `Total Length: ${fmtNumber(totalLength, 3)} m`
+    : `Total Quantity: ${fmtNumber(totalQuantity, 2)}`;
+
   sectionsHtml += `
     <table class="items-table" style="margin-top:6px;">
       <tbody>
         <tr class="totals-row">
+          <td class="num">${escapeHtml(summaryLabel)}</td>
           <td class="num">Grand Total Amount:</td>
           <td class="num" style="width:20%">${fmtMoney(totalAmount, currency)}</td>
         </tr>

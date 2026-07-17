@@ -523,7 +523,13 @@ const inputStyle = {
 };
 
 function Input({ style, ...props }) { return <input style={{ ...inputStyle, ...style }} {...props} />; }
-function Select({ children, ...props }) { return <select style={{ ...inputStyle, cursor: "pointer" }} {...props}>{children}</select>; }
+// `style` is destructured separately and merged AFTER the base inputStyle so
+// that callers passing a custom style (e.g. a narrower width for an inline
+// unit dropdown) only override what they specify — previously a passed-in
+// `style` completely replaced inputStyle (spread order bug), which is why
+// some unit dropdowns rendered with the browser's default white background
+// instead of the app's dark theme.
+function Select({ children, style, ...props }) { return <select style={{ ...inputStyle, cursor: "pointer", ...style }} {...props}>{children}</select>; }
 function Textarea(props) { return <textarea style={{ ...inputStyle, resize: "vertical", minHeight: "80px" }} {...props} />; }
 
 function Btn({ children, onClick, color = "#3b82f6", small, outline, disabled }) {
@@ -629,7 +635,21 @@ function buildPackingListDraft(order, products) {
     const category = item.category || product?.category || "";
     const isTextile = category === "Textile" || category === "DTF Film";
     const totalLength = isTextile ? (parseFloat(item.total_meterage || item.quantity || 0) || 0) : null;
-    const netWeight = item.total_weight != null && item.total_weight !== "" ? parseFloat(item.total_weight) : null;
+    // Round to 1 decimal here (not just at display time) so floating-point
+    // artifacts from calcWeight (e.g. 26508.300000000003) never leak into
+    // the draft's stored numbers.
+    const round1 = n => Math.round(n * 10) / 10;
+    const rollCount = item.quantity != null && item.quantity !== "" ? parseFloat(item.quantity) || 0 : 0;
+    // item.total_weight (computed in ProductItemModal via calcWeight, from
+    // the product's registered net weight per roll) is the goods' Net
+    // Weight. Gross Weight additionally counts the empty cardboard/plastic
+    // tube core inside each Textile/DTF Film roll (product.tube_weight,
+    // kg per roll) — it isn't part of the sellable net goods weight but
+    // does ship and needs to be declared.
+    const netWeightRaw = item.total_weight != null && item.total_weight !== "" ? parseFloat(item.total_weight) : null;
+    const netWeight = netWeightRaw != null ? round1(netWeightRaw) : null;
+    const tubeWeightPerRoll = isTextile ? (parseFloat(product?.tube_weight) || 0) : 0;
+    const grossWeight = netWeight != null ? round1(netWeight + tubeWeightPerRoll * rollCount) : null;
     return {
       product_id: item.product_id,
       description: product?.name || item.product_name,
@@ -646,12 +666,31 @@ function buildPackingListDraft(order, products) {
       // Roll count auto-pulled from the order item's quantity — still
       // editable below in case the actual carton/roll count differs.
       roll: item.quantity != null && item.quantity !== "" ? item.quantity : "",
-      grossWeight: netWeight != null ? netWeight : "",
+      grossWeight: grossWeight != null ? grossWeight : "",
       netWeight: netWeight != null ? netWeight : "",
+      // Auto-filled below from the order's container info when available;
+      // still editable per-item since CBM can vary by product.
       cbm: "",
     };
   });
   const acq = getAcqCompany(order.acquisition_company || "HK");
+
+  // CBM auto-fill from the Order's container info (type + quantity), so the
+  // Packing List doesn't need it typed in by hand. Values are the standard
+  // usable cargo capacities for each container type; still editable per-item
+  // afterwards since actual stowed volume can vary.
+  const CONTAINER_CBM = { "20' Standard": 33, "40' Standard": 67, "40' High Cube": 76 };
+  const containerCbmTotal = order.container && CONTAINER_CBM[order.container]
+    ? CONTAINER_CBM[order.container] * (parseInt(order.container_qty) || 1)
+    : null;
+  if (containerCbmTotal != null && items.length) {
+    const grossSum = items.reduce((s, i) => s + (parseFloat(i.grossWeight) || 0), 0);
+    items.forEach(i => {
+      const share = grossSum > 0 ? (parseFloat(i.grossWeight) || 0) / grossSum : 1 / items.length;
+      i.cbm = Math.round(containerCbmTotal * share * 100) / 100;
+    });
+  }
+
   const totals = items.reduce((acc, i) => ({
     totalLength: acc.totalLength + (parseFloat(i.totalLength) || 0),
     totalRoll: acc.totalRoll + (parseFloat(i.roll) || 0),
@@ -659,6 +698,10 @@ function buildPackingListDraft(order, products) {
     totalNetWeight: acc.totalNetWeight + (parseFloat(i.netWeight) || 0),
     totalCbm: acc.totalCbm + (parseFloat(i.cbm) || 0),
   }), { totalLength: 0, totalRoll: 0, totalGrossWeight: 0, totalNetWeight: 0, totalCbm: 0 });
+  totals.totalLength = Math.round(totals.totalLength * 100) / 100;
+  totals.totalGrossWeight = Math.round(totals.totalGrossWeight * 10) / 10;
+  totals.totalNetWeight = Math.round(totals.totalNetWeight * 10) / 10;
+  totals.totalCbm = Math.round(totals.totalCbm * 100) / 100;
 
   return {
     order_id: order.id,
@@ -1179,6 +1222,7 @@ const [f, setF] = useState(initial || {
   height: "", height_unit: "cm",
   thickness: "", thickness_unit: "mm",
   weight: "", weight_unit: "kg",
+  tube_weight: "",
   volume: "", volume_unit: "L",
   unit_cost: "", cost_currency: "USD",
   sale_price: "", sale_currency: "USD", sale_pct: "",
@@ -1419,6 +1463,14 @@ const handleSalePerLiterChange = (e) => {
     </Select>
   </div>
 </Field>
+
+{(f.category === "Textile" || f.category === "DTF Film") && (
+  // Full-width for the same reason Volume is below — a conditional `half`
+  // field here would throw off the Cost/Sale grid alternation that follows.
+  <Field label="Tube Weight (cardboard core, per roll)">
+    <Input value={f.tube_weight || ""} onChange={set("tube_weight")} placeholder="e.g. 1.075 (kg) — added to Net Weight to get Gross Weight per roll" />
+  </Field>
+)}
 
 {f.category === "Chemical" && (
   // Full-width on purpose: a conditional `half` field here would eat one
@@ -1911,7 +1963,7 @@ function ContractForm({ onSave, onClose, orders, initial }) {
           {orders.map(o => <option key={o.id} value={o.id}>{o.order_number} – {o.client}</option>)}
         </Select>
       </Field>
-      <Field label="Contract Number" half><Input value={f.contract_number} onChange={set("contract_number")} placeholder="SC-2024-001" /></Field>
+      <Field label="Contract Number" half><Input value={f.contract_number} onChange={set("contract_number")} placeholder="PO-2024-001" /></Field>
       <Field label="Supplier" half><Input value={f.supplier} onChange={set("supplier")} /></Field>
       <Field label="Sign Date" half><Input type="date" value={f.sign_date} onChange={set("sign_date")} /></Field>
       <Field label="Delivery Date" half><Input type="date" value={f.delivery_date} onChange={set("delivery_date")} /></Field>
@@ -1990,11 +2042,13 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
       <Field label="Amount" half><Input type="number" value={f.amount} onChange={set("amount")} /></Field>
       <Field label="Currency" half>
         <Select value={f.currency} onChange={set("currency")}>
-          <option>USD</option><option>EUR</option><option>BRL</option>
+          <option>USD</option><option>EUR</option><option>BRL</option><option value="CNY">RMB</option>
         </Select>
       </Field>
       <Field label="Due Date" half><Input type="date" value={f.due_date} onChange={set("due_date")} /></Field>
-      <Field label="Description"><Input value={f.description} onChange={set("description")} /></Field>
+      <Field label="Description">
+        <Input value={f.description} onChange={set("description")} placeholder={!isClient ? "Contract-AGNB26.044 -Supplier Name" : ""} />
+      </Field>
       {!isClient && (
         <>
           <div style={{ gridColumn: "span 2", marginTop: "4px", marginBottom: "-4px", fontSize: "12px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
@@ -2729,7 +2783,11 @@ const changeStatus = async (id, status) => {
   const nextStatus = { Pending: "In Production", "In Production": "Inspection", Inspection: "Completed" };
 const prevStatus = { "In Production": "Pending", Inspection: "In Production", Completed: "Inspection" };
   const generateCommercial = async (order) => {
-  const number = `CI-${order.order_number}-${Date.now().toString().slice(-4)}`;
+  // order.order_number carries an "ORD-" prefix (see orderNumber generation
+  // from the Proforma) which doesn't belong on a Commercial Invoice number,
+  // and it previously got a random trailing suffix appended — dropped so the
+  // CI number lines up 1:1 with the order reference, e.g. "CI-AGNB26.044".
+  const number = `CI-${String(order.order_number || "").replace(/^ORD-/, "")}`;
   const ci = await api("/commercial-invoices", "POST", {
     order_id: order.id,
     number,
@@ -2744,9 +2802,14 @@ const prevStatus = { "In Production": "Pending", Inspection: "In Production", Co
   load();
 };
 const generateContract = (order) => {
+  // Contract Number uses a "PO-" prefix (matching the reference document)
+  // instead of "SC-", built off the plain order reference — the order's
+  // "ORD-" prefix and any random trailing suffix are dropped, same as the
+  // Commercial Invoice number fix, so it reads e.g. "PO-AGNB26.044".
+  const baseNumber = String(order.order_number || "").replace(/^ORD-/, "");
   const suppliers = [...new Set((order.items || []).map(i => i.supplier).filter(Boolean))];
   if (suppliers.length === 0) {
-    const number = `SC-${order.order_number}-${Date.now().toString().slice(-4)}`;
+    const number = `PO-${baseNumber}`;
    setContractModal([{
   order_id: order.id,
   contract_number: number,
@@ -2768,7 +2831,9 @@ const generateContract = (order) => {
 const supplierItems = (order.items || []).filter(i => i.supplier === supplier);
 const total = supplierItems.reduce((sum, i) => sum + ((parseFloat(i.cost_price) || parseFloat(i.unit_price) || 0) * (parseFloat(i.quantity) || 0)), 0);
 const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency || order.currency || "USD";
-      const number = `SC-${order.order_number}-${supplier.slice(0,4).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+      // Multiple suppliers on the same order need distinct contract numbers —
+      // keep a short supplier tag to tell them apart, but no random suffix.
+      const number = `PO-${baseNumber}-${supplier.slice(0,4).toUpperCase()}`;
       return {
   order_id: order.id,
   contract_number: number,
@@ -2885,7 +2950,9 @@ onSave={async b => {
   await api("/financial/suppliers", "POST", {
     order_id: b.order_id,
     supplier: b.supplier,
-    description: `Contract ${b.contract_number}`,
+    // "Contract-<order ref> -<supplier>" — matches the standard format used
+    // for Supplier Payment descriptions (e.g. "Contract-AGNB26.044 -浙江泓博").
+    description: `Contract-${String(b.contract_number || "").replace(/^PO-/, "")} -${b.supplier || ""}`,
     type: "Purchase Order",
     amount: b.total,
     currency: b.currency || "USD",
