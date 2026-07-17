@@ -1110,17 +1110,44 @@ const handleCostChange = (e) => {
   }));
 };
 
+  // Markup % here works the same way it does on the Quotation screen: a
+  // registered base (Cost Price, since that's the one fixed anchor on this
+  // form) with `sale = base * (1 + pct/100)`, kept in sync both ways.
+  const pctFromCost = (sale) => {
+    const cost = parseFloat(f.unit_cost) || 0;
+    return cost > 0 ? (((sale / cost) - 1) * 100).toFixed(2) : f.sale_pct;
+  };
+
   const handleSalePriceChange = (e) => {
   const sale = parseFloat(e.target.value) || 0;
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(f);
+  const cost = parseFloat(f.unit_cost) || 0;
   const spm = heightM > 0 ? (sale / heightM).toFixed(4) : f.sale_per_meter;
   const spl = volL > 0 ? (sale / volL).toFixed(4) : f.sale_per_liter;
   setF((p) => ({
     ...p, sale_price: e.target.value,
     sale_per_meter: heightM > 0 ? spm : p.sale_per_meter,
     sale_per_liter: volL > 0 ? spl : p.sale_per_liter,
+    sale_pct: cost > 0 ? pctFromCost(sale) : p.sale_pct,
+  }));
+};
+
+const handleSalePctChange = (e) => {
+  const pctStr = e.target.value;
+  const pct = parseFloat(pctStr);
+  const cost = parseFloat(f.unit_cost) || 0;
+  const canCalc = cost > 0 && !isNaN(pct);
+  const sale = canCalc ? cost * (1 + pct / 100) : null;
+  const h = parseFloat(f.height) || 0;
+  const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
+  const volL = volumeLOf(f);
+  setF((p) => ({
+    ...p, sale_pct: pctStr,
+    sale_price: canCalc ? sale.toFixed(2) : p.sale_price,
+    sale_per_meter: canCalc && heightM > 0 ? (sale / heightM).toFixed(4) : p.sale_per_meter,
+    sale_per_liter: canCalc && volL > 0 ? (sale / volL).toFixed(4) : p.sale_per_liter,
   }));
 };
 
@@ -1137,7 +1164,12 @@ const handleSalePerMeterChange = (e) => {
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const sale_price = (spm * heightM).toFixed(2);
-  setF((p) => ({ ...p, sale_per_meter: e.target.value, sale_price: heightM > 0 ? sale_price : p.sale_price }));
+  const cost = parseFloat(f.unit_cost) || 0;
+  setF((p) => ({
+    ...p, sale_per_meter: e.target.value,
+    sale_price: heightM > 0 ? sale_price : p.sale_price,
+    sale_pct: heightM > 0 && cost > 0 ? pctFromCost(parseFloat(sale_price)) : p.sale_pct,
+  }));
 };
 
 const handleCostPerLiterChange = (e) => {
@@ -1151,7 +1183,12 @@ const handleSalePerLiterChange = (e) => {
   const spl = parseFloat(e.target.value) || 0;
   const volL = volumeLOf(f);
   const sale_price = (spl * volL).toFixed(2);
-  setF((p) => ({ ...p, sale_per_liter: e.target.value, sale_price: volL > 0 ? sale_price : p.sale_price }));
+  const cost = parseFloat(f.unit_cost) || 0;
+  setF((p) => ({
+    ...p, sale_per_liter: e.target.value,
+    sale_price: volL > 0 ? sale_price : p.sale_price,
+    sale_pct: volL > 0 && cost > 0 ? pctFromCost(parseFloat(sale_price)) : p.sale_pct,
+  }));
 };
 
   const currencies = ["USD", "BRL", "CNY", "EUR", "GBP", "JPY"];
@@ -1303,8 +1340,8 @@ const handleSalePerLiterChange = (e) => {
     <Field label="Sale Price">
       <Input type="number" value={f.sale_price || ""} onChange={handleSalePriceChange} placeholder="0.00" />
     </Field>
-    <Field label="Markup % (default for Quotations)">
-      <Input type="number" value={f.sale_pct || ""} onChange={set("sale_pct")} placeholder="e.g. 15" />
+    <Field label="Markup %">
+      <Input type="number" value={f.sale_pct || ""} onChange={handleSalePctChange} placeholder="e.g. 15" />
     </Field>
   </div>
 </div>

@@ -65,8 +65,26 @@ function renderSalesInvoice(params) {
     </tr>
   `).join("");
 
-  const textileSection = textileItems.length === 0 ? "" : `
-    <table class="items-table" style="margin-top:6px;">
+  const grandTotalRow = `
+        <tr class="totals-row">
+          <td colspan="5"></td>
+          <td class="num">Grand Total Amount:</td>
+          <td class="num">${fmtMoney(totalAmount, currency)}</td>
+        </tr>
+  `;
+
+  // Both groups share the same 7-column width, so stacking their tables
+  // with no gap between them (and only the very first one offset from the
+  // meta-table above) reads as one continuous items table split into
+  // sub-sections — matching how the single-table layout used to look —
+  // rather than a series of visually separate boxes.
+  let sectionsHtml = "";
+  let isFirstSection = true;
+
+  if (textileItems.length > 0) {
+    const isLastSection = otherItems.length === 0;
+    sectionsHtml += `
+    <table class="items-table" style="margin-top:${isFirstSection ? "6px" : "0"};">
       <thead>
         <tr>
           <th style="width:28%">Descriptions of Goods</th>
@@ -85,12 +103,16 @@ function renderSalesInvoice(params) {
           <td class="num">Total Meters: ${fmtNumber(totalLength, 3)}</td>
           <td colspan="2"></td>
         </tr>
+        ${isLastSection ? grandTotalRow : ""}
       </tbody>
     </table>
   `;
+    isFirstSection = false;
+  }
 
-  const otherSection = otherItems.length === 0 ? "" : `
-    <table class="items-table" style="margin-top:6px;">
+  if (otherItems.length > 0) {
+    sectionsHtml += `
+    <table class="items-table" style="margin-top:${isFirstSection ? "6px" : "0"};">
       <thead>
         <tr>
           <th style="width:28%">Descriptions of Goods</th>
@@ -109,9 +131,12 @@ function renderSalesInvoice(params) {
           <td class="num">Total Weight: ${fmtNumber(totalWeight, 1)} kg</td>
           <td colspan="2"></td>
         </tr>
+        ${grandTotalRow}
       </tbody>
     </table>
   `;
+    isFirstSection = false;
+  }
 
   const body = `
     <table class="meta-table">
@@ -128,17 +153,7 @@ function renderSalesInvoice(params) {
           <td class="label">Country of acquisition:</td><td>${escapeHtml(acq.countryOfAcquisition)}.</td></tr>
     </table>
 
-    ${textileSection}
-    ${otherSection}
-
-    <table class="items-table" style="margin-top:6px;">
-      <tbody>
-        <tr class="totals-row">
-          <td class="num">Grand Total Amount:</td>
-          <td class="num" style="width:20%">${fmtMoney(totalAmount, currency)}</td>
-        </tr>
-      </tbody>
-    </table>
+    ${sectionsHtml}
 
     <div class="two-col">
       <div class="col">
