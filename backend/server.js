@@ -8,7 +8,7 @@ const { renderPackingList } = require('./pdf/packingList');
 const { renderContract } = require('./pdf/contract');
 const { renderPaymentNotice } = require('./pdf/paymentNotice');
 const ACQUISITION_COMPANIES = require('./pdf/acquisitionCompanies');
-const { parseJsonSafe } = require('./pdf/helpers');
+const { parseJsonSafe, contentDisposition } = require('./pdf/helpers');
 
 const cloudinary = require('cloudinary').v2;
 cloudinary.config({
@@ -90,16 +90,16 @@ app.post('/api/orders', (req, res) => {
 app.put('/api/orders/:id', (req, res) => {
   const { order_number, client, supplier, product, value, currency, production_lead_time, delivery_days,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
-    port_of_discharge, acquisition_company, container, notes, items } = req.body;
+    port_of_discharge, acquisition_company, container, container_qty, notes, items } = req.body;
   db.prepare(`
     UPDATE orders SET order_number=?, client=?, supplier=?, product=?, value=?, currency=?,
       production_lead_time=?, delivery_days=?, shipment_date=?, arrival_date=?, incoterm=?,
-      payment_terms=?, port_of_loading=?, port_of_discharge=?, acquisition_company=?, container=?, notes=?,
+      payment_terms=?, port_of_loading=?, port_of_discharge=?, acquisition_company=?, container=?, container_qty=?, notes=?,
       updated_at=datetime('now')
     WHERE id=?
   `).run(order_number, client, supplier, product, value, currency, production_lead_time || null, delivery_days || null,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
-    port_of_discharge, acquisition_company || '', container || '', notes, req.params.id);
+    port_of_discharge, acquisition_company || '', container || '', container_qty || null, notes, req.params.id);
 
 db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
 if (items && items.length > 0) {
@@ -386,8 +386,18 @@ app.delete('/api/financial/suppliers/:id', (req, res) => {
 });
 
 // ─── COMMERCIAL INVOICES ─────────────────────────────────────────────────────
+// Shipment Date / Arrival Date are not duplicated onto commercial_invoices —
+// the linked Order is the single source of truth, joined in here as
+// shipment_date/arrival_date on each row. That's what makes editing the date
+// from either screen "just work" without a separate sync step: there's only
+// ever one place the value actually lives.
 app.get('/api/commercial-invoices', (req, res) => {
-  res.json(db.prepare('SELECT * FROM commercial_invoices ORDER BY created_at DESC').all());
+  res.json(db.prepare(`
+    SELECT ci.*, o.shipment_date AS shipment_date, o.arrival_date AS arrival_date
+    FROM commercial_invoices ci
+    LEFT JOIN orders o ON o.id = ci.order_id
+    ORDER BY ci.created_at DESC
+  `).all());
 });
 
 app.post('/api/commercial-invoices', (req, res) => {
@@ -404,12 +414,30 @@ app.post('/api/commercial-invoices', (req, res) => {
 });
 
 app.put('/api/commercial-invoices/:id', (req, res) => {
-  const { order_id, number, issue_date, client, total, currency, status, notes } = req.body;
+  const { order_id, number, issue_date, client, total, currency, status, notes, shipment_date, arrival_date } = req.body;
   db.prepare(`
     UPDATE commercial_invoices SET order_id=?, number=?, issue_date=?, client=?, total=?, currency=?, status=?, notes=?
     WHERE id=?
   `).run(order_id || null, number, issue_date, client, total, currency, status, notes, req.params.id);
-  res.json(db.prepare('SELECT * FROM commercial_invoices WHERE id=?').get(req.params.id));
+  // Editing the shipment/arrival date from the Commercial Invoice screen
+  // writes straight through to the linked Order — same value, same column,
+  // so a change made here is immediately reflected back on the Order (and
+  // vice versa, since the Order screen just edits that same column).
+  const linkedOrderId = order_id || db.prepare('SELECT order_id FROM commercial_invoices WHERE id=?').get(req.params.id)?.order_id;
+  if (linkedOrderId && (shipment_date !== undefined || arrival_date !== undefined)) {
+    const current = db.prepare('SELECT shipment_date, arrival_date FROM orders WHERE id=?').get(linkedOrderId);
+    if (current) {
+      db.prepare(`UPDATE orders SET shipment_date=?, arrival_date=?, updated_at=datetime('now') WHERE id=?`)
+        .run(shipment_date !== undefined ? shipment_date : current.shipment_date,
+             arrival_date !== undefined ? arrival_date : current.arrival_date,
+             linkedOrderId);
+    }
+  }
+  res.json(db.prepare(`
+    SELECT ci.*, o.shipment_date AS shipment_date, o.arrival_date AS arrival_date
+    FROM commercial_invoices ci LEFT JOIN orders o ON o.id = ci.order_id
+    WHERE ci.id=?
+  `).get(req.params.id));
 });
 
 app.delete('/api/commercial-invoices/:id', (req, res) => {
@@ -851,7 +879,7 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
     });
 
     const pdf = await renderPdfBuffer(html);
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="Proforma-${pf.number}.pdf"` });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(`Proforma-${pf.number}.pdf`) });
     res.send(pdf);
   } catch (err) {
     console.error('Proforma PDF error:', err);
@@ -903,7 +931,7 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
     });
 
     const pdf = await renderPdfBuffer(html);
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="Commercial-${ci.number}.pdf"` });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(`Commercial-${ci.number}.pdf`) });
     res.send(pdf);
   } catch (err) {
     console.error('Commercial invoice PDF error:', err);
@@ -939,7 +967,7 @@ app.get('/api/packing-lists/:id/pdf', async (req, res) => {
     });
 
     const pdf = await renderPdfBuffer(html);
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="PackingList-${pl.number}.pdf"` });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(`PackingList-${pl.number}.pdf`) });
     res.send(pdf);
   } catch (err) {
     console.error('Packing list PDF error:', err);
@@ -1008,7 +1036,7 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
     });
 
     const pdf = await renderPdfBuffer(html);
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="Contract-${contract.contract_number}.pdf"` });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(`Contract-${contract.contract_number}.pdf`) });
     res.send(pdf);
   } catch (err) {
     console.error('Contract PDF error:', err);
@@ -1053,7 +1081,7 @@ app.get('/api/financial/suppliers/:id/payment-notice-pdf', async (req, res) => {
 
     const pdf = await renderPdfBuffer(html);
     const suffix = label ? `-${label}` : '';
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="PaymentNotice-${fin.id}${suffix}.pdf"` });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(`PaymentNotice-${fin.id}${suffix}.pdf`) });
     res.send(pdf);
   } catch (err) {
     console.error('Payment notice PDF error:', err);

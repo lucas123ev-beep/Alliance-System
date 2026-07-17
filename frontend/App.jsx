@@ -2981,6 +2981,16 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
           <option>Pending</option><option>Paid</option>
         </Select>
       </Field>
+      {/* Shipment/Arrival Date aren't stored separately on the CI — they're
+          the linked Order's own columns (see the /api/commercial-invoices
+          route), so editing them here writes straight to the Order and
+          editing them on the Order shows up here too, automatically. */}
+      <Field label="Shipment Date" half>
+        <Input type="date" value={editCommercial.shipment_date || ""} onChange={e => setEditCommercial(p => ({ ...p, shipment_date: e.target.value }))} />
+      </Field>
+      <Field label="Arrival Date" half>
+        <Input type="date" value={editCommercial.arrival_date || ""} onChange={e => setEditCommercial(p => ({ ...p, arrival_date: e.target.value }))} />
+      </Field>
       <Field label="Notes"><Textarea value={editCommercial.notes || ""} onChange={e => setEditCommercial(p => ({ ...p, notes: e.target.value }))} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={() => setEditCommercial(null)}>Cancel</Btn>
@@ -3924,6 +3934,15 @@ function CommercialInvoices() {
               <Select value={editing.status} onChange={e => setEditing(p => ({ ...p, status: e.target.value }))}>
                 <option>Pending</option><option>Paid</option>
               </Select>
+            </Field>
+            {/* Shipment/Arrival Date live on the linked Order, not on the CI
+                itself — editing them here writes straight to the Order, and
+                editing them on the Order shows up here too, automatically. */}
+            <Field label="Shipment Date" half>
+              <Input type="date" value={editing.shipment_date || ""} onChange={e => setEditing(p => ({ ...p, shipment_date: e.target.value }))} />
+            </Field>
+            <Field label="Arrival Date" half>
+              <Input type="date" value={editing.arrival_date || ""} onChange={e => setEditing(p => ({ ...p, arrival_date: e.target.value }))} />
             </Field>
             <Field label="Notes"><Textarea value={editing.notes || ""} onChange={e => setEditing(p => ({ ...p, notes: e.target.value }))} /></Field>
             <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>

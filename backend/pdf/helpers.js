@@ -1,5 +1,19 @@
 // Shared formatting / conversion helpers for the PDF templates.
 
+// Builds a safe Content-Disposition header value for a PDF download.
+// HTTP header values must be pure ASCII (latin1) — Node's res.set() throws
+// a hard TypeError ("Invalid character in header content") if the string
+// contains anything outside that range, which crashes the whole request
+// with a 500. Document numbers built from a Chinese supplier/client name
+// fragment (e.g. a multi-supplier Contract Number like "PO-AGNB26.044-浙江")
+// hit exactly this — this helper strips non-ASCII characters for the plain
+// `filename` fallback and adds an RFC 5987 `filename*` with the full UTF-8
+// name for browsers that support it.
+function contentDisposition(filename) {
+  const asciiSafe = filename.replace(/[^\x20-\x7E]/g, "").trim() || "document.pdf";
+  return `inline; filename="${asciiSafe}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
 function escapeHtml(str) {
   if (str === null || str === undefined) return "";
   return String(str)
@@ -125,5 +139,5 @@ function amountToWords(amount, currency = "USD") {
 }
 
 module.exports = {
-  escapeHtml, fmtDateLong, fmtDateShort, fmtNumber, fmtMoney, parseJsonSafe, amountToWords, currencyLabel,
+  escapeHtml, fmtDateLong, fmtDateShort, fmtNumber, fmtMoney, parseJsonSafe, amountToWords, currencyLabel, contentDisposition,
 };
