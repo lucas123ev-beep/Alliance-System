@@ -178,8 +178,12 @@ function renderPackingList(params) {
     sectionsHtml += renderItemSections(items);
   }
 
+  // Extra breathing room above this one — it's a document-level summary
+  // (every container combined), not just another per-container TOTAL row,
+  // so it needs to visibly stand apart from the last container's block
+  // instead of reading as one more row crammed onto the end of it.
   sectionsHtml += `
-    <table class="items-table" style="margin-top:6px;">
+    <table class="items-table" style="margin-top:22px;">
       <tbody>
         <tr class="totals-row">
           <td>GRAND TOTAL:</td>

@@ -861,7 +861,12 @@ function buildPackingListDraft(order, products) {
 
   return {
     order_id: order.id,
-    number: `PL-${order.order_number}-${Date.now().toString().slice(-4)}`,
+    // Same format as the Commercial Invoice number — just "PL-" plus the
+    // order's own code, no "ORD-" prefix carried over and no random
+    // trailing digits (those made every generated number look different
+    // from the order it actually belongs to, e.g. "PL-ORD-AGNB26.044-2974"
+    // instead of the expected "PL-AGNB26.044").
+    number: `PL-${String(order.order_number || "").replace(/^ORD-/, "")}`,
     date: new Date().toISOString().slice(0, 10),
     way_of_shipment: "By Sea",
     country_of_origin: "China",
