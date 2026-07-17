@@ -69,7 +69,7 @@ function renderContract(params) {
       <thead>
         <tr>
           <th>项目</th><th>品名</th><th>颜色</th><th>编号</th><th>厚度</th><th>有效门幅</th>
-          <th>克重 Gramatura</th><th>总重量(吨) Total Weight (Tons)</th><th>含税单价</th><th>金额</th>
+          <th>克重 Gramatura</th><th>总重量(吨) Total Weight (Tons)</th><th>含税单价 Unit Price (/Ton)</th><th>金额</th>
         </tr>
       </thead>
       <tbody>

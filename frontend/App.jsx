@@ -4010,6 +4010,67 @@ function CommercialInvoices() {
   );
 }
 
+// Dedicated Packing Lists screen — previously a Packing List could only be
+// reached indirectly through the Commercial Invoice it shipped with (no
+// standalone listing existed). Shipment/Arrival Date shown here come from
+// the linked Order (see the /api/packing-lists route's join), same
+// single-source-of-truth approach as the Commercial Invoice screen.
+function PackingLists() {
+  const [lists, setLists] = useState([]);
+  const [search, setSearch] = useState("");
+  const [editList, setEditList] = useState(null);
+  const load = useCallback(() => { api("/packing-lists").then(setLists); }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = lists.filter(l =>
+    (l.number || "").toLowerCase().includes(search.toLowerCase()) ||
+    (l.client || "").toLowerCase().includes(search.toLowerCase()) ||
+    (l.order_number || "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Packing Lists</h2>
+      </div>
+      {editList && (
+        <Modal title="Edit Packing List" onClose={() => { setEditList(null); load(); }} wide>
+          <PackingListForm
+            initial={editList}
+            onSave={async b => { await api(`/packing-lists/${editList.id}`, "PUT", b); load(); }}
+            onClose={() => { setEditList(null); load(); }}
+          />
+        </Modal>
+      )}
+      <Input value={search} onChange={e => setSearch(e.target.value)}
+        placeholder="Search by number, order or client…" style={{ ...inputStyle, marginBottom: "16px" }} />
+      <Table
+        cols={[
+          { label: "Number", render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
+          { label: "Order #", key: "order_number" },
+          { label: "Client", key: "client" },
+          { label: "Shipment Date", render: r => r.shipment_date ? fmtDate(r.shipment_date) : "—" },
+          { label: "Arrival Date", render: r => r.arrival_date ? fmtDate(r.arrival_date) : "—" },
+          { label: "Roll", render: r => r.total_roll || "—" },
+          { label: "Gross Weight", render: r => r.total_gross_weight ? `${parseFloat(r.total_gross_weight).toLocaleString("en-US", { maximumFractionDigits: 1 })} kg` : "—" },
+          { label: "Net Weight", render: r => r.total_net_weight ? `${parseFloat(r.total_net_weight).toLocaleString("en-US", { maximumFractionDigits: 1 })} kg` : "—" },
+          { label: "CBM", render: r => r.total_cbm || "—" },
+          { label: "Status", key: "status" },
+          { label: "Actions", render: r => (
+            <div style={{ display: "flex", gap: "6px" }}>
+              <Btn small outline color="#10b981" onClick={() => window.open(`${API}/packing-lists/${r.id}/pdf`, "_blank")}>📄 PDF</Btn>
+              <Btn small outline color="#64748b" onClick={() => setEditList(r)}>Edit</Btn>
+              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/packing-lists/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+            </div>
+          )},
+        ]}
+        rows={filtered}
+        emptyMsg="No packing lists yet — generate one from the Commercial Invoices screen."
+      />
+    </div>
+  );
+}
+
 function InspectionForm({ onSave, onClose, initial, orders }) {
   const [f, setF] = useState(initial || {
     order_id: "", number: "", inspection_date: "", inspector: "",
@@ -4193,6 +4254,7 @@ const TABS = [
   { id: "proformas", label: "Proformas", icon: "📄" },
   { id: "orders", label: "Orders", icon: "📋" },
   { id: "commercial", label: "Commercial", icon: "🧾" },
+  { id: "packing-lists", label: "Packing Lists", icon: "📑" },
   { id: "contracts", label: "Contracts", icon: "🤝" },
   { id: "inspections", label: "Inspections", icon: "🔍" },
   { id: "fin-suppliers", label: "Supplier Flow", icon: "📦" },
@@ -4280,6 +4342,7 @@ const renderTab = () => {
       case "inspections": return <Inspections />;
       case "proformas": return <Proformas />;
       case "commercial": return <CommercialInvoices />;
+      case "packing-lists": return <PackingLists />;
       case "contracts": return <Contracts />;
       case "fin-suppliers": return <Financial type="supplier" />;
       default: return null;

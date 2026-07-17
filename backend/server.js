@@ -446,8 +446,18 @@ app.delete('/api/commercial-invoices/:id', (req, res) => {
 });
 
 // ─── PACKING LISTS ────────────────────────────────────────────────────────────
+// Shipment Date isn't duplicated onto packing_lists — it's read from the
+// linked Order (single source of truth, same approach as Commercial
+// Invoices), plus the Order's number/client so the list screen doesn't need
+// a second round-trip per row.
 app.get('/api/packing-lists', (req, res) => {
-  res.json(db.prepare('SELECT * FROM packing_lists ORDER BY created_at DESC').all());
+  res.json(db.prepare(`
+    SELECT pl.*, o.order_number AS order_number, o.client AS client,
+      o.shipment_date AS shipment_date, o.arrival_date AS arrival_date
+    FROM packing_lists pl
+    LEFT JOIN orders o ON o.id = pl.order_id
+    ORDER BY pl.created_at DESC
+  `).all());
 });
 
 app.get('/api/packing-lists/:id', (req, res) => {
@@ -999,6 +1009,16 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
       const tubeWeightPerRoll = isTextile ? tubeWeightKg(product?.tube_weight, product?.tube_weight_unit) : 0;
       const grossWeightKg = netWeight != null ? netWeight + tubeWeightPerRoll * qty : null;
       const quantityTons = grossWeightKg != null ? grossWeightKg / 1000 : null;
+      // unitPrice as stored on the item is a per-roll rate (what was
+      // actually quoted/costed) — now that the Quantity column shows tons
+      // instead of rolls, the Unit Price shown alongside it must also be
+      // re-expressed as a per-ton rate, or unitPrice × quantity visually
+      // stops matching Total (e.g. "RMB 237.00" per roll next to "27.552 t"
+      // reads as if the total should be 237×27.552, when it's actually
+      // 237×971 rolls — same total, wrong-looking math). Total itself is
+      // unaffected, it's still unitPrice(perRoll) × qty(rolls).
+      const total = unitPrice * qty;
+      const unitPricePerTon = quantityTons ? total / quantityTons : unitPrice;
       return {
         productName: product?.name || item.product_name || '—',
         color: product?.color || '',
@@ -1008,9 +1028,9 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
         gramatura,
         quantityTons,
         unit: item.unit || '',
-        unitPrice,
+        unitPrice: unitPricePerTon,
         currency: item.cost_currency || item.currency || contract.currency,
-        total: unitPrice * qty,
+        total,
       };
     });
 
