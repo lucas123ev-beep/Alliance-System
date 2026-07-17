@@ -570,6 +570,10 @@ const supplierPaid = db.prepare(`
     SELECT * FROM inspections WHERE result = 'Pending' ORDER BY created_at DESC
   `).all();
 
+  const pendingSamples = db.prepare(`
+    SELECT * FROM samples WHERE status = 'Requested' ORDER BY requested_date DESC
+  `).all();
+
   const activeContracts = db.prepare(`
     SELECT * FROM supplier_contracts WHERE status NOT IN ('Completed', 'Cancelled') ORDER BY created_at DESC
   `).all();
@@ -582,6 +586,7 @@ const supplierPaid = db.prepare(`
     pendingQuotations,
     pendingCommercials,
     pendingInspections,
+    pendingSamples,
     activeContracts,
   });
 });

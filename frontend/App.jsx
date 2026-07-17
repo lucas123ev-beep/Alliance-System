@@ -2379,6 +2379,21 @@ function Dashboard() {
         </div>
       )}
 
+      {/* Pending Samples */}
+      {data.pendingSamples?.length > 0 && (
+        <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
+          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>✏️ Pending Samples</h3>
+          <Table
+            cols={[
+              { label: "Product", render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.product_name}</span> },
+              { label: "Client", key: "client" },
+              { label: "Requested Date", render: r => fmtDate(r.requested_date) },
+            ]}
+            rows={data.pendingSamples}
+          />
+        </div>
+      )}
+
       {/* Active Contracts */}
       {data.activeContracts?.length > 0 && (
         <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
@@ -3819,18 +3834,17 @@ function Inspections() {
 // ─── NAV CONFIG ───────────────────────────────────────────────────────────────
 const TABS = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
-  { id: "orders", label: "Orders", icon: "📋" },
-  { id: "clients", label: "Clients", icon: "🏢" },
-  { id: "suppliers", label: "Suppliers", icon: "🏭" },
-  { id: "products", label: "Products", icon: "🗂" },
-  { id: "samples", label: "Samples", icon: "✏️" },
   { id: "quotations", label: "Quotations", icon: "💬" },
-  { id: "inspections", label: "Inspections", icon: "🔍" },
   { id: "proformas", label: "Proformas", icon: "📄" },
+  { id: "orders", label: "Orders", icon: "📋" },
   { id: "commercial", label: "Commercial", icon: "🧾" },
   { id: "contracts", label: "Contracts", icon: "🤝" },
-  { id: "fin-clients", label: "Client Flow", icon: "💰" },
+  { id: "inspections", label: "Inspections", icon: "🔍" },
   { id: "fin-suppliers", label: "Supplier Flow", icon: "📦" },
+  { id: "samples", label: "Samples", icon: "✏️" },
+  { id: "products", label: "Products", icon: "🗂" },
+  { id: "clients", label: "Clients", icon: "🏢" },
+  { id: "suppliers", label: "Suppliers", icon: "🏭" },
 ];
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
@@ -3912,7 +3926,6 @@ const renderTab = () => {
       case "proformas": return <Proformas />;
       case "commercial": return <CommercialInvoices />;
       case "contracts": return <Contracts />;
-      case "fin-clients": return <Financial type="client" />;
       case "fin-suppliers": return <Financial type="supplier" />;
       default: return null;
     }
