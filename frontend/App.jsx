@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
@@ -193,6 +193,24 @@ function recalcTextileItem(item, product, field, rawValue) {
     };
   }
 
+  // Value/Roll — the per-roll sale price (Value/Meter × Meters/Roll). Always
+  // computed already (feeds Total), but editing it directly here lets the
+  // user set the roll price by hand and have Value/Meter and Total follow,
+  // same as editing any of the other three fields does.
+  if (field === "unit_price") {
+    const price = parseLocaleNumber(rawValue);
+    const total = price != null && qty ? price * qty : null;
+    const spm = price != null && heightM ? price / heightM : null;
+    const pct = base != null && spm != null ? ((spm / base) - 1) * 100 : null;
+    return {
+      ...item,
+      unit_price: rawValue,
+      total: total != null ? total.toFixed(2) : item.total,
+      sale_per_meter: spm != null ? spm.toFixed(2) : item.sale_per_meter,
+      sale_pct: pct != null ? pct.toFixed(2) : item.sale_pct,
+    };
+  }
+
   return item;
 }
 
@@ -362,10 +380,22 @@ function PricingRow({ item, product, currency, onChange }) {
           placeholder="0" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "70px" }} />
       </label>
       {isTextile ? (
-        <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Meter ({currencyLabel(currency)})
-          <input type="text" inputMode="decimal" value={item.sale_per_meter ?? ""} onChange={onPriceField("sale_per_meter")}
-            placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
-        </label>
+        <>
+          <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Meter ({currencyLabel(currency)})
+            <input type="text" inputMode="decimal" value={item.sale_per_meter ?? ""} onChange={onPriceField("sale_per_meter")}
+              placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
+          </label>
+          {/* unit_price already holds Value/Meter × Meters/Roll (the per-roll
+              sale value) — it was being computed but never actually shown,
+              so there was no way to see what a single roll sells for
+              without doing the math by hand. Editable in-place too: typing
+              here recalculates Value/Meter and Total the same as editing
+              any of the other three fields does. */}
+          <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Roll ({currencyLabel(currency)})
+            <input type="text" inputMode="decimal" value={item.unit_price ?? ""} onChange={onPriceField("unit_price")}
+              placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
+          </label>
+        </>
       ) : isLiquid ? (
         <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Liter ({currencyLabel(currency)})
           <input type="text" inputMode="decimal" value={item.sale_per_liter ?? ""} onChange={onLiquidField("sale_per_liter")}
@@ -645,15 +675,6 @@ function tubeWeightKg(value, unit) {
   return v; // kg
 }
 
-// Splits an even integer total across `n` buckets as evenly as possible —
-// e.g. splitEven(971, 2) => [486, 485]. Used to divide a roll count across
-// multiple containers without fractional rolls.
-function splitEven(total, n) {
-  const base = Math.floor(total / n);
-  const remainder = total - base * n;
-  return Array.from({ length: n }, (_, i) => base + (i < remainder ? 1 : 0));
-}
-
 function buildPackingListDraft(order, products) {
   const baseItems = (order.items || []).map(item => {
     const product = products.find(p => Number(p.id) === Number(item.product_id));
@@ -727,7 +748,13 @@ function buildPackingListDraft(order, products) {
     items = [];
     baseItems.forEach(item => {
       const totalRoll = parseFloat(item.roll) || 0;
-      const rollShares = splitEven(totalRoll, containerQty);
+      // Default everything into Container 01 rather than spreading it evenly
+      // across every container — an even split made both containers show
+      // nonzero rolls for the same products right away, which read as "the
+      // same items are in both containers" instead of an empty starting
+      // point to allocate from. The user now moves rolls into Container 02+
+      // by hand using the (still editable) zero-roll rows below.
+      const rollShares = [totalRoll, ...Array(containerQty - 1).fill(0)];
       rollShares.forEach((rollShare, i) => {
         const fraction = totalRoll > 0 ? rollShare / totalRoll : 0;
         items.push({
@@ -1373,36 +1400,40 @@ const handleCostChange = (e) => {
   }));
 };
 
-  // Markup % here works the same way it does on the Quotation screen: a
-  // registered base (Cost Price, since that's the one fixed anchor on this
-  // form) with `sale = base * (1 + pct/100)`, kept in sync both ways.
-  const pctFromCost = (sale) => {
-    const cost = parseFloat(f.unit_cost) || 0;
-    return cost > 0 ? (((sale / cost) - 1) * 100).toFixed(2) : f.sale_pct;
-  };
+  // Markup % used to be measured against Cost Price (sale_pct = ((sale/cost)
+  // - 1) * 100), which produced confusing/negative values whenever cost
+  // wasn't filled in yet or was in a different currency than the sale price.
+  // It's now a one-way "bump the sale price by X%" action with no relation
+  // to cost at all — it takes whatever Sale Price was set when the field was
+  // focused (markupBaseRef, snapshotted below) and adds the percentage on
+  // top of that, same direction as the Quotation/Order screens' Markup %
+  // (which is likewise always measured against a sale price, never cost).
+  const markupBaseRef = useRef(null);
 
   const handleSalePriceChange = (e) => {
   const sale = parseFloat(e.target.value) || 0;
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(f);
-  const cost = parseFloat(f.unit_cost) || 0;
   const spm = heightM > 0 ? (sale / heightM).toFixed(4) : f.sale_per_meter;
   const spl = volL > 0 ? (sale / volL).toFixed(4) : f.sale_per_liter;
   setF((p) => ({
     ...p, sale_price: e.target.value,
     sale_per_meter: heightM > 0 ? spm : p.sale_per_meter,
     sale_per_liter: volL > 0 ? spl : p.sale_per_liter,
-    sale_pct: cost > 0 ? pctFromCost(sale) : p.sale_pct,
   }));
+};
+
+const handleMarkupFocus = () => {
+  markupBaseRef.current = parseFloat(f.sale_price) || 0;
 };
 
 const handleSalePctChange = (e) => {
   const pctStr = e.target.value;
   const pct = parseFloat(pctStr);
-  const cost = parseFloat(f.unit_cost) || 0;
-  const canCalc = cost > 0 && !isNaN(pct);
-  const sale = canCalc ? cost * (1 + pct / 100) : null;
+  const base = markupBaseRef.current != null ? markupBaseRef.current : (parseFloat(f.sale_price) || 0);
+  const canCalc = base > 0 && !isNaN(pct);
+  const sale = canCalc ? base * (1 + pct / 100) : null;
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(f);
@@ -1427,11 +1458,9 @@ const handleSalePerMeterChange = (e) => {
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const sale_price = (spm * heightM).toFixed(2);
-  const cost = parseFloat(f.unit_cost) || 0;
   setF((p) => ({
     ...p, sale_per_meter: e.target.value,
     sale_price: heightM > 0 ? sale_price : p.sale_price,
-    sale_pct: heightM > 0 && cost > 0 ? pctFromCost(parseFloat(sale_price)) : p.sale_pct,
   }));
 };
 
@@ -1446,11 +1475,9 @@ const handleSalePerLiterChange = (e) => {
   const spl = parseFloat(e.target.value) || 0;
   const volL = volumeLOf(f);
   const sale_price = (spl * volL).toFixed(2);
-  const cost = parseFloat(f.unit_cost) || 0;
   setF((p) => ({
     ...p, sale_per_liter: e.target.value,
     sale_price: volL > 0 ? sale_price : p.sale_price,
-    sale_pct: volL > 0 && cost > 0 ? pctFromCost(parseFloat(sale_price)) : p.sale_pct,
   }));
 };
 
@@ -1620,7 +1647,8 @@ const handleSalePerLiterChange = (e) => {
       <Input type="number" value={f.sale_price || ""} onChange={handleSalePriceChange} placeholder="0.00" />
     </Field>
     <Field label="Markup %">
-      <Input type="number" value={f.sale_pct || ""} onChange={handleSalePctChange} placeholder="e.g. 15" />
+      <Input type="number" value={f.sale_pct || ""} onFocus={handleMarkupFocus} onChange={handleSalePctChange} placeholder="e.g. 15" />
+      <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>Adds this % on top of the Sale Price — not calculated from Cost.</div>
     </Field>
   </div>
 </div>
@@ -2105,7 +2133,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
     type: isClient ? "Invoice" : "Purchase Order",
     amount: "", currency: "USD", due_date: "", status: "Pending", notes: "",
     payer: "", payment_method: "Online bank payment", applicant: "", approved_by: "",
-    payment_schedule: "100",
+    payment_schedule: "100", paid_amount: "",
   });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const party = isClient ? "client" : "supplier";
@@ -2135,6 +2163,15 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
         </Select>
       </Field>
       <Field label="Due Date" half><Input type="date" value={f.due_date} onChange={set("due_date")} /></Field>
+      {/* Only meaningful with status "Partial" — how much of Amount has
+          actually been paid so far, so the Cash Flow Pending/Paid summary
+          cards can split the row between them instead of leaving the whole
+          amount stuck in Pending regardless of what's actually been paid. */}
+      {f.status === "Partial" && (
+        <Field label="Amount Paid So Far" half>
+          <Input type="number" value={f.paid_amount} onChange={set("paid_amount")} />
+        </Field>
+      )}
       <Field label="Description">
         <Input value={f.description} onChange={set("description")} placeholder={!isClient ? "Contract-AGNB26.044 -Supplier Name" : ""} />
       </Field>
@@ -3600,10 +3637,16 @@ function Financial({ type }) {
   }, [endpoint]);
   useEffect(() => { load(); }, [load]);
 
+  // A "Partial" row splits its amount between Paid (paid_amount) and Pending
+  // (the remainder) instead of counting the whole row as Pending — that's
+  // what makes picking "Partial" actually move the summary cards instead of
+  // leaving Total/Pending unchanged.
   const totals = records.reduce((acc, r) => {
     acc.total += r.amount;
-    if (r.status === "Pending" || r.status === "Partial") acc.pending += r.amount;
-    if (r.status === "Paid") acc.paid += r.amount;
+    const paidSoFar = r.status === "Paid" ? r.amount : r.status === "Partial" ? (parseFloat(r.paid_amount) || 0) : 0;
+    acc.paid += paidSoFar;
+    if (r.status === "Pending") acc.pending += r.amount;
+    if (r.status === "Partial") acc.pending += Math.max(0, r.amount - paidSoFar);
     return acc;
   }, { total: 0, pending: 0, paid: 0 });
 
@@ -3652,14 +3695,45 @@ cols={[
       } catch { return "—"; }
     }
   }] : []),
-  { label: "Amount", render: r => <span style={{ fontWeight: 600, color }}>{fmt(r.amount, r.currency)}</span> },
+  { label: "Amount", render: r => (
+    <span style={{ fontWeight: 600, color }}>
+      {fmt(r.amount, r.currency)}
+      {r.status === "Partial" && (
+        <div style={{ fontSize: "11px", fontWeight: 400, color: "#94a3b8" }}>
+          Paid: {fmt(r.paid_amount || 0, r.currency)}
+        </div>
+      )}
+    </span>
+  ) },
   { label: "Due Date", render: r => fmtDate(r.due_date) },
   { label: "Status", render: r => (
     <select value={r.status}
       onChange={async e => {
+        const status = e.target.value;
+        let paid_amount;
+        if (status === "Partial") {
+          // The Payment Notice schedule (e.g. "20% Deposit / 80% Balance")
+          // already says exactly what's been paid at this point — the
+          // deposit installment. No need to ask: if it's split 20/80,
+          // "Partial" obviously means the 20% deposit landed, so derive it
+          // straight from the schedule's first installment instead of
+          // prompting for a number that's already known.
+          const schedule = !isClient ? (PAYMENT_SCHEDULES[r.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]) : null;
+          if (schedule && schedule.parts.length > 1) {
+            paid_amount = Math.round(r.amount * (schedule.parts[0].pct / 100) * 100) / 100;
+          } else {
+            // No split schedule to infer from (single-payment schedule, or a
+            // Client entry — clients don't have a payment_schedule at all) —
+            // still need to ask, there's nothing else to derive it from.
+            const input = prompt(`How much of ${fmt(r.amount, r.currency)} has been paid so far?`, r.paid_amount || "");
+            if (input === null) return; // cancelled — leave status as-is
+            paid_amount = parseFloat(input.replace(",", ".")) || 0;
+          }
+        }
         await api(`${endpoint}/${r.id}/status`, "PATCH", {
-          status: e.target.value,
-          paid_date: e.target.value === "Paid" ? new Date().toISOString().slice(0, 10) : null,
+          status,
+          paid_date: status === "Paid" ? new Date().toISOString().slice(0, 10) : null,
+          paid_amount,
         });
         load();
       }}

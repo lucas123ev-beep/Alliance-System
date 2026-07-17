@@ -308,26 +308,31 @@ app.get('/api/financial/clients', (req, res) => {
 });
 
 app.post('/api/financial/clients', (req, res) => {
-  const { order_id, client, description, type, amount, currency, due_date, paid_date, status, notes } = req.body;
+  const { order_id, client, description, type, amount, currency, due_date, paid_date, status, notes, paid_amount } = req.body;
   const result = db.prepare(`
-    INSERT INTO financial_clients (order_id, client, description, type, amount, currency, due_date, paid_date, status, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(order_id || null, client, description, type, amount, currency || 'USD', due_date, paid_date, status || 'Pending', notes);
+    INSERT INTO financial_clients (order_id, client, description, type, amount, currency, due_date, paid_date, status, notes, paid_amount)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(order_id || null, client, description, type, amount, currency || 'USD', due_date, paid_date, status || 'Pending', notes, paid_amount || 0);
   res.status(201).json(db.prepare('SELECT * FROM financial_clients WHERE id=?').get(result.lastInsertRowid));
 });
 
 app.put('/api/financial/clients/:id', (req, res) => {
-  const { order_id, client, description, type, amount, currency, due_date, paid_date, status, notes } = req.body;
+  const { order_id, client, description, type, amount, currency, due_date, paid_date, status, notes, paid_amount } = req.body;
   db.prepare(`
-    UPDATE financial_clients SET order_id=?, client=?, description=?, type=?, amount=?, currency=?, due_date=?, paid_date=?, status=?, notes=?
+    UPDATE financial_clients SET order_id=?, client=?, description=?, type=?, amount=?, currency=?, due_date=?, paid_date=?, status=?, notes=?, paid_amount=?
     WHERE id=?
-  `).run(order_id || null, client, description, type, amount, currency || 'USD', due_date, paid_date || null, status || 'Pending', notes, req.params.id);
+  `).run(order_id || null, client, description, type, amount, currency || 'USD', due_date, paid_date || null, status || 'Pending', notes, paid_amount || 0, req.params.id);
   res.json(db.prepare('SELECT * FROM financial_clients WHERE id=?').get(req.params.id));
 });
 
+// `paid_amount` is only meaningful when status is "Partial" — full amount is
+// implied for "Paid" and 0 for "Pending"/"Overdue", so those normalize it
+// here instead of trusting whatever the client last had cached.
 app.patch('/api/financial/clients/:id/status', (req, res) => {
-  const { status, paid_date } = req.body;
-  db.prepare('UPDATE financial_clients SET status=?, paid_date=? WHERE id=?').run(status, paid_date || null, req.params.id);
+  const { status, paid_date, paid_amount } = req.body;
+  const row = db.prepare('SELECT amount FROM financial_clients WHERE id=?').get(req.params.id);
+  const normalizedPaidAmount = status === 'Paid' ? (row?.amount || 0) : status === 'Partial' ? (paid_amount || 0) : 0;
+  db.prepare('UPDATE financial_clients SET status=?, paid_date=?, paid_amount=? WHERE id=?').run(status, paid_date || null, normalizedPaidAmount, req.params.id);
   res.json(db.prepare('SELECT * FROM financial_clients WHERE id=?').get(req.params.id));
 });
 
@@ -344,14 +349,14 @@ app.get('/api/financial/suppliers', (req, res) => {
 
 app.post('/api/financial/suppliers', (req, res) => {
   const { order_id, supplier, description, type, amount, currency, due_date, status, notes, contract_id, items_json,
-    payer, payment_method, applicant, approved_by, payment_schedule } = req.body;
+    payer, payment_method, applicant, approved_by, payment_schedule, paid_amount } = req.body;
   try {
     const result = db.prepare(`
       INSERT INTO financial_suppliers (order_id, supplier, description, type, amount, currency, due_date, status, notes, contract_id, items_json,
-        payer, payment_method, applicant, approved_by, payment_schedule)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        payer, payment_method, applicant, approved_by, payment_schedule, paid_amount)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, status || 'Pending', notes, contract_id || null, items_json || null,
-      payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', payment_schedule || '100');
+      payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', payment_schedule || '100', paid_amount || 0);
     res.status(201).json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(result.lastInsertRowid));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -360,23 +365,31 @@ app.post('/api/financial/suppliers', (req, res) => {
 
 app.put('/api/financial/suppliers/:id', (req, res) => {
   const { order_id, supplier, description, type, amount, currency, due_date, status, notes, contract_id, items_json,
-    payer, payment_method, applicant, approved_by, paid_date, payment_schedule } = req.body;
+    payer, payment_method, applicant, approved_by, paid_date, payment_schedule, paid_amount } = req.body;
   try {
     db.prepare(`
       UPDATE financial_suppliers SET order_id=?, supplier=?, description=?, type=?, amount=?, currency=?, due_date=?, status=?, notes=?,
-        contract_id=?, items_json=?, payer=?, payment_method=?, applicant=?, approved_by=?, paid_date=?, payment_schedule=?
+        contract_id=?, items_json=?, payer=?, payment_method=?, applicant=?, approved_by=?, paid_date=?, payment_schedule=?, paid_amount=?
       WHERE id=?
     `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, status || 'Pending', notes,
-      contract_id || null, items_json || null, payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', paid_date || null, payment_schedule || '100', req.params.id);
+      contract_id || null, items_json || null, payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', paid_date || null, payment_schedule || '100', paid_amount || 0, req.params.id);
     res.json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(req.params.id));
   } catch(err) {
     res.status(400).json({ error: err.message });
   }
 });
 
+// `paid_amount` is only meaningful when status is "Partial" — full amount is
+// implied for "Paid" and 0 for "Pending"/"Overdue", so those normalize it
+// here instead of trusting whatever the client last had cached. Without this
+// the Cash Flow summary cards had no way to reflect a Partial payment: the
+// row's full amount just sat in "Pending" regardless of how much was
+// actually paid.
 app.patch('/api/financial/suppliers/:id/status', (req, res) => {
-  const { status, paid_date } = req.body;
-  db.prepare('UPDATE financial_suppliers SET status=?, paid_date=? WHERE id=?').run(status, paid_date || null, req.params.id);
+  const { status, paid_date, paid_amount } = req.body;
+  const row = db.prepare('SELECT amount FROM financial_suppliers WHERE id=?').get(req.params.id);
+  const normalizedPaidAmount = status === 'Paid' ? (row?.amount || 0) : status === 'Partial' ? (paid_amount || 0) : 0;
+  db.prepare('UPDATE financial_suppliers SET status=?, paid_date=?, paid_amount=? WHERE id=?').run(status, paid_date || null, normalizedPaidAmount, req.params.id);
   res.json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(req.params.id));
 });
 
@@ -400,6 +413,20 @@ app.get('/api/commercial-invoices', (req, res) => {
   `).all());
 });
 
+// Shared by every route that hands a Commercial Invoice back to the
+// frontend, so shipment_date/arrival_date (read from the linked Order —
+// there's no separate copy on the CI itself) are always present, not just
+// on the plain GET-list route. Missing this on the POST response was why
+// the "Generate Commercial Invoice" flow opened straight into an edit modal
+// with blank date fields even though the Order already had them filled in.
+function getCommercialInvoiceWithDates(id) {
+  return db.prepare(`
+    SELECT ci.*, o.shipment_date AS shipment_date, o.arrival_date AS arrival_date
+    FROM commercial_invoices ci LEFT JOIN orders o ON o.id = ci.order_id
+    WHERE ci.id=?
+  `).get(id);
+}
+
 app.post('/api/commercial-invoices', (req, res) => {
   const { order_id, number, issue_date, client, total, currency, status, notes } = req.body;
   try {
@@ -407,7 +434,7 @@ app.post('/api/commercial-invoices', (req, res) => {
       INSERT INTO commercial_invoices (order_id, number, issue_date, client, total, currency, status, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, number, issue_date, client, total, currency || 'USD', status || 'Pending', notes);
-    res.status(201).json(db.prepare('SELECT * FROM commercial_invoices WHERE id=?').get(result.lastInsertRowid));
+    res.status(201).json(getCommercialInvoiceWithDates(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -433,11 +460,7 @@ app.put('/api/commercial-invoices/:id', (req, res) => {
              linkedOrderId);
     }
   }
-  res.json(db.prepare(`
-    SELECT ci.*, o.shipment_date AS shipment_date, o.arrival_date AS arrival_date
-    FROM commercial_invoices ci LEFT JOIN orders o ON o.id = ci.order_id
-    WHERE ci.id=?
-  `).get(req.params.id));
+  res.json(getCommercialInvoiceWithDates(req.params.id));
 });
 
 app.delete('/api/commercial-invoices/:id', (req, res) => {

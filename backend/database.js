@@ -420,6 +420,12 @@ const migrations = [
   // (which read from the Order, not the Proforma) also get a real value
   // instead of the hardcoded fallback.
   ['orders', 'delivery_days', 'INTEGER'],
+  // How much of `amount` has actually been paid so far — only meaningful
+  // when status is "Partial". Without this, marking a record "Partial" had
+  // no way to move any of it from Pending into Paid on the Cash Flow summary
+  // cards, since the totals only ever looked at the full row amount.
+  ['financial_suppliers', 'paid_amount', 'REAL DEFAULT 0'],
+  ['financial_clients', 'paid_amount', 'REAL DEFAULT 0'],
 ];
 
 for (const [table, column, definition] of migrations) {

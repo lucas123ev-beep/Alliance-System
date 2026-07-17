@@ -158,7 +158,7 @@ function renderPackingList(params) {
       const containerItems = items.filter(i => (i.container_seq || 1) === c.seq && (parseFloat(i.roll) || 0) > 0);
       if (containerItems.length === 0) return;
       sectionsHtml += `
-        <div class="section-bar" style="margin-top:14px;">Container ${String(c.seq).padStart(2, "0")}：${escapeHtml(c.code || "—")}</div>
+        <div class="section-bar" style="margin-top:14px;">Container ${String(c.seq).padStart(2, "0")}: ${escapeHtml(c.code || "—")}</div>
         ${renderItemSections(containerItems)}
         <table class="items-table" style="margin-top:0;">
           <tbody>
