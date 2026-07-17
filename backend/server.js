@@ -585,6 +585,12 @@ const supplierPaid = db.prepare(`
     SELECT * FROM supplier_contracts WHERE status NOT IN ('Completed', 'Cancelled') ORDER BY created_at DESC
   `).all();
 
+  // Supplier Payment Notices still awaiting payment — same "not Paid yet"
+  // idea as the other pending lists above.
+  const pendingSupplierPayments = db.prepare(`
+    SELECT * FROM financial_suppliers WHERE status != 'Paid' ORDER BY due_date ASC
+  `).all();
+
   res.json({
     orderStats,
     clientFinancial: { pending: commercialPending.count, received: commercialPaid.count },
@@ -595,6 +601,7 @@ const supplierPaid = db.prepare(`
     pendingInspections,
     pendingSamples,
     activeContracts,
+    pendingSupplierPayments,
   });
 });
 

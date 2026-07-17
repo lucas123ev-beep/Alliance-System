@@ -41,7 +41,20 @@ async function renderPdfBuffer(html, options = {}) {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    // "networkidle0" waits for EVERY subresource to finish, including the
+    // Google-hosted Noto Sans SC font that Contract/Payment Notice PDFs pull
+    // in for their Chinese text — if Render's outbound network to
+    // fonts.googleapis.com is ever slow or interrupted, that wait can hang
+    // until Puppeteer's navigation timeout fires, surfacing as a 500 with no
+    // useful error. "load" + an explicit timeout avoids that indefinite
+    // hang; document.fonts.ready below (capped separately) still gives the
+    // CJK font a fair chance to finish loading before the page is
+    // rasterized, without blocking the whole request if it doesn't.
+    await page.setContent(html, { waitUntil: "load", timeout: 20000 });
+    await Promise.race([
+      page.evaluate(() => (document.fonts ? document.fonts.ready : null)).catch(() => {}),
+      new Promise(resolve => setTimeout(resolve, 5000)),
+    ]);
     const pdf = await page.pdf({
       format: "A4",
       landscape: options.landscape || false,

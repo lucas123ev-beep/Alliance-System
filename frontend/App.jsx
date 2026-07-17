@@ -2635,6 +2635,23 @@ function Dashboard() {
         </div>
       )}
 
+      {/* Pending Supplier Payments (Payment Notices not yet Paid) */}
+      {data.pendingSupplierPayments?.length > 0 && (
+        <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
+          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>💳 Pending Supplier Payments</h3>
+          <Table
+            cols={[
+              { label: "Supplier", key: "supplier" },
+              { label: "Description", key: "description" },
+              { label: "Amount", render: r => <span style={{ fontWeight: 600, color: "#f59e0b" }}>{fmt(r.amount, r.currency)}</span> },
+              { label: "Due Date", render: r => fmtDate(r.due_date) },
+              { label: "Status", key: "status" },
+            ]}
+            rows={data.pendingSupplierPayments}
+          />
+        </div>
+      )}
+
       {/* Active Contracts */}
       {data.activeContracts?.length > 0 && (
         <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
@@ -2855,6 +2872,11 @@ const generateContract = (order) => {
    setContractModal([{
   order_id: order.id,
   contract_number: number,
+  // Plain order reference (no "PO-" prefix, no supplier tag) — used to build
+  // the Supplier Payment description below without re-deriving it from
+  // contract_number, which for multi-supplier orders has a supplier tag
+  // appended that would otherwise leak into the description.
+  _order_ref: baseNumber,
   supplier: "",
   sign_date: new Date().toISOString().slice(0, 10),
   delivery_date: order.shipment_date || "",
@@ -2879,6 +2901,7 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
       return {
   order_id: order.id,
   contract_number: number,
+  _order_ref: baseNumber,
   supplier,
   sign_date: new Date().toISOString().slice(0, 10),
   delivery_date: order.shipment_date || "",
@@ -2994,7 +3017,12 @@ onSave={async b => {
     supplier: b.supplier,
     // "Contract-<order ref> -<supplier>" — matches the standard format used
     // for Supplier Payment descriptions (e.g. "Contract-AGNB26.044 -浙江泓博").
-    description: `Contract-${String(b.contract_number || "").replace(/^PO-/, "")} -${b.supplier || ""}`,
+    // Built from the plain order reference (_order_ref), not by stripping
+    // "PO-" off contract_number — for multi-supplier orders contract_number
+    // also carries a short supplier tag suffix (e.g. "PO-AGNB26.044-浙江"),
+    // which would otherwise leak into the description as a duplicated
+    // fragment of the supplier name right before the real supplier name.
+    description: `Contract-${b._order_ref || String(b.contract_number || "").replace(/^PO-/, "").replace(/-[^-]*$/, "")} -${b.supplier || ""}`,
     type: "Purchase Order",
     amount: b.total,
     currency: b.currency || "USD",
@@ -3523,7 +3551,15 @@ cols={[
   )},
   { label: "Actions", render: r => (
     <div style={{ display: "flex", gap: "6px" }}>
-      {!isClient && <Btn small outline color="#10b981" onClick={() => window.open(`${API}/financial/suppliers/${r.id}/payment-notice-pdf`, "_blank")}>📄 PDF</Btn>}
+      {/* Split-payment schedules (e.g. 20% Deposit / 80% Balance) get one PDF
+          button per installment here too, same as the Edit modal — a plain
+          100% schedule still renders as the single original button. */}
+      {!isClient && (PAYMENT_SCHEDULES[r.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]).parts.map((part, i) => (
+        <Btn key={i} small outline color="#10b981"
+          onClick={() => window.open(`${API}/financial/suppliers/${r.id}/payment-notice-pdf${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`, "_blank")}>
+          📄 {part.label ? `${part.label} (${part.pct}%)` : "PDF"}
+        </Btn>
+      ))}
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`${endpoint}/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
     </div>
