@@ -66,8 +66,7 @@ function renderSalesInvoice(params) {
   `).join("");
 
   const textileSection = textileItems.length === 0 ? "" : `
-    <div class="section-bar" style="border-top:1px solid #999; margin-top:6px;">Textile / DTF Film</div>
-    <table class="items-table">
+    <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
           <th style="width:28%">Descriptions of Goods</th>
@@ -91,8 +90,7 @@ function renderSalesInvoice(params) {
   `;
 
   const otherSection = otherItems.length === 0 ? "" : `
-    <div class="section-bar" style="border-top:1px solid #999; margin-top:6px;">Machines, Chemicals &amp; Other Goods</div>
-    <table class="items-table">
+    <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
           <th style="width:28%">Descriptions of Goods</th>

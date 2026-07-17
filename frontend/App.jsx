@@ -699,8 +699,11 @@ const selectProduct = (p) => {
     cost_per_meter: isTextile ? (p.cost_per_meter || null) : null,
     sale_per_liter: isLiquid ? (p.sale_per_liter || null) : null,
     cost_per_liter: isLiquid ? (p.cost_per_liter || null) : null,
-    // Markup % now applies to every category, not just Textile/DTF.
-    sale_pct: "0",
+    // Markup % now applies to every category, not just Textile/DTF — and
+    // starts from whatever default markup is registered on the product
+    // itself (instead of always 0), since it's usually the same standard
+    // margin reused quote after quote.
+    sale_pct: p.sale_pct != null && p.sale_pct !== "" ? String(p.sale_pct) : "0",
   }));
   setShowList(false);
 };
@@ -1057,7 +1060,7 @@ const [f, setF] = useState(initial || {
   weight: "", weight_unit: "kg",
   volume: "", volume_unit: "L",
   unit_cost: "", cost_currency: "USD",
-  sale_price: "", sale_currency: "USD",
+  sale_price: "", sale_currency: "USD", sale_pct: "",
   cost_per_meter: "", sale_per_meter: "",
   cost_per_liter: "", sale_per_liter: "",
   category: "", supplier: "",
@@ -1299,6 +1302,9 @@ const handleSalePerLiterChange = (e) => {
     )}
     <Field label="Sale Price">
       <Input type="number" value={f.sale_price || ""} onChange={handleSalePriceChange} placeholder="0.00" />
+    </Field>
+    <Field label="Markup % (default for Quotations)">
+      <Input type="number" value={f.sale_pct || ""} onChange={set("sale_pct")} placeholder="e.g. 15" />
     </Field>
   </div>
 </div>

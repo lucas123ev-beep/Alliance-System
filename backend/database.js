@@ -299,6 +299,11 @@ const migrations = [
   ['products', 'volume_unit', "TEXT DEFAULT 'L'"],
   ['products', 'cost_per_liter', 'REAL DEFAULT 0'],
   ['products', 'sale_per_liter', 'REAL DEFAULT 0'],
+  // Registered default markup % for this product — carried over as the
+  // starting Markup % on any Quotation item created from it (instead of
+  // always starting at 0), since it's usually the same standard margin
+  // reused quote after quote.
+  ['products', 'sale_pct', 'REAL'],
   ['order_items', 'product_code', 'TEXT'],
   ['order_items', 'supplier', 'TEXT'],
   ['order_items', 'currency', "TEXT DEFAULT 'USD'"],
