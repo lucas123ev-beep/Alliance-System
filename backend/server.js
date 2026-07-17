@@ -123,7 +123,14 @@ insertItem.run(req.params.id, item.product_id || null, item.product_name,
 app.delete('/api/orders/:id', (req, res) => {
   try {
     db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
-    db.prepare('DELETE FROM proformas WHERE order_id=?').run(req.params.id);
+    // The Proforma is the SOURCE document an Order gets created from — not a
+    // byproduct of it — so deleting an Order must never delete the Proforma
+    // that spawned it. Just unlink it (it goes back to having no linked
+    // Order, same as a Proforma that never had one created yet).
+    db.prepare('UPDATE proformas SET order_id=NULL WHERE order_id=?').run(req.params.id);
+    // Contracts, Commercial Invoices, Inspections and Packing Lists are all
+    // generated downstream FROM the Order itself, so it's correct for them
+    // to go away with it.
     db.prepare('DELETE FROM supplier_contracts WHERE order_id=?').run(req.params.id);
     db.prepare('DELETE FROM commercial_invoices WHERE order_id=?').run(req.params.id);
     db.prepare('DELETE FROM inspections WHERE order_id=?').run(req.params.id);
@@ -155,12 +162,12 @@ app.get('/api/products', (req, res) => {
 });
 
 app.post('/api/products', (req, res) => {
-  const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, tube_weight, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media } = req.body;
+  const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, tube_weight, tube_weight_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO products (code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, tube_weight, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(code, name, description, unit || 'unit', ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', tube_weight || null, volume || null, volume_unit || 'L', unit_cost || 0, cost_currency || 'USD', category, supplier, sale_price || 0, sale_currency || 'USD', cost_per_meter || 0, sale_per_meter || 0, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null);
+      INSERT INTO products (code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, tube_weight, tube_weight_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(code, name, description, unit || 'unit', ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', tube_weight || null, tube_weight_unit || 'kg', volume || null, volume_unit || 'L', unit_cost || 0, cost_currency || 'USD', category, supplier, sale_price || 0, sale_currency || 'USD', cost_per_meter || 0, sale_per_meter || 0, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null);
     res.status(201).json(db.prepare('SELECT * FROM products WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -168,11 +175,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 });
 
 app.put('/api/products/:id', (req, res) => {
-  const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, tube_weight, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media } = req.body;
+  const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, tube_weight, tube_weight_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media } = req.body;
   db.prepare(`
-    UPDATE products SET code=?, name=?, description=?, unit=?, ncm=?, hs_code=?, color=?, width=?, width_unit=?, height=?, height_unit=?, thickness=?, thickness_unit=?, weight=?, weight_unit=?, tube_weight=?, volume=?, volume_unit=?, unit_cost=?, cost_currency=?, category=?, supplier=?, sale_price=?, sale_currency=?, cost_per_meter=?, sale_per_meter=?, cost_per_liter=?, sale_per_liter=?, sale_pct=?, media=?
+    UPDATE products SET code=?, name=?, description=?, unit=?, ncm=?, hs_code=?, color=?, width=?, width_unit=?, height=?, height_unit=?, thickness=?, thickness_unit=?, weight=?, weight_unit=?, tube_weight=?, tube_weight_unit=?, volume=?, volume_unit=?, unit_cost=?, cost_currency=?, category=?, supplier=?, sale_price=?, sale_currency=?, cost_per_meter=?, sale_per_meter=?, cost_per_liter=?, sale_per_liter=?, sale_pct=?, media=?
 WHERE id=?
-`).run(code, name, description, unit, ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', tube_weight || null, volume || null, volume_unit || 'L', unit_cost, cost_currency || 'USD', category, supplier, sale_price, sale_currency || 'USD', cost_per_meter, sale_per_meter, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, req.params.id);
+`).run(code, name, description, unit, ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', tube_weight || null, tube_weight_unit || 'kg', volume || null, volume_unit || 'L', unit_cost, cost_currency || 'USD', category, supplier, sale_price, sale_currency || 'USD', cost_per_meter, sale_per_meter, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, req.params.id);
   res.json(db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id));
 });
 
@@ -337,14 +344,14 @@ app.get('/api/financial/suppliers', (req, res) => {
 
 app.post('/api/financial/suppliers', (req, res) => {
   const { order_id, supplier, description, type, amount, currency, due_date, status, notes, contract_id, items_json,
-    payer, payment_method, applicant, approved_by } = req.body;
+    payer, payment_method, applicant, approved_by, payment_schedule } = req.body;
   try {
     const result = db.prepare(`
       INSERT INTO financial_suppliers (order_id, supplier, description, type, amount, currency, due_date, status, notes, contract_id, items_json,
-        payer, payment_method, applicant, approved_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        payer, payment_method, applicant, approved_by, payment_schedule)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, status || 'Pending', notes, contract_id || null, items_json || null,
-      payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '');
+      payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', payment_schedule || '100');
     res.status(201).json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(result.lastInsertRowid));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -353,14 +360,14 @@ app.post('/api/financial/suppliers', (req, res) => {
 
 app.put('/api/financial/suppliers/:id', (req, res) => {
   const { order_id, supplier, description, type, amount, currency, due_date, status, notes, contract_id, items_json,
-    payer, payment_method, applicant, approved_by, paid_date } = req.body;
+    payer, payment_method, applicant, approved_by, paid_date, payment_schedule } = req.body;
   try {
     db.prepare(`
       UPDATE financial_suppliers SET order_id=?, supplier=?, description=?, type=?, amount=?, currency=?, due_date=?, status=?, notes=?,
-        contract_id=?, items_json=?, payer=?, payment_method=?, applicant=?, approved_by=?, paid_date=?
+        contract_id=?, items_json=?, payer=?, payment_method=?, applicant=?, approved_by=?, paid_date=?, payment_schedule=?
       WHERE id=?
     `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, status || 'Pending', notes,
-      contract_id || null, items_json || null, payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', paid_date || null, req.params.id);
+      contract_id || null, items_json || null, payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', paid_date || null, payment_schedule || '100', req.params.id);
     res.json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(req.params.id));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -720,6 +727,17 @@ function metersOf(value, unit) {
   return v;
 }
 
+// Converts a product's tube_weight (any unit) to kg, same conversions used
+// on the frontend (buildPackingListDraft's tubeWeightKg).
+function tubeWeightKg(value, unit) {
+  const v = parseFloat(value);
+  if (!v) return 0;
+  if (unit === 'g') return v / 1000;
+  if (unit === 'lb') return v * 0.453592;
+  if (unit === 'oz') return v * 0.0283495;
+  return v; // kg
+}
+
 function normalizeSalesItem(item, fallbackCurrency) {
   const product = getProduct(item.product_id);
   const category = item.category || product?.category || '';
@@ -943,7 +961,7 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
       // Total quantity in tons (replacing the roll count) — Gross Weight =
       // Net Weight (item.total_weight) + tube core weight × roll count.
       const netWeight = item.total_weight != null && item.total_weight !== '' ? parseFloat(item.total_weight) : null;
-      const tubeWeightPerRoll = isTextile ? (parseFloat(product?.tube_weight) || 0) : 0;
+      const tubeWeightPerRoll = isTextile ? tubeWeightKg(product?.tube_weight, product?.tube_weight_unit) : 0;
       const grossWeightKg = netWeight != null ? netWeight + tubeWeightPerRoll * qty : null;
       const quantityTons = grossWeightKg != null ? grossWeightKg / 1000 : null;
       return {
@@ -998,6 +1016,15 @@ app.get('/api/financial/suppliers/:id/payment-notice-pdf', async (req, res) => {
     const supplierRow = findSupplierByName(fin.supplier);
     const order = fin.order_id ? db.prepare('SELECT * FROM orders WHERE id=?').get(fin.order_id) : null;
 
+    // Split-payment support: ?pct=20&label=Deposit renders just that
+    // installment's slice of the total amount, with the label appended to
+    // the purpose line — used when payment_schedule is a split like
+    // "20/80" and the frontend generates one PDF per installment.
+    const pct = req.query.pct ? parseFloat(req.query.pct) : null;
+    const label = req.query.label || '';
+    const amount = pct != null ? (parseFloat(fin.amount) || 0) * (pct / 100) : fin.amount;
+    const purpose = label ? `${fin.description || ''} — ${label} (${pct}%)`.trim() : fin.description;
+
     const html = renderPaymentNotice({
       payer: fin.payer || (order?.acquisition_company ? getAcq(order.acquisition_company).name : ''),
       applicationDate: fin.created_at ? fin.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
@@ -1010,15 +1037,16 @@ app.get('/api/financial/suppliers/:id/payment-notice-pdf', async (req, res) => {
       bankName: supplierRow?.bank_name,
       bankBranch: supplierRow?.bank_branch,
       accountNumber: supplierRow?.account_number,
-      amount: fin.amount,
+      amount,
       currency: fin.currency,
-      purpose: fin.description,
+      purpose,
       applicant: fin.applicant,
       approvedBy: fin.approved_by,
     });
 
     const pdf = await renderPdfBuffer(html);
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="PaymentNotice-${fin.id}.pdf"` });
+    const suffix = label ? `-${label}` : '';
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="PaymentNotice-${fin.id}${suffix}.pdf"` });
     res.send(pdf);
   } catch (err) {
     console.error('Payment notice PDF error:', err);

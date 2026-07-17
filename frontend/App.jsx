@@ -429,6 +429,17 @@ const PAYMENT_TERMS_OPTIONS = [
   "30%ADV/70%DP BL – 30% Advance, 70%DP Under BL Copy",
 ];
 
+// Split-payment presets for Supplier Payments — each `parts` entry gets its
+// own Payment Notice PDF (own amount slice + label), so a 20/80 deposit
+// schedule generates two separate documents instead of one for the full
+// amount.
+const PAYMENT_SCHEDULES = {
+  "100": { label: "100% (Single Payment)", parts: [{ pct: 100, label: "" }] },
+  "20/80": { label: "20% Deposit / 80% Balance", parts: [{ pct: 20, label: "Deposit" }, { pct: 80, label: "Balance" }] },
+  "30/70": { label: "30% Deposit / 70% Balance", parts: [{ pct: 30, label: "Deposit" }, { pct: 70, label: "Balance" }] },
+  "50/50": { label: "50% / 50%", parts: [{ pct: 50, label: "1st Payment" }, { pct: 50, label: "2nd Payment" }] },
+};
+
 // For Textile / DTF Film items, the roll price is derived from a per-meter
 // rate — show that rate alongside the roll total so it's clear where the
 // number came from. `field` is "sale_per_meter" or "cost_per_meter".
@@ -625,6 +636,15 @@ function StatCard({ label, value, sub, color = "#3b82f6" }) {
 // quantity as starting points — both still editable afterwards.
 // Shared at module level (used both from the Orders screen and the
 // Commercial Invoice screen, where Packing Lists are now generated/edited).
+function tubeWeightKg(value, unit) {
+  const v = parseFloat(value);
+  if (!v) return 0;
+  if (unit === "g") return v / 1000;
+  if (unit === "lb") return v * 0.453592;
+  if (unit === "oz") return v * 0.0283495;
+  return v; // kg
+}
+
 function buildPackingListDraft(order, products) {
   const items = (order.items || []).map(item => {
     const product = products.find(p => Number(p.id) === Number(item.product_id));
@@ -648,7 +668,7 @@ function buildPackingListDraft(order, products) {
     // does ship and needs to be declared.
     const netWeightRaw = item.total_weight != null && item.total_weight !== "" ? parseFloat(item.total_weight) : null;
     const netWeight = netWeightRaw != null ? round1(netWeightRaw) : null;
-    const tubeWeightPerRoll = isTextile ? (parseFloat(product?.tube_weight) || 0) : 0;
+    const tubeWeightPerRoll = isTextile ? tubeWeightKg(product?.tube_weight, product?.tube_weight_unit) : 0;
     const grossWeight = netWeight != null ? round1(netWeight + tubeWeightPerRoll * rollCount) : null;
     return {
       product_id: item.product_id,
@@ -1222,7 +1242,7 @@ const [f, setF] = useState(initial || {
   height: "", height_unit: "cm",
   thickness: "", thickness_unit: "mm",
   weight: "", weight_unit: "kg",
-  tube_weight: "",
+  tube_weight: "", tube_weight_unit: "kg",
   volume: "", volume_unit: "L",
   unit_cost: "", cost_currency: "USD",
   sale_price: "", sale_currency: "USD", sale_pct: "",
@@ -1467,8 +1487,16 @@ const handleSalePerLiterChange = (e) => {
 {(f.category === "Textile" || f.category === "DTF Film") && (
   // Full-width for the same reason Volume is below — a conditional `half`
   // field here would throw off the Cost/Sale grid alternation that follows.
+  // Same compact Input+Select layout as the Weight field above, just with a
+  // plain weight-unit list (no g/m or g/m², which don't apply to a fixed
+  // per-roll tube mass).
   <Field label="Tube Weight (cardboard core, per roll)">
-    <Input value={f.tube_weight || ""} onChange={set("tube_weight")} placeholder="e.g. 1.075 (kg) — added to Net Weight to get Gross Weight per roll" />
+    <div style={{ display: "flex", gap: "6px" }}>
+      <Input value={f.tube_weight || ""} onChange={set("tube_weight")} placeholder="e.g. 1.075" style={{ ...inputStyle, flex: 1 }} />
+      <Select value={f.tube_weight_unit || "kg"} onChange={set("tube_weight_unit")} style={{ ...inputStyle, width: "90px", cursor: "pointer" }}>
+        {["kg","g","lb","oz"].map(u => <option key={u}>{u}</option>)}
+      </Select>
+    </div>
   </Field>
 )}
 
@@ -2017,6 +2045,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
     type: isClient ? "Invoice" : "Purchase Order",
     amount: "", currency: "USD", due_date: "", status: "Pending", notes: "",
     payer: "", payment_method: "Online bank payment", applicant: "", approved_by: "",
+    payment_schedule: "100",
   });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const party = isClient ? "client" : "supplier";
@@ -2069,12 +2098,25 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
           </Field>
           <Field label="Applicant" half><Input value={f.applicant} onChange={set("applicant")} /></Field>
           <Field label="Approved By" half><Input value={f.approved_by} onChange={set("approved_by")} /></Field>
+          <Field label="Payment Schedule" half>
+            <Select value={f.payment_schedule || "100"} onChange={set("payment_schedule")}>
+              {Object.entries(PAYMENT_SCHEDULES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </Select>
+          </Field>
         </>
       )}
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
-      <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+      <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px", flexWrap: "wrap" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        {!isClient && f.id && <Btn outline color="#10b981" onClick={() => window.open(`${API}/financial/suppliers/${f.id}/payment-notice-pdf`, "_blank")}>📄 Payment Notice PDF</Btn>}
+        {/* Each installment in the chosen schedule (e.g. 20% Deposit / 80%
+            Balance) gets its own Payment Notice PDF button — a single 100%
+            schedule falls back to the one plain button it had before. */}
+        {!isClient && f.id && (PAYMENT_SCHEDULES[f.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]).parts.map((part, i) => (
+          <Btn key={i} outline color="#10b981"
+            onClick={() => window.open(`${API}/financial/suppliers/${f.id}/payment-notice-pdf${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`, "_blank")}>
+            📄 {part.label ? `${part.label} PDF (${part.pct}%)` : "Payment Notice PDF"}
+          </Btn>
+        ))}
         <Btn color={isClient ? "#3b82f6" : "#8b5cf6"} onClick={async () => { await onSave(f); onClose(); }}>Save</Btn>
       </div>
     </div>
