@@ -133,6 +133,35 @@ const heightMOf = (product) => {
   return product.height_unit === "cm" ? h * 0.01 : product.height_unit === "mm" ? h * 0.001 : h;
 };
 
+// Generic value+unit → meters conversion (mm/cm/m/in), used wherever a
+// dimension field needs converting regardless of which unit it was entered
+// in — Width and Roll Diameter both use this for the Packing List's actual
+// rolled-cylinder CBM calculation below.
+const toMeters = (value, unit) => {
+  const v = parseFloat(value) || 0;
+  if (unit === "mm") return v * 0.001;
+  if (unit === "cm") return v * 0.01;
+  if (unit === "in") return v * 0.0254;
+  return v; // m
+};
+
+// Actual physical volume of one finished Textile/DTF Film roll — a cylinder
+// whose circular face is the rolled diameter (product.roll_diameter, tube
+// included) and whose axial length is the fabric's width. This is a real
+// measurement of the roll itself, independent of which container it ends up
+// in — unlike the old fallback (splitting a container's flat nominal
+// capacity proportionally by weight share), which only approximates how
+// much of a container two differently-shaped rolls actually take up.
+// Returns null when the product doesn't have a registered diameter yet, so
+// callers can fall back to the capacity-based estimate for those.
+const rollVolumeM3 = (product) => {
+  if (!product || !product.roll_diameter || !product.width) return null;
+  const diameterM = toMeters(product.roll_diameter, product.roll_diameter_unit || "cm");
+  const widthM = toMeters(product.width, product.width_unit || "cm");
+  if (!diameterM || !widthM) return null;
+  return Math.PI * (diameterM / 2) ** 2 * widthM;
+};
+
 // The registered per-meter sale price on the product record — the 0%
 // reference point the item's Markup % is measured against.
 const registeredPerMeter = (product) => {
@@ -700,6 +729,13 @@ function buildPackingListDraft(order, products) {
     const netWeight = netWeightRaw != null ? round1(netWeightRaw) : null;
     const tubeWeightPerRoll = isTextile ? tubeWeightKg(product?.tube_weight, product?.tube_weight_unit) : 0;
     const grossWeight = netWeight != null ? round1(netWeight + tubeWeightPerRoll * rollCount) : null;
+    // Real per-roll volume from the product's registered Roll Diameter, when
+    // available — lets the CBM below be an actual physical measurement
+    // instead of just a proportional slice of the container's nominal
+    // capacity. `_cbmPerRoll` is transient (derived from the product record,
+    // not something the Packing List itself should own) — stripped out
+    // again before the draft is returned.
+    const _cbmPerRoll = isTextile ? rollVolumeM3(product) : null;
     return {
       product_id: item.product_id,
       description: product?.name || item.product_name,
@@ -718,9 +754,11 @@ function buildPackingListDraft(order, products) {
       roll: item.quantity != null && item.quantity !== "" ? item.quantity : "",
       grossWeight: grossWeight != null ? grossWeight : "",
       netWeight: netWeight != null ? netWeight : "",
-      // Auto-filled below from the order's container info when available;
-      // still editable per-item since CBM can vary by product.
+      // Auto-filled below from the roll's real volume (when the product has
+      // a registered diameter) or the order's container info as a fallback;
+      // still editable per-item afterwards either way.
       cbm: "",
+      _cbmPerRoll,
     };
   });
   const acq = getAcqCompany(order.acquisition_company || "HK");
@@ -771,19 +809,29 @@ function buildPackingListDraft(order, products) {
     items = baseItems.map(item => ({ ...item, container_seq: 1 }));
   }
 
-  // CBM auto-fill from the Order's container info (type + quantity), so the
-  // Packing List doesn't need it typed in by hand. Values are the standard
-  // usable cargo capacities for each container type; still editable per-item
-  // afterwards since actual stowed volume can vary. Each container gets its
-  // own capacity — distributed across just the items loaded into it.
+  // CBM: real per-roll volume (from the product's Roll Diameter) takes
+  // priority whenever it's available — it's an actual physical measurement
+  // of that roll batch, not an estimate, so it doesn't need to be capped to
+  // the container's nominal capacity. Only items whose product has no
+  // registered diameter yet fall back to the old estimate: splitting the
+  // container's flat usable capacity proportionally by weight share.
+  items.forEach(i => {
+    if (i._cbmPerRoll != null) {
+      const rollCount = parseFloat(i.roll) || 0;
+      i.cbm = rollCount > 0 ? Math.round(i._cbmPerRoll * rollCount * 100) / 100 : "";
+    }
+  });
+
   const CONTAINER_CBM = { "20' Standard": 33, "40' Standard": 67, "40' High Cube": 76 };
   const perContainerCbm = order.container && CONTAINER_CBM[order.container] ? CONTAINER_CBM[order.container] : null;
   if (perContainerCbm != null) {
     containers.forEach(c => {
       // Only split CBM across rows that actually start with rolls allocated
-      // to this container — the zero-roll padding rows (there so the user
-      // can reallocate into them later) shouldn't soak up a share of CBM.
-      const containerItems = items.filter(i => i.container_seq === c.seq && (parseFloat(i.roll) || 0) > 0);
+      // to this container, and that don't already have a real per-roll
+      // volume computed above — the zero-roll padding rows (there so the
+      // user can reallocate into them later) shouldn't soak up a share of
+      // CBM either way.
+      const containerItems = items.filter(i => i.container_seq === c.seq && (parseFloat(i.roll) || 0) > 0 && i._cbmPerRoll == null);
       if (!containerItems.length) return;
       const grossSum = containerItems.reduce((s, i) => s + (parseFloat(i.grossWeight) || 0), 0);
       containerItems.forEach(i => {
@@ -792,6 +840,12 @@ function buildPackingListDraft(order, products) {
       });
     });
   }
+
+  // `_cbmPerRoll` was only ever a scratch value derived from the product
+  // record to compute the line above — strip it before the draft is
+  // returned so it doesn't get persisted into items_json as if it were part
+  // of the Packing List's own data.
+  items.forEach(i => { delete i._cbmPerRoll; });
 
   const totals = items.reduce((acc, i) => ({
     totalLength: acc.totalLength + (parseFloat(i.totalLength) || 0),
@@ -1330,6 +1384,7 @@ const [f, setF] = useState(initial || {
   thickness: "", thickness_unit: "mm",
   weight: "", weight_unit: "kg",
   tube_weight: "", tube_weight_unit: "kg",
+  roll_diameter: "", roll_diameter_unit: "cm",
   volume: "", volume_unit: "L",
   unit_cost: "", cost_currency: "USD",
   sale_price: "", sale_currency: "USD", sale_pct: "",
@@ -1582,6 +1637,21 @@ const handleSalePerLiterChange = (e) => {
       <Input value={f.tube_weight || ""} onChange={set("tube_weight")} placeholder="e.g. 1.075" style={{ ...inputStyle, flex: 1 }} />
       <Select value={f.tube_weight_unit || "kg"} onChange={set("tube_weight_unit")} style={{ ...inputStyle, width: "90px", cursor: "pointer" }}>
         {["kg","g","lb","oz"].map(u => <option key={u}>{u}</option>)}
+      </Select>
+    </div>
+  </Field>
+)}
+
+{(f.category === "Textile" || f.category === "DTF Film") && (
+  // Rolled diameter (outer diameter of the finished roll, tube included) —
+  // needed to compute an actual rolled volume (cylinder: π × (diameter/2)² ×
+  // length) for the Packing List's CBM, instead of only splitting each
+  // container's flat capacity proportionally by weight share.
+  <Field label="Roll Diameter (finished roll, tube included)">
+    <div style={{ display: "flex", gap: "6px" }}>
+      <Input value={f.roll_diameter || ""} onChange={set("roll_diameter")} placeholder="e.g. 30" style={{ ...inputStyle, flex: 1 }} />
+      <Select value={f.roll_diameter_unit || "cm"} onChange={set("roll_diameter_unit")} style={{ ...inputStyle, width: "90px", cursor: "pointer" }}>
+        {["mm","cm","m","in"].map(u => <option key={u}>{u}</option>)}
       </Select>
     </div>
   </Field>
@@ -2778,22 +2848,87 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
   }));
   const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }));
 
+  const applyTotals = (prev, items) => {
+    const totals = items.reduce((acc, i) => ({
+      totalLength: acc.totalLength + (parseFloat(i.totalLength) || 0),
+      totalRoll: acc.totalRoll + (parseFloat(i.roll) || 0),
+      totalGrossWeight: acc.totalGrossWeight + (parseFloat(i.grossWeight) || 0),
+      totalNetWeight: acc.totalNetWeight + (parseFloat(i.netWeight) || 0),
+      totalCbm: acc.totalCbm + (parseFloat(i.cbm) || 0),
+    }), { totalLength: 0, totalRoll: 0, totalGrossWeight: 0, totalNetWeight: 0, totalCbm: 0 });
+    return {
+      ...prev, _items: items, items_json: JSON.stringify(items),
+      total_length: totals.totalLength, total_roll: totals.totalRoll,
+      total_gross_weight: totals.totalGrossWeight, total_net_weight: totals.totalNetWeight, total_cbm: totals.totalCbm,
+    };
+  };
+
   const updateItem = (idx, key, value) => {
     setF(prev => {
       const items = [...prev._items];
       items[idx] = { ...items[idx], [key]: value };
-      const totals = items.reduce((acc, i) => ({
-        totalLength: acc.totalLength + (parseFloat(i.totalLength) || 0),
-        totalRoll: acc.totalRoll + (parseFloat(i.roll) || 0),
-        totalGrossWeight: acc.totalGrossWeight + (parseFloat(i.grossWeight) || 0),
-        totalNetWeight: acc.totalNetWeight + (parseFloat(i.netWeight) || 0),
-        totalCbm: acc.totalCbm + (parseFloat(i.cbm) || 0),
-      }), { totalLength: 0, totalRoll: 0, totalGrossWeight: 0, totalNetWeight: 0, totalCbm: 0 });
-      return {
-        ...prev, _items: items, items_json: JSON.stringify(items),
-        total_length: totals.totalLength, total_roll: totals.totalRoll,
-        total_gross_weight: totals.totalGrossWeight, total_net_weight: totals.totalNetWeight, total_cbm: totals.totalCbm,
+      return applyTotals(prev, items);
+    });
+  };
+
+  // Editing Roll for one container's copy of a product used to just
+  // overwrite that one row — nothing stopped the same product from showing
+  // more total rolls across containers than the order actually has, which
+  // read as "we're shipping more than what was ordered." Roll edits now
+  // trade directly with the item's Container 01 row (its normal starting
+  // point, per buildPackingListDraft's default) so the sum across every
+  // container for that product always stays exactly at item.quantity — the
+  // order's real quantity, which is carried unchanged on every split copy.
+  // Editing Container 01 itself trades with Container 02 instead, since
+  // there's no "container before 01" to draw from. Gross/Net Weight, Total
+  // Length and CBM are then recomputed for both rows from a per-roll rate
+  // derived off however they were already split (works whether that came
+  // from the real roll-volume CBM or the capacity-share fallback).
+  const updateItemRoll = (idx, rawValue) => {
+    setF(prev => {
+      const items = [...prev._items];
+      const item = items[idx];
+      const total = parseFloat(item.quantity) || 0;
+      if (!total) { items[idx] = { ...item, roll: rawValue }; return applyTotals(prev, items); }
+
+      const sameProduct = items.map((_, i) => i).filter(i => items[i].product_id === item.product_id);
+      const thisSeq = item.container_seq || 1;
+      const partnerSeq = thisSeq !== 1 ? 1 : 2;
+      const partnerIdx = sameProduct.find(i => (items[i].container_seq || 1) === partnerSeq);
+      if (partnerIdx == null) { items[idx] = { ...item, roll: rawValue }; return applyTotals(prev, items); }
+
+      // Per-roll rates, derived from the current split (sum of that field
+      // across every container for this product ÷ the order quantity) —
+      // self-correcting regardless of which CBM method produced the numbers.
+      const sumField = (f) => sameProduct.reduce((s, i) => s + (parseFloat(items[i][f]) || 0), 0);
+      const grossPerRoll = sumField("grossWeight") / total;
+      const netPerRoll = sumField("netWeight") / total;
+      const cbmPerRoll = sumField("cbm") / total;
+      const lengthPerRoll = item.isTextile ? sumField("totalLength") / total : null;
+
+      const otherSum = sameProduct
+        .filter(i => i !== idx && i !== partnerIdx)
+        .reduce((s, i) => s + (parseFloat(items[i].roll) || 0), 0);
+      const clampMax = Math.max(0, total - otherSum);
+      let newRoll = parseFloat(String(rawValue).replace(",", "."));
+      if (isNaN(newRoll)) newRoll = 0;
+      newRoll = Math.max(0, Math.min(clampMax, newRoll));
+      const partnerNewRoll = Math.max(0, total - otherSum - newRoll);
+
+      const applyRow = (i, roll) => {
+        items[i] = {
+          ...items[i],
+          roll,
+          grossWeight: Math.round(grossPerRoll * roll * 10) / 10,
+          netWeight: Math.round(netPerRoll * roll * 10) / 10,
+          cbm: Math.round(cbmPerRoll * roll * 100) / 100,
+          totalLength: lengthPerRoll != null ? Math.round(lengthPerRoll * roll * 100) / 100 : items[i].totalLength,
+        };
       };
+      applyRow(idx, newRoll);
+      applyRow(partnerIdx, partnerNewRoll);
+
+      return applyTotals(prev, items);
     });
   };
 
@@ -2828,7 +2963,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
       </div>
       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
         <label style={{ fontSize: "11px", color: "#64748b" }}>{item.isTextile ? "Roll" : "Packages"}
-          <input type="number" value={item.roll} onChange={e => updateItem(idx, "roll", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
+          <input type="number" value={item.roll} onChange={e => updateItemRoll(idx, e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
         </label>
         <label style={{ fontSize: "11px", color: "#64748b" }}>Gross Weight (kg)
           <input type="number" value={item.grossWeight} onChange={e => updateItem(idx, "grossWeight", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />

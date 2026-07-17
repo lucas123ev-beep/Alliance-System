@@ -426,6 +426,13 @@ const migrations = [
   // cards, since the totals only ever looked at the full row amount.
   ['financial_suppliers', 'paid_amount', 'REAL DEFAULT 0'],
   ['financial_clients', 'paid_amount', 'REAL DEFAULT 0'],
+  // Rolled goods (Textile/DTF Film) — needed to compute an actual rolled
+  // volume (cylinder: π × (diameter/2)² × length) for the Packing List's CBM,
+  // instead of just splitting each container's flat capacity proportionally
+  // by gross weight share, which doesn't reflect how differently two rolls
+  // of the same weight but different diameters actually stack in a container.
+  ['products', 'roll_diameter', 'REAL'],
+  ['products', 'roll_diameter_unit', "TEXT DEFAULT 'cm'"],
 ];
 
 for (const [table, column, definition] of migrations) {
