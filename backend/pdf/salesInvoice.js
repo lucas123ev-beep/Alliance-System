@@ -11,33 +11,109 @@ const { escapeHtml, fmtDateLong, fmtNumber, fmtMoney, amountToWords } = require(
 //   number, date, wayOfShipment, portOfOrigin, portOfDestination, incoterm
 //   acq: acquisition company object (see acquisitionCompanies.js)
 //   manufacturer: { name, address, tel }
-//   items: [{ description, bullets: [], color, width, weightSpec, totalLength, unitPrice, total, currency, ncm }]
-//   totalLength, totalAmount, currency
+//   items: [{ description, bullets: [], color, width, weightSpec, category, isTextile,
+//             quantity, unit, totalLength, totalWeight, unitPrice, total, currency, ncm }]
+//   totalLength, totalWeight, totalAmount, currency
 //   paymentTerms, productionDays, deliveryDays
 //   importer: { name, address, taxId, tel }
 //   extraShipmentLine: optional extra line for Shipment Details column (e.g. Packing List summary)
 function renderSalesInvoice(params) {
   const {
     title, number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
-    incoterm, acq, manufacturer, items, totalLength, totalAmount, currency,
+    incoterm, acq, manufacturer, items, totalLength, totalWeight, totalAmount, currency,
     paymentTerms, productionDays, deliveryDays, importer, extraShipmentLine,
   } = params;
 
-  const rows = items.map(item => `
+  // Textile/DTF Film rolls are quoted and measured by the meter, so they get
+  // the original Total Length column. Everything else (machines, chemicals,
+  // accessories...) is quoted per drum/crate/unit, so they get a Quantity
+  // column (e.g. "55 Steel Drums / Barrels") and a Total Weight column
+  // instead — grouped into their own section with its own header, since
+  // mixing both meanings into one "Total Length" column was misleading.
+  const textileItems = items.filter(i => i.isTextile);
+  const otherItems = items.filter(i => !i.isTextile);
+
+  const descCell = item => `
+    <td>
+      <strong>${escapeHtml(item.description)}</strong>
+      ${item.bullets && item.bullets.length ? `<ul class="desc-bullets">${item.bullets.map(b => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
+      ${item.ncm ? `<div class="small">NCM: ${escapeHtml(item.ncm)}</div>` : ""}
+    </td>
+  `;
+
+  const textileRows = textileItems.map(item => `
     <tr>
-      <td>
-        <strong>${escapeHtml(item.description)}</strong>
-        ${item.bullets && item.bullets.length ? `<ul class="desc-bullets">${item.bullets.map(b => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
-        ${item.ncm ? `<div class="small">NCM: ${escapeHtml(item.ncm)}</div>` : ""}
-      </td>
+      ${descCell(item)}
       <td>${escapeHtml(item.color || "—")}</td>
       <td>${escapeHtml(item.width || "—")}</td>
       <td>${escapeHtml(item.weightSpec || "—")}</td>
       <td class="num">${fmtNumber(item.totalLength, 3)}</td>
-      <td class="num">${fmtMoney(item.unitPrice, item.currency || currency)}</td>
-      <td class="num">${fmtMoney(item.total, item.currency || currency)}</td>
+      <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
+      <td class="num">${fmtMoney(item.total, currency)}</td>
     </tr>
   `).join("");
+
+  const otherRows = otherItems.map(item => `
+    <tr>
+      ${descCell(item)}
+      <td>${escapeHtml(item.color || "—")}</td>
+      <td>${escapeHtml(item.width || "—")}</td>
+      <td>${item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
+      <td class="num">${item.totalWeight ? `${fmtNumber(item.totalWeight, 1)} kg` : "—"}</td>
+      <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
+      <td class="num">${fmtMoney(item.total, currency)}</td>
+    </tr>
+  `).join("");
+
+  const textileSection = textileItems.length === 0 ? "" : `
+    <div class="section-bar" style="border-top:1px solid #999; margin-top:6px;">Textile / DTF Film</div>
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th style="width:28%">Descriptions of Goods</th>
+          <th>Color</th>
+          <th>Width</th>
+          <th>Weight</th>
+          <th>Total Length</th>
+          <th>Unit Price</th>
+          <th>Total Amount (${escapeHtml(currency)} ${escapeHtml(incoterm || "")})</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${textileRows}
+        <tr class="totals-row">
+          <td colspan="4"></td>
+          <td class="num">Total Meters: ${fmtNumber(totalLength, 3)}</td>
+          <td colspan="2"></td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+
+  const otherSection = otherItems.length === 0 ? "" : `
+    <div class="section-bar" style="border-top:1px solid #999; margin-top:6px;">Machines, Chemicals &amp; Other Goods</div>
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th style="width:28%">Descriptions of Goods</th>
+          <th>Color</th>
+          <th>Width</th>
+          <th>Quantity</th>
+          <th>Total Weight</th>
+          <th>Unit Price</th>
+          <th>Total Amount (${escapeHtml(currency)} ${escapeHtml(incoterm || "")})</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${otherRows}
+        <tr class="totals-row">
+          <td colspan="4"></td>
+          <td class="num">Total Weight: ${fmtNumber(totalWeight, 1)} kg</td>
+          <td colspan="2"></td>
+        </tr>
+      </tbody>
+    </table>
+  `;
 
   const body = `
     <table class="meta-table">
@@ -54,25 +130,14 @@ function renderSalesInvoice(params) {
           <td class="label">Country of acquisition:</td><td>${escapeHtml(acq.countryOfAcquisition)}.</td></tr>
     </table>
 
+    ${textileSection}
+    ${otherSection}
+
     <table class="items-table" style="margin-top:6px;">
-      <thead>
-        <tr>
-          <th style="width:30%">Descriptions of Goods</th>
-          <th>Color</th>
-          <th>Width</th>
-          <th>Weight</th>
-          <th>Total Length</th>
-          <th>Unit Price</th>
-          <th>Total Amount (${escapeHtml(currency)} ${escapeHtml(incoterm || "")})</th>
-        </tr>
-      </thead>
       <tbody>
-        ${rows}
         <tr class="totals-row">
-          <td colspan="4"></td>
-          <td class="num">Total Meters: ${fmtNumber(totalLength, 3)}</td>
-          <td class="num">Total Amount:</td>
-          <td class="num">${fmtMoney(totalAmount, currency)}</td>
+          <td class="num">Grand Total Amount:</td>
+          <td class="num" style="width:20%">${fmtMoney(totalAmount, currency)}</td>
         </tr>
       </tbody>
     </table>

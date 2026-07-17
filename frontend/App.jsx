@@ -311,18 +311,18 @@ function recalcLiquidItem(item, product, field, rawValue) {
 }
 
 // Options for the "Target Price refers to" selector shown next to each
-// item's Target Price field — always offers the item's Total and its own
-// registered package unit (Rolls, kg, etc.), plus Per Meter for
-// Textile/DTF Film items or Per Liter for Chemical (liquid) items where
-// those are the natural pricing units.
+// item's Target Price field. Per Meter and Per Liter are always offered
+// (not just for items whose category happens to be Textile/DTF/Chemical) —
+// ad-hoc items typed in without picking a registered product never get a
+// category set at all, but the person may still be quoting them by the
+// meter or by the liter, so the option needs to be there regardless.
 function targetPriceUnitOptions(item) {
-  const isTextile = item?.category === "Textile" || item?.category === "DTF Film";
-  const isLiquid = item?.category === "Chemical";
-  const opts = [{ value: "total", label: "Total" }];
-  if (isTextile) opts.push({ value: "meter", label: "Per Meter" });
-  if (isLiquid) opts.push({ value: "liter", label: "Per Liter" });
-  opts.push({ value: "unit", label: `Per ${item?.unit || "Unit"}` });
-  return opts;
+  return [
+    { value: "total", label: "Total" },
+    { value: "meter", label: "Per Meter" },
+    { value: "liter", label: "Per Liter" },
+    { value: "unit", label: `Per ${item?.unit || "Unit"}` },
+  ];
 }
 
 const targetPriceUnitSuffix = (item) => {
@@ -331,6 +331,51 @@ const targetPriceUnitSuffix = (item) => {
   if (item.target_price_unit === "unit") return `/${item.unit || "un"}`;
   return "";
 };
+
+// Shared inline Markup %/Value-per-X/Total editor for a single item row —
+// used by both QuotationForm and OrderForm. Add Product only ever holds
+// cost data, so this is the one place a sale price actually gets set; it
+// needs to exist in the Order screen too (not just Quotation), since a
+// custom price can legitimately end up different from whatever's currently
+// registered on the Product, and Order items may be added/edited directly
+// without ever going through a Quotation.
+function PricingRow({ item, product, currency, onChange }) {
+  const isTextile = item.category === "Textile" || item.category === "DTF Film";
+  const isLiquid = item.category === "Chemical";
+  const onPriceField = (field) => (e) => onChange(recalcTextileItem(item, product, field, e.target.value));
+  const onLiquidField = (field) => (e) => onChange(recalcLiquidItem(item, product, field, e.target.value));
+  const onSimpleField = (field) => (e) => onChange(recalcSimpleItem(item, product, field, e.target.value));
+  const pctHandler = isTextile ? onPriceField("sale_pct") : isLiquid ? onLiquidField("sale_pct") : onSimpleField("sale_pct");
+  const totalHandler = isTextile ? onPriceField("total") : isLiquid ? onLiquidField("total") : onSimpleField("total");
+  return (
+    <div style={{ display: "flex", gap: "12px", alignItems: "flex-end", marginTop: "8px", flexWrap: "wrap" }}>
+      <label style={{ fontSize: "11px", color: "#64748b" }}>Markup %
+        <input type="text" inputMode="decimal" value={item.sale_pct ?? ""} onChange={pctHandler}
+          placeholder="0" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "70px" }} />
+      </label>
+      {isTextile ? (
+        <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Meter ({currency})
+          <input type="text" inputMode="decimal" value={item.sale_per_meter ?? ""} onChange={onPriceField("sale_per_meter")}
+            placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
+        </label>
+      ) : isLiquid ? (
+        <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Liter ({currency})
+          <input type="text" inputMode="decimal" value={item.sale_per_liter ?? ""} onChange={onLiquidField("sale_per_liter")}
+            placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
+        </label>
+      ) : (
+        <label style={{ fontSize: "11px", color: "#64748b" }}>Unit Price ({currency})
+          <input type="text" inputMode="decimal" value={item.unit_price ?? ""} onChange={onSimpleField("unit_price")}
+            placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
+        </label>
+      )}
+      <label style={{ fontSize: "11px", color: "#64748b" }}>Total ({currency})
+        <input type="text" inputMode="decimal" value={item.total ?? ""} onChange={totalHandler}
+          placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "110px", fontWeight: 700, color: "#10b981" }} />
+      </label>
+    </div>
+  );
+}
 
 // Package/unit options a product can be sold in — shared between the
 // Product Registry's "Package" field and the Add Product modal's Unit
@@ -884,23 +929,28 @@ useEffect(() => {
             {items.length === 0 && (
               <div style={{ padding: "12px 14px", color: "#475569", fontSize: "13px" }}>No products added yet.</div>
             )}
-            {items.map((item, idx) => (
-              <div key={idx} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", borderBottom: "1px solid #0f172a" }}>
-                <div style={{ flex: 1, fontSize: "13px" }}>
-                  <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
-                  <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
-                  <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit} × {item.unit_price}</span>
-                  {perMeterLabel(item, "sale_per_meter", item.currency) && (
-                    <span style={{ color: "#a78bfa", marginLeft: "8px", fontSize: "11px" }}>({perMeterLabel(item, "sale_per_meter", item.currency)})</span>
-                  )}
+            {items.map((item, idx) => {
+              const product = products.find(p => Number(p.id) === Number(item.product_id));
+              return (
+                <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid #0f172a" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ flex: 1, fontSize: "13px" }}>
+                      <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
+                      <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
+                      <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
+                    </div>
+                    <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
+                    <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
+                  </div>
+                  {/* The sale price can legitimately differ from whatever's registered
+                      on the Product (e.g. carried over custom from a Quotation, or
+                      negotiated directly here) — always editable, same as on the
+                      Quotation screen. */}
+                  <PricingRow item={item} product={product} currency={item.currency || f.currency}
+                    onChange={updated => updateItem(idx, updated)} />
                 </div>
-                 <span style={{ color: "#10b981", fontWeight: 600, fontSize: "13px", whiteSpace: "nowrap" }}>
-                 {fmt(parseFloat(item.total), item.currency || f.currency)}
-                 </span>
-                <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
-                <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
-              </div>
-            ))}
+              );
+            })}
             <div style={{ padding: "10px 14px" }}>
               <Btn small color="#3b82f6" onClick={() => { setEditingItemIdx(null); setItemModal("new"); }}>+ Add Product</Btn>
             </div>
@@ -1192,7 +1242,11 @@ const handleSalePerLiterChange = (e) => {
 </Field>
 
 {f.category === "Chemical" && (
-  <Field label="Volume (per package)" half>
+  // Full-width on purpose: a conditional `half` field here would eat one
+  // slot of the 2-column grid and throw off every Cost/Sale pair that
+  // follows (whichever field lands next would silently swap from the left
+  // column to the right one, and vice versa).
+  <Field label="Volume (per package)">
     <div style={{ display: "flex", gap: "6px" }}>
       <Input value={f.volume || ""} onChange={set("volume")} placeholder="e.g. 200 for a 200L drum" style={{ ...inputStyle, flex: 1 }} />
       <Select value={f.volume_unit || "L"} onChange={set("volume_unit")} style={{ ...inputStyle, width: "80px", cursor: "pointer" }}>
@@ -1202,45 +1256,52 @@ const handleSalePerLiterChange = (e) => {
   </Field>
 )}
 
-<Field label="Cost Currency" half>
-  <Select value={f.cost_currency} onChange={set("cost_currency")}>
-    {currencies.map(c => <option key={c}>{c}</option>)}
-  </Select>
-</Field>
-<Field label="Sale Currency" half>
-  <Select value={f.sale_currency || "USD"} onChange={set("sale_currency")}>
-    {currencies.map(c => <option key={c}>{c}</option>)}
-  </Select>
-</Field>
-
-{(f.category === "Textile" || f.category === "DTF Film") && (
-  <>
-    <Field label="Cost per Meter" half>
-      <Input type="number" value={f.cost_per_meter || ""} onChange={handleCostPerMeterChange} placeholder="0.00" />
+{/* Cost and Sale fields laid out as two explicit columns (their own grid,
+    spanning the full width of the outer form grid) so "Cost X" always sits
+    on the left and "Sale X" always sits on the right, regardless of which
+    conditional per-meter/per-liter rows are showing for the category. */}
+<div style={{ gridColumn: "span 2", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+    <Field label="Cost Currency">
+      <Select value={f.cost_currency} onChange={set("cost_currency")}>
+        {currencies.map(c => <option key={c}>{c}</option>)}
+      </Select>
     </Field>
-    <Field label="Sale per Meter" half>
-      <Input type="number" value={f.sale_per_meter || ""} onChange={handleSalePerMeterChange} placeholder="0.00" />
+    {(f.category === "Textile" || f.category === "DTF Film") && (
+      <Field label="Cost per Meter">
+        <Input type="number" value={f.cost_per_meter || ""} onChange={handleCostPerMeterChange} placeholder="0.00" />
+      </Field>
+    )}
+    {f.category === "Chemical" && (
+      <Field label="Cost per Liter">
+        <Input type="number" value={f.cost_per_liter || ""} onChange={handleCostPerLiterChange} placeholder="0.00" />
+      </Field>
+    )}
+    <Field label="Cost Price">
+      <Input type="number" value={f.unit_cost} onChange={handleCostChange} placeholder="0.00" />
     </Field>
-  </>
-)}
-
-{f.category === "Chemical" && (
-  <>
-    <Field label="Cost per Liter" half>
-      <Input type="number" value={f.cost_per_liter || ""} onChange={handleCostPerLiterChange} placeholder="0.00" />
+  </div>
+  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+    <Field label="Sale Currency">
+      <Select value={f.sale_currency || "USD"} onChange={set("sale_currency")}>
+        {currencies.map(c => <option key={c}>{c}</option>)}
+      </Select>
     </Field>
-    <Field label="Sale per Liter" half>
-      <Input type="number" value={f.sale_per_liter || ""} onChange={handleSalePerLiterChange} placeholder="0.00" />
+    {(f.category === "Textile" || f.category === "DTF Film") && (
+      <Field label="Sale per Meter">
+        <Input type="number" value={f.sale_per_meter || ""} onChange={handleSalePerMeterChange} placeholder="0.00" />
+      </Field>
+    )}
+    {f.category === "Chemical" && (
+      <Field label="Sale per Liter">
+        <Input type="number" value={f.sale_per_liter || ""} onChange={handleSalePerLiterChange} placeholder="0.00" />
+      </Field>
+    )}
+    <Field label="Sale Price">
+      <Input type="number" value={f.sale_price || ""} onChange={handleSalePriceChange} placeholder="0.00" />
     </Field>
-  </>
-)}
-
-<Field label="Cost Price" half>
-  <Input type="number" value={f.unit_cost} onChange={handleCostChange} placeholder="0.00" />
-</Field>
-<Field label="Sale Price" half>
-  <Input type="number" value={f.sale_price || ""} onChange={handleSalePriceChange} placeholder="0.00" />
-</Field>
+  </div>
+</div>
 
       <Field label="Description"><Textarea value={f.description} onChange={set("description")} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
@@ -1773,15 +1834,9 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
               <div style={{ padding: "12px 14px", color: "#475569", fontSize: "13px" }}>No products added yet.</div>
             )}
             {items.map((item, idx) => {
-              const isTextile = item.category === "Textile" || item.category === "DTF Film";
-              const isLiquid = item.category === "Chemical";
               const product = products.find(p => Number(p.id) === Number(item.product_id));
-              const onPriceField = (field) => (e) => updateItem(idx, recalcTextileItem(item, product, field, e.target.value));
-              const onLiquidField = (field) => (e) => updateItem(idx, recalcLiquidItem(item, product, field, e.target.value));
-              const onSimpleField = (field) => (e) => updateItem(idx, recalcSimpleItem(item, product, field, e.target.value));
               const onTargetField = (e) => updateItem(idx, { ...item, target_price: e.target.value });
               const onTargetUnitField = (e) => updateItem(idx, { ...item, target_price_unit: e.target.value });
-              const pctHandler = isTextile ? onPriceField("sale_pct") : isLiquid ? onLiquidField("sale_pct") : onSimpleField("sale_pct");
               return (
                 <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid #0f172a" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -1793,38 +1848,8 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
                     <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
                     <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
                   </div>
-                  <div style={{ display: "flex", gap: "12px", alignItems: "flex-end", marginTop: "8px", flexWrap: "wrap" }}>
-                    <label style={{ fontSize: "11px", color: "#64748b" }}>Markup %
-                      <input type="text" inputMode="decimal" value={item.sale_pct ?? ""} onChange={pctHandler}
-                        placeholder="0"
-                        style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "70px" }} />
-                    </label>
-                    {isTextile ? (
-                      <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Meter ({item.currency || f.currency})
-                        <input type="text" inputMode="decimal" value={item.sale_per_meter ?? ""} onChange={onPriceField("sale_per_meter")}
-                          placeholder="0,00"
-                          style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
-                      </label>
-                    ) : isLiquid ? (
-                      <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Liter ({item.currency || f.currency})
-                        <input type="text" inputMode="decimal" value={item.sale_per_liter ?? ""} onChange={onLiquidField("sale_per_liter")}
-                          placeholder="0,00"
-                          style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
-                      </label>
-                    ) : (
-                      <label style={{ fontSize: "11px", color: "#64748b" }}>Unit Price ({item.currency || f.currency})
-                        <input type="text" inputMode="decimal" value={item.unit_price ?? ""} onChange={onSimpleField("unit_price")}
-                          placeholder="0,00"
-                          style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
-                      </label>
-                    )}
-                    <label style={{ fontSize: "11px", color: "#64748b" }}>Total ({item.currency || f.currency})
-                      <input type="text" inputMode="decimal" value={item.total ?? ""}
-                        onChange={isTextile ? onPriceField("total") : isLiquid ? onLiquidField("total") : onSimpleField("total")}
-                        placeholder="0,00"
-                        style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "110px", fontWeight: 700, color: "#10b981" }} />
-                    </label>
-                  </div>
+                  <PricingRow item={item} product={product} currency={item.currency || f.currency}
+                    onChange={updated => updateItem(idx, updated)} />
                   <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", marginTop: "8px" }}>
                     <label style={{ fontSize: "11px", color: "#64748b" }}>Target Price
                       <input type="text" inputMode="decimal" value={item.target_price ?? ""} onChange={onTargetField}
@@ -1853,7 +1878,16 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
 )}
 
         <Field label="Currency" half>
-  <Select value={f.currency} onChange={set("currency")}>
+  <Select value={f.currency} onChange={e => {
+    // The quotation's Currency is the one that ends up on the Proforma/PDF —
+    // keep every item's own currency in sync with it, otherwise items stay
+    // labeled in whatever currency their product was registered in while
+    // the total silently gets relabeled with the new symbol (no real
+    // conversion happens; this just keeps the numbers and labels honest).
+    const cur = e.target.value;
+    setF(p => ({ ...p, currency: cur }));
+    setItems(prev => prev.map(i => ({ ...i, currency: cur })));
+  }}>
     {["USD","EUR","BRL","CNY"].map(c => <option key={c}>{c}</option>)}
   </Select>
 </Field>

@@ -697,10 +697,16 @@ function normalizeSalesItem(item, fallbackCurrency) {
     color: product?.color || '',
     width: product?.width ? `${product.width}${product.width_unit || ''}` : '',
     weightSpec: product?.weight ? `${product.weight} ${product.weight_unit || ''}` : '',
+    category,
+    isTextile,
+    quantity: item.quantity ?? null,
+    unit: item.unit || '',
     // "Total Length" (in meters) only means something for Textile/DTF Film
     // rolls — for other categories (machines, chemicals...) leave it blank
     // on the PDF instead of showing the raw quantity, which isn't a length.
+    // They get a Total Weight + Quantity column instead (see salesInvoice.js).
     totalLength: isTextile ? (item.total_meterage ?? item.quantity ?? 0) : null,
+    totalWeight: item.total_weight ?? null,
     unitPrice: item.unit_price ?? 0,
     total: item.total ?? ((item.unit_price || 0) * (item.quantity || 0)),
     currency: item.currency || fallbackCurrency,
@@ -728,6 +734,7 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
     const currency = pf.currency || order?.currency || quotation?.currency || 'USD';
     const items = rawItems.map(i => normalizeSalesItem(i, currency));
     const totalLength = items.reduce((s, i) => s + (parseFloat(i.totalLength) || 0), 0);
+    const totalWeight = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.totalWeight) || 0), 0);
     const totalAmount = pf.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
 
     const acqCode = pf.acquisition_company || order?.acquisition_company || 'HK';
@@ -750,6 +757,7 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
       manufacturer: { name: acq.name, address: acq.addressLine, tel: acq.tel },
       items,
       totalLength,
+      totalWeight,
       totalAmount,
       currency,
       // Payment terms / production / delivery days: prefer whatever was
@@ -779,6 +787,7 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
     const currency = ci.currency || order?.currency || 'USD';
     const items = rawItems.map(i => normalizeSalesItem(i, currency));
     const totalLength = items.reduce((s, i) => s + (parseFloat(i.totalLength) || 0), 0);
+    const totalWeight = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.totalWeight) || 0), 0);
     const totalAmount = ci.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
 
     const acq = getAcq(order?.acquisition_company || 'HK');
@@ -800,6 +809,7 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
       manufacturer: { name: acq.name, address: acq.addressLine, tel: acq.tel },
       items,
       totalLength,
+      totalWeight,
       totalAmount,
       currency,
       paymentTerms: order?.payment_terms || ci.notes,
