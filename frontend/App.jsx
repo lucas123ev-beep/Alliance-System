@@ -597,6 +597,76 @@ function StatCard({ label, value, sub, color = "#3b82f6" }) {
   );
 }
 
+// Builds a Packing List draft from an order's items, pulling as much as
+// possible from the order/product records (color, width, weight spec,
+// length, net weight already computed on the item). Roll count, gross
+// weight and CBM are physical-packing specifics with no digital source, so
+// gross weight defaults to net weight and roll defaults to the order item's
+// quantity as starting points — both still editable afterwards.
+// Shared at module level (used both from the Orders screen and the
+// Commercial Invoice screen, where Packing Lists are now generated/edited).
+function buildPackingListDraft(order, products) {
+  const items = (order.items || []).map(item => {
+    const product = products.find(p => Number(p.id) === Number(item.product_id));
+    // Total Length only means anything for goods sold by the meter —
+    // Textile/DTF Film rolls. Machines, chemicals and other quantity-based
+    // goods get a Quantity column instead (same split used in the
+    // Proforma/Commercial Invoice PDFs).
+    const category = item.category || product?.category || "";
+    const isTextile = category === "Textile" || category === "DTF Film";
+    const totalLength = isTextile ? (parseFloat(item.total_meterage || item.quantity || 0) || 0) : null;
+    const netWeight = item.total_weight != null && item.total_weight !== "" ? parseFloat(item.total_weight) : null;
+    return {
+      product_id: item.product_id,
+      description: product?.name || item.product_name,
+      bullets: product?.description ? String(product.description).split(/\r?\n/).map(s => s.trim()).filter(Boolean) : [],
+      ncm: product?.ncm || "",
+      color: product?.color || "",
+      width: product?.width ? `${product.width}${product.width_unit || ""}` : "",
+      weightSpec: product?.weight ? `${product.weight} ${product.weight_unit || ""}` : "",
+      category,
+      isTextile,
+      quantity: item.quantity != null ? item.quantity : null,
+      unit: item.unit || "",
+      totalLength,
+      // Roll count auto-pulled from the order item's quantity — still
+      // editable below in case the actual carton/roll count differs.
+      roll: item.quantity != null && item.quantity !== "" ? item.quantity : "",
+      grossWeight: netWeight != null ? netWeight : "",
+      netWeight: netWeight != null ? netWeight : "",
+      cbm: "",
+    };
+  });
+  const acq = getAcqCompany(order.acquisition_company || "HK");
+  const totals = items.reduce((acc, i) => ({
+    totalLength: acc.totalLength + (parseFloat(i.totalLength) || 0),
+    totalRoll: acc.totalRoll + (parseFloat(i.roll) || 0),
+    totalGrossWeight: acc.totalGrossWeight + (parseFloat(i.grossWeight) || 0),
+    totalNetWeight: acc.totalNetWeight + (parseFloat(i.netWeight) || 0),
+    totalCbm: acc.totalCbm + (parseFloat(i.cbm) || 0),
+  }), { totalLength: 0, totalRoll: 0, totalGrossWeight: 0, totalNetWeight: 0, totalCbm: 0 });
+
+  return {
+    order_id: order.id,
+    number: `PL-${order.order_number}-${Date.now().toString().slice(-4)}`,
+    date: new Date().toISOString().slice(0, 10),
+    way_of_shipment: "By Sea",
+    country_of_origin: "China",
+    country_of_acquisition: order.acquisition_company === "HK" ? "Hong Kong" : "China",
+    port_of_origin: order.port_of_loading || "",
+    port_of_destination: order.port_of_discharge || "",
+    incoterm: order.incoterm || "",
+    manufacturer: acq.name,
+    manufacturer_address: acq.address,
+    _items: items,
+    items_json: JSON.stringify(items),
+    total_length: totals.totalLength, total_roll: totals.totalRoll,
+    total_gross_weight: totals.totalGrossWeight, total_net_weight: totals.totalNetWeight, total_cbm: totals.totalCbm,
+    status: "Draft",
+    notes: "",
+  };
+}
+
 // ─── FORMS ───────────────────────────────────────────────────────────────────
 
 function ProductItemModal({ onSave, onClose, initial, products }) {
@@ -622,7 +692,11 @@ const [selectedProduct, setSelectedProduct] = useState(null); // ← adicionar e
   );
 
   
-  const calcWeight = (product, quantity) => {
+  // heightOverride/heightUnitOverride let a Quotation/Order item use a
+  // different roll length than what's registered on the product (e.g. a
+  // custom length requested by the client), same as the editable Height
+  // field on Product registration.
+  const calcWeight = (product, quantity, heightOverride, heightUnitOverride) => {
   if (!product || !quantity) return null;
   const qty = parseFloat(quantity) || 0;
   const w = parseFloat(product.weight) || 0;
@@ -633,16 +707,18 @@ const [selectedProduct, setSelectedProduct] = useState(null); // ← adicionar e
 
   // Cálculo complexo apenas para Textile e DTF Film
   if (category === "Textile" || category === "DTF Film") {
-    const h = parseFloat(product.height) || 0;
+    const hRaw = heightOverride !== undefined && heightOverride !== null && heightOverride !== "" ? heightOverride : product.height;
+    const hUnit = heightOverride !== undefined && heightOverride !== null && heightOverride !== "" ? (heightUnitOverride || product.height_unit) : product.height_unit;
+    const h = parseFloat(hRaw) || 0;
     const width = parseFloat(product.width) || 0;
     if (!h) return null;
 
     if (wu === "g/m²") {
-      const heightM = h * (product.height_unit === "cm" ? 0.01 : product.height_unit === "mm" ? 0.001 : 1);
+      const heightM = h * (hUnit === "cm" ? 0.01 : hUnit === "mm" ? 0.001 : 1);
       const widthM = width * (product.width_unit === "cm" ? 0.01 : product.width_unit === "mm" ? 0.001 : 1);
       return (w / 1000) * widthM * heightM * qty;
     } else if (wu === "g/m") {
-      const heightM = h * (product.height_unit === "cm" ? 0.01 : product.height_unit === "mm" ? 0.001 : 1);
+      const heightM = h * (hUnit === "cm" ? 0.01 : hUnit === "mm" ? 0.001 : 1);
       return (w / 1000) * heightM * qty;
     } else if (wu === "g") {
       return (w / 1000) * qty;
@@ -704,25 +780,46 @@ const selectProduct = (p) => {
     // itself (instead of always 0), since it's usually the same standard
     // margin reused quote after quote.
     sale_pct: p.sale_pct != null && p.sale_pct !== "" ? String(p.sale_pct) : "0",
+    // Default the per-item length to the product's registered roll length —
+    // editable below for Textile/DTF Film items when this specific quote or
+    // order needs a different meterage.
+    height: (p.category === "Textile" || p.category === "DTF Film") ? (p.height || "") : "",
+    height_unit: p.height_unit || "cm",
   }));
   setShowList(false);
 };
-  
-const calcMeterage = (product, quantity) => {
+
+const calcMeterage = (product, quantity, heightOverride, heightUnitOverride) => {
   if (!product || !quantity) return null;
   const qty = parseFloat(quantity) || 0;
-  const h = parseFloat(product.height) || 0;
+  const hRaw = heightOverride !== undefined && heightOverride !== null && heightOverride !== "" ? heightOverride : product.height;
+  const hUnit = heightOverride !== undefined && heightOverride !== null && heightOverride !== "" ? (heightUnitOverride || product.height_unit) : product.height_unit;
+  const h = parseFloat(hRaw) || 0;
   if (!h || !qty) return null;
-  const heightM = h * (product.height_unit === "cm" ? 0.01 : product.height_unit === "mm" ? 0.001 : 1);
+  const heightM = h * (hUnit === "cm" ? 0.01 : hUnit === "mm" ? 0.001 : 1);
   return heightM * qty;
 };
 
 const handleQtyChange = (e) => {
   const qty = e.target.value;
   const total = qty && item.unit_price ? (parseFloat(qty) * parseFloat(item.unit_price)).toFixed(2) : "";
-  const weight = selectedProduct ? calcWeight(selectedProduct, qty) : null;
-  const meterage = selectedProduct ? calcMeterage(selectedProduct, qty) : null;
+  const weight = selectedProduct ? calcWeight(selectedProduct, qty, item.height, item.height_unit) : null;
+  const meterage = selectedProduct ? calcMeterage(selectedProduct, qty, item.height, item.height_unit) : null;
   setItem(prev => ({ ...prev, quantity: qty, total, total_weight: weight, total_meterage: meterage }));
+};
+
+const handleHeightChange = (e) => {
+  const h = e.target.value;
+  const weight = selectedProduct ? calcWeight(selectedProduct, item.quantity, h, item.height_unit) : null;
+  const meterage = selectedProduct ? calcMeterage(selectedProduct, item.quantity, h, item.height_unit) : null;
+  setItem(prev => ({ ...prev, height: h, total_weight: weight, total_meterage: meterage }));
+};
+
+const handleHeightUnitChange = (e) => {
+  const hu = e.target.value;
+  const weight = selectedProduct ? calcWeight(selectedProduct, item.quantity, item.height, hu) : null;
+  const meterage = selectedProduct ? calcMeterage(selectedProduct, item.quantity, item.height, hu) : null;
+  setItem(prev => ({ ...prev, height_unit: hu, total_weight: weight, total_meterage: meterage }));
 };
   
   const dropdownStyle = {
@@ -769,6 +866,16 @@ const handleQtyChange = (e) => {
         <Field label="Quantity" half>
           <Input type="number" value={item.quantity} onChange={handleQtyChange} placeholder="0" />
         </Field>
+        {(item.category === "Textile" || item.category === "DTF Film") && (
+          <Field label="Length per Roll (Meters)" half>
+            <div style={{ display: "flex", gap: "6px" }}>
+              <Input value={item.height || ""} onChange={handleHeightChange} placeholder="0" style={{ flex: 1 }} />
+              <Select value={item.height_unit || "cm"} onChange={handleHeightUnitChange} style={{ width: "80px", cursor: "pointer" }}>
+                {["mm","cm","m","in"].map(u => <option key={u}>{u}</option>)}
+              </Select>
+            </div>
+          </Field>
+        )}
         <Field label="Supplier">
           <Input value={item.supplier || ""} onChange={e => setItem(p => ({ ...p, supplier: e.target.value }))} placeholder="Auto-filled from product" />
         </Field>
@@ -1674,7 +1781,10 @@ function ContractForm({ onSave, onClose, orders, initial }) {
 
       {(f._items || (f.items_json ? JSON.parse(f.items_json) : [])).length > 0 && (
         <div style={{ gridColumn: "span 2", background: "#0f172a", borderRadius: "8px", padding: "12px 16px" }}>
-          <div style={{ fontSize: "11px", color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>Products in this contract</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+            <span style={{ fontSize: "11px", color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Products in this contract</span>
+            <span style={{ color: "#10b981", fontWeight: 700, fontSize: "15px" }}>{fmt(parseFloat(f.total), f.currency)}</span>
+          </div>
           {(f._items || (f.items_json ? JSON.parse(f.items_json) : [])).map((item, i) => (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #1e293b", fontSize: "13px" }}>
               <div>
@@ -2329,7 +2439,10 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
               <div style={{ fontSize: "13px", color: "#f1f5f9", marginBottom: "6px" }}>
                 <strong>{item.description}</strong>
                 <span style={{ color: "#64748b", marginLeft: "8px" }}>
-                  {item.color} {item.width} {item.weightSpec} · Length: {parseFloat(item.totalLength || 0).toFixed(2)} m
+                  {item.color} {item.width} {item.weightSpec}
+                  {item.isTextile
+                    ? ` · Length: ${parseFloat(item.totalLength || 0).toFixed(2)} m`
+                    : (item.quantity != null ? ` · Qty: ${item.quantity} ${item.unit || ""}` : "")}
                 </span>
               </div>
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
@@ -2389,24 +2502,19 @@ const [inspections, setInspections] = useState([]);
   const [editInspection, setEditInspection] = useState(null);
   const [products, setProducts] = useState([]);
   const [suppliersList, setSuppliersList] = useState([]);
-  const [packingLists, setPackingLists] = useState([]);
-  const [packingListModal, setPackingListModal] = useState(null);
-  const [editPackingList, setEditPackingList] = useState(null);
 
  const load = useCallback(async () => {
-    const [orders, contracts, commercials, inspections, products, suppliersList, packingLists] = await Promise.all([
+    const [orders, contracts, commercials, inspections, products, suppliersList] = await Promise.all([
   api("/orders"),
   api("/contracts"),
   api("/commercial-invoices"),
   api("/inspections"),
   api("/products"),
   api("/suppliers"),
-  api("/packing-lists"),
 ]);
 setInspections(inspections);
 setProducts(products);
 setSuppliersList(suppliersList);
-setPackingLists(packingLists);
     const ordersWithItems = await Promise.all(
       orders.map(async o => {
         const detail = await api(`/orders/${o.id}`);
@@ -2429,99 +2537,14 @@ setPackingLists(packingLists);
   const createOrder = (f) => api("/orders", "POST", f).then(load);
   const updateOrder = (f) => api(`/orders/${editOrder.id}`, "PUT", f).then(load);
 
-  // Builds a Packing List draft from an order's items, pulling as much as
-  // possible from the order/product records (color, width, weight spec,
-  // length, net weight already computed on the item). Roll count, gross
-  // weight and CBM are physical-packing specifics with no digital source,
-  // so they're left for the user to fill in — gross weight defaults to net
-  // weight as a starting point.
-  const buildPackingListDraft = (order) => {
-    const items = (order.items || []).map(item => {
-      const product = products.find(p => Number(p.id) === Number(item.product_id));
-      const totalLength = parseFloat(item.total_meterage || item.quantity || 0) || 0;
-      const netWeight = item.total_weight != null && item.total_weight !== "" ? parseFloat(item.total_weight) : null;
-      return {
-        product_id: item.product_id,
-        description: product?.name || item.product_name,
-        bullets: product?.description ? String(product.description).split(/\r?\n/).map(s => s.trim()).filter(Boolean) : [],
-        ncm: product?.ncm || "",
-        color: product?.color || "",
-        width: product?.width ? `${product.width}${product.width_unit || ""}` : "",
-        weightSpec: product?.weight ? `${product.weight} ${product.weight_unit || ""}` : "",
-        totalLength,
-        roll: "",
-        grossWeight: netWeight != null ? netWeight : "",
-        netWeight: netWeight != null ? netWeight : "",
-        cbm: "",
-      };
-    });
-    const acq = getAcqCompany(order.acquisition_company || "HK");
-    const totals = items.reduce((acc, i) => ({
-      totalLength: acc.totalLength + (parseFloat(i.totalLength) || 0),
-      totalRoll: acc.totalRoll + (parseFloat(i.roll) || 0),
-      totalGrossWeight: acc.totalGrossWeight + (parseFloat(i.grossWeight) || 0),
-      totalNetWeight: acc.totalNetWeight + (parseFloat(i.netWeight) || 0),
-      totalCbm: acc.totalCbm + (parseFloat(i.cbm) || 0),
-    }), { totalLength: 0, totalRoll: 0, totalGrossWeight: 0, totalNetWeight: 0, totalCbm: 0 });
-
-    return {
-      order_id: order.id,
-      number: `PL-${order.order_number}-${Date.now().toString().slice(-4)}`,
-      date: new Date().toISOString().slice(0, 10),
-      way_of_shipment: "By Sea",
-      country_of_origin: "China",
-      country_of_acquisition: order.acquisition_company === "HK" ? "Hong Kong" : "China",
-      port_of_origin: order.port_of_loading || "",
-      port_of_destination: order.port_of_discharge || "",
-      incoterm: order.incoterm || "",
-      manufacturer: acq.name,
-      manufacturer_address: acq.address,
-      _items: items,
-      items_json: JSON.stringify(items),
-      total_length: totals.totalLength, total_roll: totals.totalRoll,
-      total_gross_weight: totals.totalGrossWeight, total_net_weight: totals.totalNetWeight, total_cbm: totals.totalCbm,
-      status: "Draft",
-      notes: "",
-    };
-  };
-
 const changeStatus = async (id, status) => {
+  // Previously this auto-generated a Commercial Invoice + Packing List when
+  // moving to "Shipment" and popped up an Inspection modal when moving to
+  // "Inspection". Per user request, status changes no longer trigger any
+  // document generation — those are created on-demand via their own
+  // "Generate…" buttons instead.
   await api(`/orders/${id}/status`, "PATCH", { status });
- if (status === "Shipment") {
-  const order = orders.find(o => o.id === id);
-  if (order) {
-    const number = `CI-${order.order_number}-${Date.now().toString().slice(-4)}`;
-    const ci = await api("/commercial-invoices", "POST", {
-      order_id: id,
-      number,
-      issue_date: new Date().toISOString().slice(0, 10),
-      client: order.client,
-      total: order.value,
-      currency: order.currency || "USD",
-      status: "Pending",
-      notes: "",
-    });
-    const hasPackingList = packingLists.find(p => Number(p.order_id) === Number(id));
-    if (!hasPackingList) {
-      await api("/packing-lists", "POST", buildPackingListDraft(order));
-    }
-    setCiNotification({ number: ci.number, client: ci.client });
-  }
-}
-if (status === "Inspection") {
-  const order = orders.find(o => o.id === id);
-  if (order) {
-    setInspectionModal({
-      order_id: id,
-      number: `INS-${order.order_number}-${Date.now().toString().slice(-4)}`,
-      inspection_date: new Date().toISOString().slice(0, 10),
-      inspector: "",
-      result: "Pending",
-      observations: "",
-    });
-  }
-}
-load();
+  load();
 };
   const deleteOrder = async (id) => { if (confirm("Delete this order?")) { await api(`/orders/${id}`, "DELETE"); load(); } };
   const saveNumber = async (id) => {
@@ -2585,7 +2608,6 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
     }));
   }
 };
-const generatePackingList = (order) => setPackingListModal(buildPackingListDraft(order));
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
@@ -2669,26 +2691,10 @@ const generatePackingList = (order) => setPackingListModal(buildPackingListDraft
               </span>
               <span style={{ color: "#10b981", fontWeight: 600 }}>{c.currency} {c.total}</span>
             </div>
-            <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 14px", marginBottom: "4px" }}>
-              <div style={{ fontSize: "11px", color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>Products in this contract</div>
-              {(c._items || []).map((item, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #1e293b", fontSize: "13px" }}>
-                  <div>
-                    <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
-                    <span style={{ color: "#f1f5f9", marginLeft: "8px" }}>{item.product_name}</span>
-                    <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
-                    {perMeterLabel(item, "cost_per_meter", item.cost_currency || item.currency) && (
-                      <span style={{ color: "#a78bfa", marginLeft: "8px", fontSize: "11px" }}>({perMeterLabel(item, "cost_per_meter", item.cost_currency || item.currency)})</span>
-                    )}
-                  </div>
-              <span style={{ color: "#10b981", fontWeight: 600 }}>{item.cost_currency || item.currency} {parseFloat(item.cost_price || item.unit_price).toFixed(2)} × {item.quantity}</span>
-                </div>
-              ))}
-            </div>
           </div>
           {savedContracts.includes(idx) ? (
             <div style={{ textAlign: "center", padding: "12px", color: "#10b981", fontWeight: 600, fontSize: "14px" }}>
-              ✅ Contract saved successfully!
+              ✅ Contract saved — payment requirement created in Supplier Flow.
             </div>
           ) : (
             <ContractForm
@@ -2730,25 +2736,6 @@ onSave={async b => {
     </div>
   </Modal>
 )}
-
-      {packingListModal && (
-        <Modal title="Generate Packing List" onClose={() => { setPackingListModal(null); load(); }} wide>
-          <PackingListForm
-            initial={packingListModal}
-            onSave={async b => { await api("/packing-lists", "POST", b); load(); }}
-            onClose={() => { setPackingListModal(null); load(); }}
-          />
-        </Modal>
-      )}
-      {editPackingList && (
-        <Modal title="Edit Packing List" onClose={() => { setEditPackingList(null); load(); }} wide>
-          <PackingListForm
-            initial={editPackingList}
-            onSave={async b => { await api(`/packing-lists/${editPackingList.id}`, "PUT", b); load(); }}
-            onClose={() => { setEditPackingList(null); load(); }}
-          />
-        </Modal>
-      )}
 
       {ciNotification && (
         <div style={{
@@ -2805,7 +2792,6 @@ onSave={async b => {
 const hasContract = contracts.filter(c => Number(c.order_id) === Number(r.id));
 const hasCommercial = commercials.find(c => Number(c.order_id) === Number(r.id));
   const hasInspection = inspections.find(i => Number(i.order_id) === Number(r.id));
-  const hasPackingList = packingLists.find(p => Number(p.order_id) === Number(r.id));
 
   return (
     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
@@ -2816,10 +2802,6 @@ const hasCommercial = commercials.find(c => Number(c.order_id) === Number(r.id))
       <Btn small outline={!hasCommercial} color={hasCommercial ? "#10b981" : "#64748b"}
   onClick={() => hasCommercial ? setEditCommercial(hasCommercial) : generateCommercial(r)}>
   🧾 {hasCommercial ? "Commercial ✓" : "Commercial"}
-</Btn>
-      <Btn small outline={!hasPackingList} color={hasPackingList ? "#06b6d4" : "#64748b"}
-  onClick={() => hasPackingList ? setEditPackingList(hasPackingList) : generatePackingList(r)}>
-  📦 {hasPackingList ? "Packing List ✓" : "Packing List"}
 </Btn>
       <Btn small outline={!hasInspection} color={hasInspection ? "#f59e0b" : "#64748b"}
   onClick={() => hasInspection ? setEditInspection(hasInspection) : setInspectionModal({
@@ -3521,13 +3503,33 @@ function Suppliers() {
 function CommercialInvoices() {
   const [invoices, setInvoices] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [packingLists, setPackingLists] = useState([]);
+  const [packingListModal, setPackingListModal] = useState(null);
+  const [editPackingList, setEditPackingList] = useState(null);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(null);
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     api("/commercial-invoices").then(setInvoices);
-    api("/orders").then(setOrders);
+    api("/products").then(setProducts);
+    api("/packing-lists").then(setPackingLists);
+    // Packing List generation needs each order's items (color, width,
+    // weight, meterage…), which the plain /orders list doesn't include.
+    const orders = await api("/orders");
+    const ordersWithItems = await Promise.all(
+      orders.map(async o => {
+        const detail = await api(`/orders/${o.id}`);
+        return { ...o, items: detail.items || [] };
+      })
+    );
+    setOrders(ordersWithItems);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Packing Lists are generated from an order's items, same as before — just
+  // triggered from this screen (alongside the Commercial Invoice it ships
+  // with) instead of from the Orders screen.
+  const generatePackingList = (order) => setPackingListModal(buildPackingListDraft(order, products));
 
   const filtered = invoices.filter(i =>
     (i.number || "").toLowerCase().includes(search.toLowerCase()) ||
@@ -3560,6 +3562,24 @@ function CommercialInvoices() {
           </div>
         </Modal>
       )}
+      {packingListModal && (
+        <Modal title="Generate Packing List" onClose={() => { setPackingListModal(null); load(); }} wide>
+          <PackingListForm
+            initial={packingListModal}
+            onSave={async b => { await api("/packing-lists", "POST", b); load(); }}
+            onClose={() => { setPackingListModal(null); load(); }}
+          />
+        </Modal>
+      )}
+      {editPackingList && (
+        <Modal title="Edit Packing List" onClose={() => { setEditPackingList(null); load(); }} wide>
+          <PackingListForm
+            initial={editPackingList}
+            onSave={async b => { await api(`/packing-lists/${editPackingList.id}`, "PUT", b); load(); }}
+            onClose={() => { setEditPackingList(null); load(); }}
+          />
+        </Modal>
+      )}
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by number, client or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
@@ -3575,13 +3595,23 @@ function CommercialInvoices() {
               <option>Pending</option><option>Paid</option>
             </select>
           )},
-          { label: "Actions", render: r => (
-            <div style={{ display: "flex", gap: "6px" }}>
-              <Btn small outline color="#10b981" onClick={() => window.open(`${API}/commercial-invoices/${r.id}/pdf`, "_blank")}>📄 PDF</Btn>
-              <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
-              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/commercial-invoices/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
-            </div>
-          )},
+          { label: "Actions", render: r => {
+            const order = orders.find(o => Number(o.id) === Number(r.order_id));
+            const hasPackingList = packingLists.find(p => Number(p.order_id) === Number(r.order_id));
+            return (
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                <Btn small outline color="#10b981" onClick={() => window.open(`${API}/commercial-invoices/${r.id}/pdf`, "_blank")}>📄 PDF</Btn>
+                <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
+                {order && (
+                  <Btn small outline={!hasPackingList} color={hasPackingList ? "#06b6d4" : "#64748b"}
+                    onClick={() => hasPackingList ? setEditPackingList(hasPackingList) : generatePackingList(order)}>
+                    📦 {hasPackingList ? "Packing List ✓" : "Packing List"}
+                  </Btn>
+                )}
+                <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/commercial-invoices/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              </div>
+            );
+          }},
         ]}
         rows={filtered}
         emptyMsg="No commercial invoices yet."

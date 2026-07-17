@@ -79,7 +79,14 @@ db.exec(`
     cost_currency TEXT,
     category TEXT,
     sale_per_meter REAL,
-    cost_per_meter REAL
+    cost_per_meter REAL,
+    sale_per_liter REAL,
+    cost_per_liter REAL,
+    sale_pct REAL,
+    target_price REAL,
+    target_price_unit TEXT,
+    height REAL,
+    height_unit TEXT DEFAULT 'cm'
   );
 
   CREATE TABLE IF NOT EXISTS samples (
@@ -319,6 +326,12 @@ const migrations = [
   ['order_items', 'sale_pct', 'REAL'],
   ['order_items', 'target_price', 'REAL'],
   ['order_items', 'target_price_unit', 'TEXT'],
+  // Per-item override of the product's registered roll length — lets a
+  // Quotation/Order item use a different meterage than what's registered on
+  // the product (e.g. a custom roll length requested by the client), still
+  // feeding into the same Total Weight / Total Meterage calculations.
+  ['order_items', 'height', 'REAL'],
+  ['order_items', 'height_unit', "TEXT DEFAULT 'cm'"],
   ['samples', 'code', "TEXT DEFAULT ''"],
   ['samples', 'product_id', 'INTEGER'],
   ['samples', 'feedback_date', 'TEXT'],

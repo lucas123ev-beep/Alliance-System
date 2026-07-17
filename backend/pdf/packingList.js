@@ -1,22 +1,47 @@
 const { wrapDocument } = require("./layout");
 const { escapeHtml, fmtDateLong, fmtNumber } = require("./helpers");
 
-// Packing List — generated alongside the Commercial Invoice when an Order
-// moves to Shipment. Items carry physical shipment data (Roll / Gross /
-// Net weight / CBM) that has no other home in the system.
+// Packing List — generated alongside the Commercial Invoice. Items carry
+// physical shipment data (Roll / Gross / Net weight / CBM) that has no
+// other home in the system.
+//
+// Same category split used in the Proforma/Commercial Invoice PDFs:
+// Textile/DTF Film rolls are measured by the meter and get a Total Length
+// column; everything else (machines, chemicals, accessories...) is counted
+// by unit/drum/crate and gets a Quantity column instead — mixing both
+// meanings into one column was misleading.
+//
+// Older Packing Lists saved before this split may not carry `isTextile` on
+// their items — fall back to `category`, and if that's missing too, infer
+// from whether a Total Length value was ever recorded.
+function isTextileItem(item) {
+  if (typeof item.isTextile === "boolean") return item.isTextile;
+  const category = item.category || "";
+  if (category === "Textile" || category === "DTF Film") return true;
+  if (category) return false;
+  return !!(item.totalLength && parseFloat(item.totalLength) > 0);
+}
+
 function renderPackingList(params) {
   const {
     number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
     incoterm, acq, manufacturer, items, totals, importer,
   } = params;
 
-  const rows = items.map(item => `
+  const textileItems = items.filter(isTextileItem);
+  const otherItems = items.filter(i => !isTextileItem(i));
+
+  const descCell = item => `
+    <td>
+      <strong>${escapeHtml(item.description)}</strong>
+      ${item.bullets && item.bullets.length ? `<ul class="desc-bullets">${item.bullets.map(b => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
+      ${item.ncm ? `<div class="small">NCM: ${escapeHtml(item.ncm)}</div>` : ""}
+    </td>
+  `;
+
+  const textileRows = textileItems.map(item => `
     <tr>
-      <td>
-        <strong>${escapeHtml(item.description)}</strong>
-        ${item.bullets && item.bullets.length ? `<ul class="desc-bullets">${item.bullets.map(b => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
-        ${item.ncm ? `<div class="small">NCM: ${escapeHtml(item.ncm)}</div>` : ""}
-      </td>
+      ${descCell(item)}
       <td>${escapeHtml(item.color || "—")}</td>
       <td>${escapeHtml(item.width || "—")}</td>
       <td>${escapeHtml(item.weightSpec || "—")}</td>
@@ -27,6 +52,99 @@ function renderPackingList(params) {
       <td class="num">${fmtNumber(item.cbm, 2)}</td>
     </tr>
   `).join("");
+
+  const otherRows = otherItems.map(item => `
+    <tr>
+      ${descCell(item)}
+      <td>${escapeHtml(item.color || "—")}</td>
+      <td>${escapeHtml(item.width || "—")}</td>
+      <td>${item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
+      <td class="num">${fmtNumber(item.roll, 0)}</td>
+      <td class="num">${fmtNumber(item.grossWeight, 3)}</td>
+      <td class="num">${fmtNumber(item.netWeight, 3)}</td>
+      <td class="num">${fmtNumber(item.cbm, 2)}</td>
+    </tr>
+  `).join("");
+
+  const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 0);
+
+  let sectionsHtml = "";
+
+  if (textileItems.length > 0) {
+    sectionsHtml += `
+    <table class="items-table" style="margin-top:6px;">
+      <thead>
+        <tr>
+          <th style="width:22%">Descriptions of Goods</th>
+          <th>Color</th>
+          <th>Width</th>
+          <th>Weight</th>
+          <th>Total Length</th>
+          <th>Roll</th>
+          <th>Gross Weight</th>
+          <th>Net Weight</th>
+          <th>CBM</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${textileRows}
+        <tr class="totals-row">
+          <td colspan="4">SUBTOTAL:</td>
+          <td class="num">${fmtNumber(sumOf(textileItems, "totalLength"), 3)}</td>
+          <td class="num">${fmtNumber(sumOf(textileItems, "roll"), 0)}</td>
+          <td class="num">${fmtNumber(sumOf(textileItems, "grossWeight"), 3)}</td>
+          <td class="num">${fmtNumber(sumOf(textileItems, "netWeight"), 3)}</td>
+          <td class="num">${fmtNumber(sumOf(textileItems, "cbm"), 2)}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+  }
+
+  if (otherItems.length > 0) {
+    sectionsHtml += `
+    <table class="items-table" style="margin-top:6px;">
+      <thead>
+        <tr>
+          <th style="width:22%">Descriptions of Goods</th>
+          <th>Color</th>
+          <th>Width</th>
+          <th>Quantity</th>
+          <th>Roll</th>
+          <th>Gross Weight</th>
+          <th>Net Weight</th>
+          <th>CBM</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${otherRows}
+        <tr class="totals-row">
+          <td colspan="3">SUBTOTAL:</td>
+          <td></td>
+          <td class="num">${fmtNumber(sumOf(otherItems, "roll"), 0)}</td>
+          <td class="num">${fmtNumber(sumOf(otherItems, "grossWeight"), 3)}</td>
+          <td class="num">${fmtNumber(sumOf(otherItems, "netWeight"), 3)}</td>
+          <td class="num">${fmtNumber(sumOf(otherItems, "cbm"), 2)}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+  }
+
+  sectionsHtml += `
+    <table class="items-table" style="margin-top:6px;">
+      <tbody>
+        <tr class="totals-row">
+          <td>GRAND TOTAL:</td>
+          <td class="num">Length: ${fmtNumber(totals.totalLength, 3)}</td>
+          <td class="num">Roll: ${fmtNumber(totals.totalRoll, 0)}</td>
+          <td class="num">Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}</td>
+          <td class="num">Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}</td>
+          <td class="num">CBM: ${fmtNumber(totals.totalCbm, 2)}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
 
   const body = `
     <table class="meta-table">
@@ -43,32 +161,7 @@ function renderPackingList(params) {
           <td class="label">Country of acquisition:</td><td>${escapeHtml(acq.countryOfAcquisition)}.</td></tr>
     </table>
 
-    <table class="items-table" style="margin-top:6px;">
-      <thead>
-        <tr>
-          <th style="width:22%">Descriptions of Goods</th>
-          <th>Color</th>
-          <th>Width</th>
-          <th>Weight</th>
-          <th>Total Length</th>
-          <th>Roll</th>
-          <th>Gross Weight</th>
-          <th>Net Weight</th>
-          <th>CBM</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows}
-        <tr class="totals-row">
-          <td colspan="4">TOTAL:</td>
-          <td class="num">${fmtNumber(totals.totalLength, 3)}</td>
-          <td class="num">${fmtNumber(totals.totalRoll, 0)}</td>
-          <td class="num">${fmtNumber(totals.totalGrossWeight, 3)}</td>
-          <td class="num">${fmtNumber(totals.totalNetWeight, 3)}</td>
-          <td class="num">${fmtNumber(totals.totalCbm, 2)}</td>
-        </tr>
-      </tbody>
-    </table>
+    ${sectionsHtml}
 
     <div class="section-bar" style="margin-top:6px;">Shipment Details</div>
     <div style="border:1px solid #999; border-top:none; padding:10px 14px;">

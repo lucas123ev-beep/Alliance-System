@@ -13,7 +13,7 @@ function renderPaymentNotice(params) {
 
   const css = `
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 30px 40px; font-family: "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; font-size: 11px; color: #1a1a1a; }
+    body { margin: 0; padding: 30px 40px; font-family: "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; font-size: 11px; color: #1a1a1a; }
     table { width: 100%; border-collapse: collapse; margin-top: 16px; }
     td { border: 1px solid #333; padding: 8px 10px; font-size: 10.5px; }
     td.label { font-weight: bold; width: 34%; background: #f7f7f7; }
@@ -46,7 +46,13 @@ function renderPaymentNotice(params) {
     </table>
   `;
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><style>${css}</style></head><body>${body}</body></html>`;
+  const fontLinks = `
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet" />
+  `;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8" />${fontLinks}<style>${css}</style></head><body>${body}</body></html>`;
 }
 
 module.exports = { renderPaymentNotice };

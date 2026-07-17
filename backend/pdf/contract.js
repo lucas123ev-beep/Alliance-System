@@ -26,7 +26,7 @@ function renderContract(params) {
 
   const css = `
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 22px 30px; font-family: "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; font-size: 10.5px; color: #1a1a1a; }
+    body { margin: 0; padding: 22px 30px; font-family: "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; font-size: 10.5px; color: #1a1a1a; }
     table { width: 100%; border-collapse: collapse; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
     .header img.logo { height: 30px; }
@@ -110,7 +110,13 @@ function renderContract(params) {
     </div>
   `;
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><style>${css}</style></head><body>${body}</body></html>`;
+  const fontLinks = `
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet" />
+  `;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8" />${fontLinks}<style>${css}</style></head><body>${body}</body></html>`;
 }
 
 module.exports = { renderContract };

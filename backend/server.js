@@ -67,14 +67,14 @@ app.post('/api/orders', (req, res) => {
       const orderId = result.lastInsertRowid;
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
-          INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total, total_weight, total_meterage, cost_price, cost_currency, category, sale_per_meter, cost_per_meter, sale_per_liter, cost_per_liter, sale_pct, target_price, target_price_unit)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total, total_weight, total_meterage, cost_price, cost_currency, category, sale_per_meter, cost_per_meter, sale_per_liter, cost_per_liter, sale_pct, target_price, target_price_unit, height, height_unit)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         for (const item of items) {
           insertItem.run(orderId, item.product_id || null, item.product_name,
             item.product_code || null, item.supplier || null, item.quantity,
             item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0, item.total_weight || null, item.total_meterage || null, item.cost_price || null, item.cost_currency || null, item.category || null, item.sale_per_meter || null, item.cost_per_meter || null,
-            item.sale_per_liter || null, item.cost_per_liter || null, item.sale_pct || null, item.target_price || null, item.target_price_unit || null);
+            item.sale_per_liter || null, item.cost_per_liter || null, item.sale_pct || null, item.target_price || null, item.target_price_unit || null, item.height || null, item.height_unit || null);
         }
       }
       return orderId;
@@ -104,14 +104,14 @@ app.put('/api/orders/:id', (req, res) => {
 db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
 if (items && items.length > 0) {
 const insertItem = db.prepare(`
-  INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total, total_weight, total_meterage, cost_price, cost_currency, category, sale_per_meter, cost_per_meter, sale_per_liter, cost_per_liter, sale_pct, target_price, target_price_unit)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO order_items (order_id, product_id, product_name, product_code, supplier, quantity, unit, unit_price, currency, total, total_weight, total_meterage, cost_price, cost_currency, category, sale_per_meter, cost_per_meter, sale_per_liter, cost_per_liter, sale_pct, target_price, target_price_unit, height, height_unit)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
   for (const item of items) {
 insertItem.run(req.params.id, item.product_id || null, item.product_name,
   item.product_code || null, item.supplier || null, item.quantity,
   item.unit || 'unit', item.unit_price, item.currency || 'USD', item.total || 0, item.total_weight || null, item.total_meterage || null, item.cost_price || null, item.cost_currency || null, item.category || null, item.sale_per_meter || null, item.cost_per_meter || null,
-  item.sale_per_liter || null, item.cost_per_liter || null, item.sale_pct || null, item.target_price || null, item.target_price_unit || null);
+  item.sale_per_liter || null, item.cost_per_liter || null, item.sale_pct || null, item.target_price || null, item.target_price_unit || null, item.height || null, item.height_unit || null);
   }
 }
 
