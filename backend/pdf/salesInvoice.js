@@ -1,5 +1,5 @@
 const { wrapDocument } = require("./layout");
-const { escapeHtml, fmtDateLong, fmtNumber, fmtMoney, amountToWords } = require("./helpers");
+const { escapeHtml, fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLabel } = require("./helpers");
 
 // Shared layout for Proforma Invoice and Commercial Invoice — the two
 // client-facing sales documents. Structurally identical in the models the
@@ -81,7 +81,7 @@ function renderSalesInvoice(params) {
           <th>Weight</th>
           <th>Total Length</th>
           <th>Unit Price</th>
-          <th>Total Amount (${escapeHtml(currency)} ${escapeHtml(incoterm || "")})</th>
+          <th>Total Amount (${escapeHtml(currencyLabel(currency))} ${escapeHtml(incoterm || "")})</th>
         </tr>
       </thead>
       <tbody>
@@ -107,7 +107,7 @@ function renderSalesInvoice(params) {
           <th>Quantity</th>
           <th>Total Weight</th>
           <th>Unit Price</th>
-          <th>Total Amount (${escapeHtml(currency)} ${escapeHtml(incoterm || "")})</th>
+          <th>Total Amount (${escapeHtml(currencyLabel(currency))} ${escapeHtml(incoterm || "")})</th>
         </tr>
       </thead>
       <tbody>

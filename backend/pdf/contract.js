@@ -82,15 +82,7 @@ function renderContract(params) {
 
     <div class="remarks">
       <div class="req-title">要求 / Requirements</div>
-      ${remarks ? `<p class="clause"><b>备注 / Notes:</b> ${escapeHtml(remarks)}</p>` : ""}
-      <p class="clause">2. 30 米一卷，纸管包装，加微粉打卷，一层PVC袋，一层牛皮纸，左右两端都要贴唛头，包装完成，中间不允许有破洞、接头、划痕等。</p>
-      <p class="clause">3. 数量要求：出货数量控制在 +/- 5% 内。发货前需各寄 2 米大货样至我司确认品质，并提供细码单（记录每卷米数跟重量）及发货发票。</p>
-      <p class="clause">4. 运输方式：买方负责运费。</p>
-      <p class="clause">5. 付款方式：20% 定金，剩余 80% 尾款发货前付清。</p>
-      <p class="clause">6. 交货期：收到定金后 20 天内完成${deliveryDate ? `（${escapeHtml(deliveryDate)} 前交货）` : ""}。</p>
-      <p class="clause">7. 品质保证期为货到目的港后一年内有效。</p>
-      <p class="clause">8. 产品投诉：如卖方的品质与合同不符，或者未在规定的交货期完成货物，我司有权拒收所有货物，并要求退还定金。</p>
-      <p class="clause">9. 本合同经双方签字或盖章确认生效，如有纠纷双方协商解决，协商不成，由买方所在地人民法院管辖。</p>
+      ${remarks ? `<p class="clause" style="white-space:pre-wrap;">${escapeHtml(remarks)}</p>` : ""}
     </div>
 
     <div class="sign-block">

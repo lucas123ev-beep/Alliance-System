@@ -1,5 +1,5 @@
 const LOGO = require("./logo");
-const { escapeHtml, fmtDateShort, fmtMoney } = require("./helpers");
+const { escapeHtml, fmtDateShort, fmtMoney, currencyLabel } = require("./helpers");
 
 // Payment Request Form (付款申请单) — internal bilingual form used to
 // authorize a payment to a supplier. Built from a financial_suppliers row
@@ -40,7 +40,7 @@ function renderPaymentNotice(params) {
       <tr><td class="label">银行名称 Bank name</td><td>${escapeHtml(bankName || "—")}</td></tr>
       <tr><td class="label">银行支行全称 Bank Branch name</td><td>${escapeHtml(bankBranch || "—")}</td></tr>
       <tr><td class="label">账户号码 Account NO</td><td>${escapeHtml(accountNumber || "—")}</td></tr>
-      <tr><td class="label">金额 Amount</td><td><div class="amount-cell"><span>${fmtMoney(amount, currency)}</span><span class="currency">币种 currency: ${escapeHtml(currency)}</span></div></td></tr>
+      <tr><td class="label">金额 Amount</td><td><div class="amount-cell"><span>${fmtMoney(amount, currency)}</span><span class="currency">币种 currency: ${escapeHtml(currencyLabel(currency))}</span></div></td></tr>
       <tr><td class="label">支付目的及摘要 Payment Purpose / Description</td><td>${escapeHtml(purpose || "—")}</td></tr>
       <tr><td colspan="2" class="bar">审批情况 Approval process</td></tr>
       <tr><td class="label">申请人 Applicant</td><td>${escapeHtml(applicant || "—")}</td></tr>

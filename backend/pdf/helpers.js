@@ -35,13 +35,23 @@ function fmtNumber(n, decimals = 3) {
   return num.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
+// The business calls mainland China's currency "RMB" everywhere client-
+// facing, even though its ISO 4217 code (used internally for storage and
+// for Intl.NumberFormat) is CNY. This relabels the raw code for display.
+function currencyLabel(currency) {
+  return currency === "CNY" ? "RMB" : currency;
+}
+
 function fmtMoney(n, currency = "USD") {
   const num = parseFloat(n);
   if (isNaN(num)) return "—";
+  if (currency === "CNY") {
+    return `RMB ${num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
   try {
     return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: 2 }).format(num);
   } catch {
-    return `${currency} ${num.toFixed(2)}`;
+    return `${currencyLabel(currency)} ${num.toFixed(2)}`;
   }
 }
 
@@ -115,5 +125,5 @@ function amountToWords(amount, currency = "USD") {
 }
 
 module.exports = {
-  escapeHtml, fmtDateLong, fmtDateShort, fmtNumber, fmtMoney, parseJsonSafe, amountToWords,
+  escapeHtml, fmtDateLong, fmtDateShort, fmtNumber, fmtMoney, parseJsonSafe, amountToWords, currencyLabel,
 };

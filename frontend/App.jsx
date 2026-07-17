@@ -4,10 +4,18 @@ const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
-const fmt = (n, cur = "USD") =>
-  n != null
-    ? new Intl.NumberFormat("en-US", { style: "currency", currency: cur, minimumFractionDigits: 2 }).format(n)
-    : "—";
+// The business calls mainland China's currency "RMB" everywhere client-
+// facing, even though its stored/ISO code (CNY) is what Intl.NumberFormat
+// needs internally. This relabels the raw code wherever it's shown as text.
+const currencyLabel = (cur) => (cur === "CNY" ? "RMB" : cur);
+
+const fmt = (n, cur = "USD") => {
+  if (n == null) return "—";
+  if (cur === "CNY") {
+    return `RMB ${Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: cur, minimumFractionDigits: 2 }).format(n);
+};
 
 const fmtDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-US") : "—");
 
@@ -354,22 +362,22 @@ function PricingRow({ item, product, currency, onChange }) {
           placeholder="0" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "70px" }} />
       </label>
       {isTextile ? (
-        <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Meter ({currency})
+        <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Meter ({currencyLabel(currency)})
           <input type="text" inputMode="decimal" value={item.sale_per_meter ?? ""} onChange={onPriceField("sale_per_meter")}
             placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
         </label>
       ) : isLiquid ? (
-        <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Liter ({currency})
+        <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Liter ({currencyLabel(currency)})
           <input type="text" inputMode="decimal" value={item.sale_per_liter ?? ""} onChange={onLiquidField("sale_per_liter")}
             placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
         </label>
       ) : (
-        <label style={{ fontSize: "11px", color: "#64748b" }}>Unit Price ({currency})
+        <label style={{ fontSize: "11px", color: "#64748b" }}>Unit Price ({currencyLabel(currency)})
           <input type="text" inputMode="decimal" value={item.unit_price ?? ""} onChange={onSimpleField("unit_price")}
             placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
         </label>
       )}
-      <label style={{ fontSize: "11px", color: "#64748b" }}>Total ({currency})
+      <label style={{ fontSize: "11px", color: "#64748b" }}>Total ({currencyLabel(currency)})
         <input type="text" inputMode="decimal" value={item.total ?? ""} onChange={totalHandler}
           placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "110px", fontWeight: 700, color: "#10b981" }} />
       </label>
@@ -850,7 +858,7 @@ const handleHeightUnitChange = (e) => {
                     onMouseEnter={e => e.currentTarget.style.background = "#334155"}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                     <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{p.code}</span> {p.name}
-                    {p.sale_price ? <span style={{ float: "right", color: "#10b981" }}>{p.sale_currency || "USD"} {p.sale_price}</span> : null}
+                    {p.sale_price ? <span style={{ float: "right", color: "#10b981" }}>{currencyLabel(p.sale_currency || "USD")} {p.sale_price}</span> : null}
                   </div>
                 ))}
               </div>
@@ -879,7 +887,7 @@ const handleHeightUnitChange = (e) => {
         <Field label="Supplier">
           <Input value={item.supplier || ""} onChange={e => setItem(p => ({ ...p, supplier: e.target.value }))} placeholder="Auto-filled from product" />
         </Field>
-<Field label={`Cost Price (${item.cost_currency || "USD"})`}>
+<Field label={`Cost Price (${currencyLabel(item.cost_currency || "USD")})`}>
   <Input type="number" value={item.cost_price || ""} onChange={e => setItem(prev => ({ ...prev, cost_price: e.target.value }))} placeholder="0.00" />
 </Field>
 <Field label="Total Weight" half>
@@ -1079,7 +1087,7 @@ useEffect(() => {
         </Field>
         <Field label="Currency" half>
           <Select value={f.currency} onChange={set("currency")}>
-            <option>USD</option><option>EUR</option><option>BRL</option><option>CNY</option>
+            <option>USD</option><option>EUR</option><option>BRL</option><option value="CNY">RMB</option>
           </Select>
         </Field>
         <Field label="Prod. Lead Time (days)" half>
@@ -1411,7 +1419,7 @@ const handleSalePerLiterChange = (e) => {
   <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
     <Field label="Cost Currency">
       <Select value={f.cost_currency} onChange={set("cost_currency")}>
-        {currencies.map(c => <option key={c}>{c}</option>)}
+        {currencies.map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
       </Select>
     </Field>
     {(f.category === "Textile" || f.category === "DTF Film") && (
@@ -1431,7 +1439,7 @@ const handleSalePerLiterChange = (e) => {
   <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
     <Field label="Sale Currency">
       <Select value={f.sale_currency || "USD"} onChange={set("sale_currency")}>
-        {currencies.map(c => <option key={c}>{c}</option>)}
+        {currencies.map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
       </Select>
     </Field>
     {(f.category === "Textile" || f.category === "DTF Film") && (
@@ -1676,7 +1684,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
   <input value={f.total} disabled onChange={() => {}} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 12px", color: "#94a3b8", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", cursor: "not-allowed" }} />
 </Field>
 <Field label="Currency" half>
-  <input value={f.currency} disabled onChange={() => {}} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 12px", color: "#94a3b8", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", cursor: "not-allowed" }} />
+  <input value={currencyLabel(f.currency)} disabled onChange={() => {}} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 12px", color: "#94a3b8", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", cursor: "not-allowed" }} />
 </Field>
       <Field label="Status" half>
         <Select value={f.status} onChange={set("status")}>
@@ -1770,7 +1778,7 @@ function ContractForm({ onSave, onClose, orders, initial }) {
         <input value={f.total} disabled onChange={() => {}} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 12px", color: "#94a3b8", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", cursor: "not-allowed" }} />
       </Field>
       <Field label="Currency" half>
-        <input value={f.currency} disabled onChange={() => {}} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 12px", color: "#94a3b8", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", cursor: "not-allowed" }} />
+        <input value={currencyLabel(f.currency)} disabled onChange={() => {}} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 12px", color: "#94a3b8", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", cursor: "not-allowed" }} />
       </Field>
       <Field label="Status" half>
         <Select value={f.status} onChange={set("status")}>
@@ -1795,7 +1803,7 @@ function ContractForm({ onSave, onClose, orders, initial }) {
                   <span style={{ color: "#a78bfa", marginLeft: "8px", fontSize: "11px" }}>({perMeterLabel(item, "cost_per_meter", item.cost_currency || item.currency)})</span>
                 )}
               </div>
-              <span style={{ color: "#10b981", fontWeight: 600 }}>{item.cost_currency || item.currency} {parseFloat(item.cost_price || item.unit_price).toFixed(2)} × {item.quantity} = {fmt(parseFloat((item.cost_price || item.unit_price) * item.quantity), item.cost_currency || item.currency)}</span>
+              <span style={{ color: "#10b981", fontWeight: 600 }}>{currencyLabel(item.cost_currency || item.currency)} {parseFloat(item.cost_price || item.unit_price).toFixed(2)} × {item.quantity} = {fmt(parseFloat((item.cost_price || item.unit_price) * item.quantity), item.cost_currency || item.currency)}</span>
             </div>
           ))}
         </div>
@@ -2047,7 +2055,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
     setF(p => ({ ...p, currency: cur }));
     setItems(prev => prev.map(i => ({ ...i, currency: cur })));
   }}>
-    {["USD","EUR","BRL","CNY"].map(c => <option key={c}>{c}</option>)}
+    {["USD","EUR","BRL","CNY"].map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
   </Select>
 </Field>
 <Field label="Specifications"><Textarea value={f.specifications || ""} onChange={set("specifications")} /></Field>
@@ -2676,7 +2684,7 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
         <input value={editCommercial.total} disabled onChange={() => {}} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 12px", color: "#94a3b8", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", cursor: "not-allowed" }} />
       </Field>
       <Field label="Currency" half>
-        <input value={editCommercial.currency} disabled onChange={() => {}} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 12px", color: "#94a3b8", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", cursor: "not-allowed" }} />
+        <input value={currencyLabel(editCommercial.currency)} disabled onChange={() => {}} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 12px", color: "#94a3b8", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", cursor: "not-allowed" }} />
       </Field>
       <Field label="Status" half>
         <Select value={editCommercial.status} onChange={e => setEditCommercial(p => ({ ...p, status: e.target.value }))}>
@@ -2701,7 +2709,7 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
               <span style={{ fontWeight: 700, color: savedContracts.includes(idx) ? "#10b981" : "#a78bfa", fontSize: "14px" }}>
                 {savedContracts.includes(idx) ? "✅" : "🏭"} {c.supplier || "Supplier " + (idx + 1)}
               </span>
-              <span style={{ color: "#10b981", fontWeight: 600 }}>{c.currency} {c.total}</span>
+              <span style={{ color: "#10b981", fontWeight: 600 }}>{currencyLabel(c.currency)} {c.total}</span>
             </div>
           </div>
           {savedContracts.includes(idx) ? (
@@ -2887,8 +2895,8 @@ cols={[
   { label: "Height", render: r => r.height || "—" },
   { label: "Thickness", render: r => r.thickness || "—" },
   { label: "Weight", render: r => r.weight || "—" },
-  { label: "Cost", render: r => r.unit_cost ? `${r.cost_currency || "USD"} ${parseFloat(r.unit_cost).toFixed(2)}` : "—" },
-  { label: "Sale Price", render: r => r.sale_price ? `${r.sale_currency || "USD"} ${parseFloat(r.sale_price).toFixed(2)}` : "—" },
+  { label: "Cost", render: r => r.unit_cost ? `${currencyLabel(r.cost_currency || "USD")} ${parseFloat(r.unit_cost).toFixed(2)}` : "—" },
+  { label: "Sale Price", render: r => r.sale_price ? `${currencyLabel(r.sale_currency || "USD")} ${parseFloat(r.sale_price).toFixed(2)}` : "—" },
   { label: "Actions", render: r => (
     <div style={{ display: "flex", gap: "6px" }}>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
@@ -3560,7 +3568,7 @@ function CommercialInvoices() {
             <Field label="Number" half><Input value={editing.number} onChange={e => setEditing(p => ({ ...p, number: e.target.value }))} /></Field>
             <Field label="Issue Date" half><Input type="date" value={editing.issue_date} onChange={e => setEditing(p => ({ ...p, issue_date: e.target.value }))} /></Field>
             <Field label="Total" half><input value={editing.total} readOnly onChange={() => {}} style={{ ...inputStyle, opacity: 0.6, cursor: "not-allowed" }} /></Field>
-      <Field label="Currency" half><input value={editing.currency} readOnly onChange={() => {}} style={{ ...inputStyle, opacity: 0.6, cursor: "not-allowed" }} /></Field>
+      <Field label="Currency" half><input value={currencyLabel(editing.currency)} readOnly onChange={() => {}} style={{ ...inputStyle, opacity: 0.6, cursor: "not-allowed" }} /></Field>
             <Field label="Status" half>
               <Select value={editing.status} onChange={e => setEditing(p => ({ ...p, status: e.target.value }))}>
                 <option>Pending</option><option>Paid</option>
