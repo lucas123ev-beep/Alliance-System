@@ -4570,6 +4570,52 @@ function Inspections() {
   );
 }
 
+// Full cross-module Excel report — one button, one optional "since" date
+// filter, downloads a workbook covering every tracking screen (Quotations,
+// Proformas, Orders, Commercial, Contracts, Inspections, Supplier Flow,
+// Samples, Packing Lists). Each category gets two sheets — everything still
+// open first, everything already completed second — built server-side in
+// xlsx/reportBuilder.js. This screen is just the trigger; there's no data to
+// fetch or list here.
+function Reports() {
+  const [since, setSince] = useState("");
+
+  const download = () => {
+    const url = `${API}/reports/full${since ? `?since=${since}` : ""}`;
+    window.open(url, "_blank");
+  };
+
+  const CATEGORY_LIST = [
+    "Quotations", "Proformas", "Orders", "Commercial Invoices", "Contracts",
+    "Inspections", "Supplier Flow", "Samples", "Packing Lists",
+  ];
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>📊 Reports</h2>
+      </div>
+      <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "12px", padding: "24px", maxWidth: "640px" }}>
+        <p style={{ color: "#94a3b8", fontSize: "13px", lineHeight: 1.6, margin: "0 0 16px" }}>
+          Generates one Excel workbook covering {CATEGORY_LIST.join(", ")}. Each of those becomes
+          two sheets — everything still open/pending first, everything already completed second —
+          with status, key dates and values for that screen.
+        </p>
+        <div style={{ display: "flex", gap: "16px", alignItems: "flex-end", flexWrap: "wrap" }}>
+          <Field label="Since (optional)" half>
+            <Input type="date" value={since} onChange={e => setSince(e.target.value)} />
+          </Field>
+          <Btn onClick={download}>⬇ Download Full Report (.xlsx)</Btn>
+        </div>
+        <p style={{ color: "#64748b", fontSize: "11.5px", marginTop: "14px", marginBottom: 0 }}>
+          Leave the date blank to include everything on record. When set, only records created on
+          or after that date are included, in each screen's own timeline.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─── NAV CONFIG ───────────────────────────────────────────────────────────────
 const TABS = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
@@ -4582,6 +4628,7 @@ const TABS = [
   { id: "inspections", label: "Inspections", icon: "🔍" },
   { id: "fin-suppliers", label: "Supplier Flow", icon: "📦" },
   { id: "samples", label: "Samples", icon: "✏️" },
+  { id: "reports", label: "Reports", icon: "📊" },
   { id: "products", label: "Products", icon: "🗂" },
   { id: "clients", label: "Clients", icon: "🏢" },
   { id: "suppliers", label: "Suppliers", icon: "🏭" },
@@ -4668,6 +4715,7 @@ const renderTab = () => {
       case "packing-lists": return <PackingLists />;
       case "contracts": return <Contracts />;
       case "fin-suppliers": return <Financial type="supplier" />;
+      case "reports": return <Reports />;
       default: return null;
     }
   };
