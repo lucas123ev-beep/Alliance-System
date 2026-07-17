@@ -110,7 +110,7 @@ function renderPackingList(params) {
           <th>Color</th>
           <th>Width</th>
           <th>Quantity</th>
-          <th>Roll</th>
+          <th>Packages</th>
           <th>Gross Weight</th>
           <th>Net Weight</th>
           <th>CBM</th>

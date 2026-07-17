@@ -932,7 +932,10 @@ app.get('/api/financial/suppliers/:id/payment-notice-pdf', async (req, res) => {
       applicationDate: fin.created_at ? fin.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
       paymentMethod: fin.payment_method,
       paymentDeadline: fin.due_date,
-      payee: supplierRow?.beneficiary_name || fin.supplier,
+      // Name of Payee should read the supplier's factory/company name, not
+      // the bank account holder name (beneficiary_name is a banking detail
+      // that can legitimately differ from the commercial name).
+      payee: supplierRow?.company_name || fin.supplier,
       bankName: supplierRow?.bank_name,
       bankBranch: supplierRow?.bank_branch,
       accountNumber: supplierRow?.account_number,

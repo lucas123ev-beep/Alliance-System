@@ -1815,7 +1815,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
     order_id: "", [isClient ? "client" : "supplier"]: "", description: "",
     type: isClient ? "Invoice" : "Purchase Order",
     amount: "", currency: "USD", due_date: "", status: "Pending", notes: "",
-    payer: "", payment_method: "网银汇款 Online bank payment", applicant: "", approved_by: "",
+    payer: "", payment_method: "Online bank payment", applicant: "", approved_by: "",
   });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const party = isClient ? "client" : "supplier";
@@ -1851,15 +1851,21 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
           <div style={{ gridColumn: "span 2", marginTop: "4px", marginBottom: "-4px", fontSize: "12px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             Payment Notice
           </div>
-          <Field label="Payer (付款单位)" half><Input value={f.payer} onChange={set("payer")} placeholder="e.g. Ningbo World Alliance" /></Field>
-          <Field label="Payment Method" half>
-            <Select value={f.payment_method} onChange={set("payment_method")}>
-              <option value="网银汇款 Online bank payment">网银汇款 Online bank payment</option>
-              <option value="电汇 Wire transfer">电汇 Wire transfer</option>
+          <Field label="Payer" half>
+            <Select value={f.payer} onChange={set("payer")}>
+              <option value="">Select...</option>
+              <option value="HONG KONG ALLIANCE GLOBAL TRADING CO., LTD">HONG KONG ALLIANCE GLOBAL TRADING CO., LTD</option>
+              <option value="NINGBO WORLD ALLIANCE TRADING. CO. LTD.">NINGBO WORLD ALLIANCE TRADING. CO. LTD.</option>
             </Select>
           </Field>
-          <Field label="Applicant (申请人)" half><Input value={f.applicant} onChange={set("applicant")} /></Field>
-          <Field label="Approved By (审批人)" half><Input value={f.approved_by} onChange={set("approved_by")} /></Field>
+          <Field label="Payment Method" half>
+            <Select value={f.payment_method} onChange={set("payment_method")}>
+              <option value="Online bank payment">Online bank payment</option>
+              <option value="Wire transfer">Wire transfer</option>
+            </Select>
+          </Field>
+          <Field label="Applicant" half><Input value={f.applicant} onChange={set("applicant")} /></Field>
+          <Field label="Approved By" half><Input value={f.approved_by} onChange={set("approved_by")} /></Field>
         </>
       )}
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
@@ -2446,7 +2452,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
                 </span>
               </div>
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                <label style={{ fontSize: "11px", color: "#64748b" }}>Roll
+                <label style={{ fontSize: "11px", color: "#64748b" }}>{item.isTextile ? "Roll" : "Packages"}
                   <input type="number" value={item.roll} onChange={e => updateItem(idx, "roll", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
                 </label>
                 <label style={{ fontSize: "11px", color: "#64748b" }}>Gross Weight (kg)
@@ -2582,7 +2588,10 @@ const generateContract = (order) => {
   total: order.value || "",
   currency: order.currency || "USD",
   status: "Draft",
-  notes: order.notes || "",
+  // Contract notes start blank — inheriting the order's notes (e.g. "Created
+  // from Proforma PI-... (Quotation ...)") wasn't meaningful on a contract,
+  // which has its own remarks that print into the PDF's 要求/Requirements box.
+  notes: "",
   _items: order.items || [],
   items_json: JSON.stringify(order.items || []),
 }]);
@@ -2601,7 +2610,10 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
   total: total.toFixed(2),
   currency,
   status: "Draft",
-  notes: order.notes || "",
+  // Contract notes start blank — inheriting the order's notes (e.g. "Created
+  // from Proforma PI-... (Quotation ...)") wasn't meaningful on a contract,
+  // which has its own remarks that print into the PDF's 要求/Requirements box.
+  notes: "",
   _items: supplierItems,
   items_json: JSON.stringify(supplierItems),
 };
