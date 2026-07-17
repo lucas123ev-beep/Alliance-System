@@ -4579,16 +4579,38 @@ function Inspections() {
 // fetch or list here.
 function Reports() {
   const [since, setSince] = useState("");
+  // Category list comes from the backend (xlsx/reportBuilder.js's own
+  // CATEGORIES export) instead of being duplicated here, so the checkboxes
+  // can never drift out of sync with what the server actually knows how to
+  // build. Starts every category checked — that's still the common case.
+  const [categories, setCategories] = useState([]);
+  const [checked, setChecked] = useState({});
+
+  useEffect(() => {
+    api("/reports/categories").then(list => {
+      setCategories(list);
+      setChecked(Object.fromEntries(list.map(c => [c.key, true])));
+    });
+  }, []);
+
+  const toggle = key => setChecked(prev => ({ ...prev, [key]: !prev[key] }));
+  const toggleAll = value => setChecked(Object.fromEntries(categories.map(c => [c.key, value])));
+
+  const selectedKeys = Object.keys(checked).filter(k => checked[k]);
+  const allChecked = categories.length > 0 && selectedKeys.length === categories.length;
+  const noneChecked = selectedKeys.length === 0;
 
   const download = () => {
-    const url = `${API}/reports/full${since ? `?since=${since}` : ""}`;
-    window.open(url, "_blank");
+    if (noneChecked) return;
+    const params = new URLSearchParams();
+    if (since) params.set("since", since);
+    // Omitting ?categories= entirely means "everything" server-side, so only
+    // send it when the selection is actually a subset — keeps the URL clean
+    // in the (most common) all-selected case.
+    if (!allChecked) params.set("categories", selectedKeys.join(","));
+    const qs = params.toString();
+    window.open(`${API}/reports/full${qs ? `?${qs}` : ""}`, "_blank");
   };
-
-  const CATEGORY_LIST = [
-    "Quotations", "Proformas", "Orders", "Commercial Invoices", "Contracts",
-    "Inspections", "Supplier Flow", "Samples", "Packing Lists",
-  ];
 
   return (
     <div>
@@ -4597,16 +4619,40 @@ function Reports() {
       </div>
       <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "12px", padding: "24px", maxWidth: "640px" }}>
         <p style={{ color: "#94a3b8", fontSize: "13px", lineHeight: 1.6, margin: "0 0 16px" }}>
-          Generates one Excel workbook covering {CATEGORY_LIST.join(", ")}. Each of those becomes
-          two sheets — everything still open/pending first, everything already completed second —
-          with status, key dates and values for that screen.
+          Generates one Excel workbook. Each screen you pick below becomes two sheets — everything
+          still open/pending first, everything already completed second — with status, key dates
+          and values for that screen.
         </p>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+          <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Which screens?
+          </label>
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button onClick={() => toggleAll(true)} style={{ background: "none", border: "none", color: "#60a5fa", fontSize: "11.5px", cursor: "pointer", padding: 0 }}>All</button>
+            <button onClick={() => toggleAll(false)} style={{ background: "none", border: "none", color: "#60a5fa", fontSize: "11.5px", cursor: "pointer", padding: 0 }}>None</button>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 16px", marginBottom: "20px" }}>
+          {categories.map(c => (
+            <label key={c.key} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", color: "#e2e8f0", cursor: "pointer" }}>
+              <input type="checkbox" checked={!!checked[c.key]} onChange={() => toggle(c.key)} />
+              {c.label}
+            </label>
+          ))}
+        </div>
+
         <div style={{ display: "flex", gap: "16px", alignItems: "flex-end", flexWrap: "wrap" }}>
           <Field label="Since (optional)" half>
             <Input type="date" value={since} onChange={e => setSince(e.target.value)} />
           </Field>
-          <Btn onClick={download}>⬇ Download Full Report (.xlsx)</Btn>
+          <Btn onClick={download} disabled={noneChecked}>⬇ Download Report (.xlsx)</Btn>
         </div>
+        {noneChecked && (
+          <p style={{ color: "#f87171", fontSize: "11.5px", marginTop: "10px", marginBottom: 0 }}>
+            Pick at least one screen above.
+          </p>
+        )}
         <p style={{ color: "#64748b", fontSize: "11.5px", marginTop: "14px", marginBottom: 0 }}>
           Leave the date blank to include everything on record. When set, only records created on
           or after that date are included, in each screen's own timeline.

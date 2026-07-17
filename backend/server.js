@@ -9,7 +9,7 @@ const { renderContract } = require('./pdf/contract');
 const { renderPaymentNotice } = require('./pdf/paymentNotice');
 const ACQUISITION_COMPANIES = require('./pdf/acquisitionCompanies');
 const { parseJsonSafe, contentDisposition } = require('./pdf/helpers');
-const { buildFullReportWorkbook } = require('./xlsx/reportBuilder');
+const { buildFullReportWorkbook, CATEGORIES: REPORT_CATEGORIES } = require('./xlsx/reportBuilder');
 
 const cloudinary = require('cloudinary').v2;
 cloudinary.config({
@@ -607,10 +607,18 @@ app.delete('/api/inspections/:id', (req, res) => {
 // Samples, Packing Lists), each as a pair of sheets (still open / already
 // completed), filtered from ?since=YYYY-MM-DD onward. See
 // xlsx/reportBuilder.js for the per-category queries and column layouts.
+app.get('/api/reports/categories', (req, res) => {
+  res.json(REPORT_CATEGORIES);
+});
+
 app.get('/api/reports/full', async (req, res) => {
   try {
     const since = req.query.since && /^\d{4}-\d{2}-\d{2}$/.test(req.query.since) ? req.query.since : null;
-    const workbook = buildFullReportWorkbook(db, since);
+    // Empty/missing ?categories= means "everything" (buildFullReportWorkbook
+    // treats a null Set as no filter) — only build a Set when the frontend
+    // actually sent a subset.
+    const categories = req.query.categories ? new Set(req.query.categories.split(',').filter(Boolean)) : null;
+    const workbook = buildFullReportWorkbook(db, since, categories);
     const buffer = await workbook.xlsx.writeBuffer();
     const filename = `ExportFlow-Report${since ? `-since-${since}` : ""}.xlsx`;
     res.set({

@@ -12,9 +12,13 @@ const ExcelJS = require("exceljs");
 const LOGO = require("../pdf/logo");
 const { currencyLabel } = require("../pdf/helpers");
 
-const TITLE_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4A4A4A" } };
-const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0E0E0" } };
-const THIN_BORDER = { style: "thin", color: { argb: "FFBBBBBB" } };
+// Matches the plain, native-Excel letterhead the client already uses (small
+// logo top-left, big bold title right-aligned, one black rule underneath,
+// otherwise no fill colors or cell borders anywhere) instead of the boxed
+// PDF-style banner this used to have — that read as a totally different
+// document family instead of "the same report they already know."
+const HEADER_RULE = { style: "medium", color: { argb: "FF000000" } };
+const HEADER_UNDERLINE = { style: "thin", color: { argb: "FF999999" } };
 
 // Turns a "YYYY-MM-DD" (or any parseable) date string into a real JS Date
 // for Excel — lets the user sort/filter by date naturally in Excel instead
@@ -31,44 +35,47 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-// Adds one sheet: a dark title band (with the logo), a bold header row, an
-// Excel autofilter + frozen header so it behaves like a real working report
-// (not just a flat data dump), then the rows themselves.
+// Adds one sheet: small logo top-left + big bold title right-aligned (row
+// 1, no fill), a black rule closing off that header block, then a plain
+// bold column-header row (row 3, no fill either) with the Excel autofilter
+// + frozen panes anchored to it, then the data rows — first column bold,
+// same as the reference report's Order No. column.
 function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows }) {
   const sheet = workbook.addWorksheet(sheetName, {
-    views: [{ state: "frozen", ySplit: 2 }],
+    views: [{ state: "frozen", ySplit: 3 }],
   });
 
   sheet.columns = columns.map(c => ({ key: c.key, width: c.width || 16 }));
 
-  // Row 1: title band, spanning every column.
+  // Row 1: logo (floating, doesn't touch cell content) + right-aligned title.
   const titleRow = sheet.getRow(1);
-  titleRow.height = 22;
+  titleRow.height = 30;
   sheet.mergeCells(1, 1, 1, columns.length);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = title;
-  titleCell.font = { bold: true, size: 13, color: { argb: "FFFFFFFF" } };
-  titleCell.alignment = { vertical: "middle", horizontal: "center" };
-  titleCell.fill = TITLE_FILL;
-  for (let col = 1; col <= columns.length; col++) sheet.getCell(1, col).fill = TITLE_FILL;
+  titleCell.font = { bold: true, size: 17, color: { argb: "FF1A1A1A" } };
+  titleCell.alignment = { vertical: "middle", horizontal: "right" };
+  sheet.getCell(1, 1).border = { bottom: HEADER_RULE };
+  for (let col = 2; col <= columns.length; col++) sheet.getCell(1, col).border = { bottom: HEADER_RULE };
 
-  // Logo, floated over the left edge of the title band — same mark used on
-  // every PDF, so the report reads as the same document family.
   const imageId = workbook.addImage({ base64: LOGO, extension: "png" });
-  sheet.addImage(imageId, { tl: { col: 0.1, row: 0.08 }, ext: { width: 70, height: 15 } });
+  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.15 }, ext: { width: 85, height: 19 } });
 
-  // Row 2: column headers — this is what the autofilter/freeze anchor to.
-  const headerRow = sheet.getRow(2);
+  // Row 2: thin spacer between the letterhead and the column headers.
+  sheet.getRow(2).height = 6;
+
+  // Row 3: column headers — bold, no fill, just a thin rule under them —
+  // this is what the autofilter/freeze anchor to.
+  const headerRow = sheet.getRow(3);
   headerRow.height = 18;
   columns.forEach((c, i) => {
     const cell = headerRow.getCell(i + 1);
     cell.value = c.header;
-    cell.font = { bold: true, size: 9.5 };
-    cell.fill = HEADER_FILL;
-    cell.border = { bottom: THIN_BORDER };
+    cell.font = { bold: true, size: 10 };
+    cell.border = { bottom: HEADER_UNDERLINE };
     cell.alignment = { vertical: "middle" };
   });
-  if (subtitle) sheet.getCell(2, columns.length).note = subtitle;
+  if (subtitle) sheet.getCell(3, columns.length).note = subtitle;
 
   rows.forEach(row => {
     const excelRow = sheet.addRow(row);
@@ -77,10 +84,14 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows })
       if (c.type === "date") cell.numFmt = "dd/mm/yyyy";
       if (c.type === "money") cell.numFmt = "#,##0.00";
       if (c.type === "number") cell.numFmt = "#,##0.##";
+      cell.alignment = { vertical: "top", wrapText: true };
+      // First column (e.g. Order/Contract/Invoice Number) bold, matching
+      // the reference report's bolded Order No. column.
+      if (i === 0) cell.font = { bold: true };
     });
   });
 
-  sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: columns.length } };
+  sheet.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: columns.length } };
   return sheet;
 }
 
@@ -105,14 +116,20 @@ function addCategorySheets(workbook, { key, label, columns, rawRows, mapRow, isD
   });
 }
 
-function buildFullReportWorkbook(db, since) {
+// `selectedCategories` is a Set of category keys (see the CATEGORY_KEYS
+// list exported below — the frontend's checkboxes use the same keys) or
+// null/undefined to mean "include everything". Wrapping each block in
+// `include(key)` skips both the sheet AND its query entirely for anything
+// left unchecked, instead of running every query and just hiding the sheet.
+function buildFullReportWorkbook(db, since, selectedCategories) {
   const sinceValue = since || "0000-01-01";
+  const include = key => !selectedCategories || selectedCategories.has(key);
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "ExportFlow";
   workbook.created = new Date();
 
   // ─── Quotations ────────────────────────────────────────────────────────
-  addCategorySheets(workbook, {
+  if (include("quotations")) addCategorySheets(workbook, {
     label: "Quotations",
     since,
     rawRows: db.prepare(`SELECT * FROM quotations WHERE created_at >= ? ORDER BY created_at DESC`).all(sinceValue),
@@ -137,7 +154,7 @@ function buildFullReportWorkbook(db, since) {
   });
 
   // ─── Proformas ─────────────────────────────────────────────────────────
-  addCategorySheets(workbook, {
+  if (include("proformas")) addCategorySheets(workbook, {
     label: "Proformas",
     since,
     rawRows: db.prepare(`
@@ -174,7 +191,7 @@ function buildFullReportWorkbook(db, since) {
   });
 
   // ─── Orders ────────────────────────────────────────────────────────────
-  addCategorySheets(workbook, {
+  if (include("orders")) addCategorySheets(workbook, {
     label: "Orders",
     since,
     rawRows: db.prepare(`SELECT * FROM orders WHERE created_at >= ? ORDER BY created_at DESC`).all(sinceValue),
@@ -208,7 +225,7 @@ function buildFullReportWorkbook(db, since) {
   });
 
   // ─── Commercial Invoices ───────────────────────────────────────────────
-  addCategorySheets(workbook, {
+  if (include("commercial")) addCategorySheets(workbook, {
     label: "Commercial",
     since,
     rawRows: db.prepare(`
@@ -239,7 +256,7 @@ function buildFullReportWorkbook(db, since) {
   });
 
   // ─── Contracts ─────────────────────────────────────────────────────────
-  addCategorySheets(workbook, {
+  if (include("contracts")) addCategorySheets(workbook, {
     label: "Contracts",
     since,
     rawRows: db.prepare(`
@@ -271,7 +288,7 @@ function buildFullReportWorkbook(db, since) {
   // ─── Inspections ───────────────────────────────────────────────────────
   // No `status` column on this table — `result` is the equivalent, and
   // "Conditional" is treated as still-open since it implies follow-up work.
-  addCategorySheets(workbook, {
+  if (include("inspections")) addCategorySheets(workbook, {
     label: "Inspections",
     since,
     rawRows: db.prepare(`
@@ -298,7 +315,7 @@ function buildFullReportWorkbook(db, since) {
   });
 
   // ─── Supplier Flow ─────────────────────────────────────────────────────
-  addCategorySheets(workbook, {
+  if (include("supplier-flow")) addCategorySheets(workbook, {
     label: "Supplier Flow",
     since,
     rawRows: db.prepare(`
@@ -332,7 +349,7 @@ function buildFullReportWorkbook(db, since) {
   });
 
   // ─── Samples ───────────────────────────────────────────────────────────
-  addCategorySheets(workbook, {
+  if (include("samples")) addCategorySheets(workbook, {
     label: "Samples",
     since,
     rawRows: db.prepare(`SELECT * FROM samples WHERE created_at >= ? ORDER BY created_at DESC`).all(sinceValue),
@@ -361,7 +378,7 @@ function buildFullReportWorkbook(db, since) {
   // "Draft"), so open/completed is based on the linked Order's own status
   // instead — the Order Status column shows exactly why each row landed on
   // whichever sheet it did.
-  addCategorySheets(workbook, {
+  if (include("packing-list")) addCategorySheets(workbook, {
     label: "Packing List",
     since,
     rawRows: db.prepare(`
@@ -398,4 +415,19 @@ function buildFullReportWorkbook(db, since) {
   return workbook;
 }
 
-module.exports = { buildFullReportWorkbook };
+// Single source of truth for the 9 category keys/labels — the frontend's
+// Reports screen checkboxes are built from this same list (via
+// GET /api/reports/categories) so the two sides can't drift apart.
+const CATEGORIES = [
+  { key: "quotations", label: "Quotations" },
+  { key: "proformas", label: "Proformas" },
+  { key: "orders", label: "Orders" },
+  { key: "commercial", label: "Commercial Invoices" },
+  { key: "contracts", label: "Contracts" },
+  { key: "inspections", label: "Inspections" },
+  { key: "supplier-flow", label: "Supplier Flow" },
+  { key: "samples", label: "Samples" },
+  { key: "packing-list", label: "Packing List" },
+];
+
+module.exports = { buildFullReportWorkbook, CATEGORIES };
