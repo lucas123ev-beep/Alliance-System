@@ -122,13 +122,15 @@ function renderSalesInvoice(params) {
     ? `Total Length: ${fmtNumber(totalLength, 3)} m`
     : `Total Quantity: ${fmtNumber(totalQuantity, 2)}`;
 
+  // Label and value share one cell (not split across two stretched-apart
+  // <td>s) so "Grand Total Amount: $X" reads as one unit instead of leaving
+  // a wide empty gap between the label and the number.
   sectionsHtml += `
     <table class="items-table" style="margin-top:6px;">
       <tbody>
         <tr class="totals-row">
-          <td class="num">${escapeHtml(summaryLabel)}</td>
-          <td class="num">Grand Total Amount:</td>
-          <td class="num" style="width:20%">${fmtMoney(totalAmount, currency)}</td>
+          <td>${escapeHtml(summaryLabel)}</td>
+          <td class="num">Grand Total Amount: ${fmtMoney(totalAmount, currency)}</td>
         </tr>
       </tbody>
     </table>
@@ -136,17 +138,17 @@ function renderSalesInvoice(params) {
 
   const body = `
     <table class="meta-table">
-      <tr><td class="label">Number:</td><td>${escapeHtml(number)}</td>
-          <td class="label">Date:</td><td>${fmtDateLong(date)}</td></tr>
-      <tr><td class="label">Way Of Shipment:</td><td>${escapeHtml(wayOfShipment || "By Sea")}.</td>
-          <td class="label">Country Of Origin:</td><td>${escapeHtml(countryOfOrigin || "China")}.</td></tr>
-      <tr><td class="label">Port Of Origin:</td><td>${escapeHtml(portOfOrigin || "—")}.</td>
-          <td class="label">Incoterm:</td><td>${escapeHtml(incoterm || "—")}</td></tr>
-      <tr><td class="label">Port Of Destination:</td><td>${escapeHtml(portOfDestination || "—")}.</td>
-          <td class="label">Manufacturer:</td><td>${escapeHtml(manufacturer.name || "—")}</td></tr>
-      <tr><td class="label" colspan="1">Manufacturer Address:</td><td colspan="3">${escapeHtml(manufacturer.address || "—")}${manufacturer.tel ? ` | Tel.: ${escapeHtml(manufacturer.tel)}` : ""}</td></tr>
-      <tr><td class="label">Country of origin and provenance:</td><td>${escapeHtml(countryOfOrigin || "China")}.</td>
-          <td class="label">Country of acquisition:</td><td>${escapeHtml(acq.countryOfAcquisition)}.</td></tr>
+      <tr><td><strong>Number:</strong> ${escapeHtml(number)}</td>
+          <td><strong>Date:</strong> ${fmtDateLong(date)}</td></tr>
+      <tr><td><strong>Way Of Shipment:</strong> ${escapeHtml(wayOfShipment || "By Sea")}.</td>
+          <td><strong>Country Of Origin:</strong> ${escapeHtml(countryOfOrigin || "China")}.</td></tr>
+      <tr><td><strong>Port Of Origin:</strong> ${escapeHtml(portOfOrigin || "—")}.</td>
+          <td><strong>Incoterm:</strong> ${escapeHtml(incoterm || "—")}</td></tr>
+      <tr><td><strong>Port Of Destination:</strong> ${escapeHtml(portOfDestination || "—")}.</td>
+          <td><strong>Manufacturer:</strong> ${escapeHtml(manufacturer.name || "—")}</td></tr>
+      <tr><td colspan="2"><strong>Manufacturer Address:</strong> ${escapeHtml(manufacturer.address || "—")}${manufacturer.tel ? ` | Tel.: ${escapeHtml(manufacturer.tel)}` : ""}</td></tr>
+      <tr><td><strong>Country of origin and provenance:</strong> ${escapeHtml(countryOfOrigin || "China")}.</td>
+          <td><strong>Country of acquisition:</strong> ${escapeHtml(acq.countryOfAcquisition)}.</td></tr>
     </table>
 
     ${sectionsHtml}

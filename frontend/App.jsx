@@ -1627,12 +1627,13 @@ const handleSalePerLiterChange = (e) => {
 </Field>
 
 {(f.category === "Textile" || f.category === "DTF Film") && (
-  // Full-width for the same reason Volume is below — a conditional `half`
-  // field here would throw off the Cost/Sale grid alternation that follows.
+  // Paired as two `half` fields (same row) instead of each taking the full
+  // width — together they still add up to one full row, so the Cost/Sale
+  // grid alternation that follows lines up exactly the same as before.
   // Same compact Input+Select layout as the Weight field above, just with a
   // plain weight-unit list (no g/m or g/m², which don't apply to a fixed
   // per-roll tube mass).
-  <Field label="Tube Weight (cardboard core, per roll)">
+  <Field label="Tube Weight (cardboard core, per roll)" half>
     <div style={{ display: "flex", gap: "6px" }}>
       <Input value={f.tube_weight || ""} onChange={set("tube_weight")} placeholder="e.g. 1.075" style={{ ...inputStyle, flex: 1 }} />
       <Select value={f.tube_weight_unit || "kg"} onChange={set("tube_weight_unit")} style={{ ...inputStyle, width: "90px", cursor: "pointer" }}>
@@ -1647,7 +1648,7 @@ const handleSalePerLiterChange = (e) => {
   // needed to compute an actual rolled volume (cylinder: π × (diameter/2)² ×
   // length) for the Packing List's CBM, instead of only splitting each
   // container's flat capacity proportionally by weight share.
-  <Field label="Roll Diameter (finished roll, tube included)">
+  <Field label="Roll Diameter (finished roll, tube included)" half>
     <div style={{ display: "flex", gap: "6px" }}>
       <Input value={f.roll_diameter || ""} onChange={set("roll_diameter")} placeholder="e.g. 30" style={{ ...inputStyle, flex: 1 }} />
       <Select value={f.roll_diameter_unit || "cm"} onChange={set("roll_diameter_unit")} style={{ ...inputStyle, width: "90px", cursor: "pointer" }}>

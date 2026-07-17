@@ -5,6 +5,14 @@ const { escapeHtml } = require("./helpers");
 // Commercial Invoice, Packing List). Mirrors the layout of the models sent
 // by the client: logo top-left, acquisition company block top-right, a
 // grey "TITLE" bar, then whatever body content the template supplies.
+// Deliberately light on borders — earlier versions boxed every single cell
+// (meta info, every item row, both Payment/Shipment columns), which read as
+// a dense grid and pushed values like "Grand Total Amount" away from their
+// label since each was stretched across its own full-width table cell.
+// Matches the client's own reference documents instead: bold label sitting
+// right next to its value, thin rules only where a section actually ends,
+// and a single vertical divider between the two bottom columns rather than
+// a full box around each.
 function baseCss() {
   return `
     * { box-sizing: border-box; }
@@ -19,25 +27,38 @@ function baseCss() {
     .header .company .name { font-weight: bold; font-size: 10px; }
     .title-bar {
       background: #4a4a4a; color: #fff; text-align: center; font-weight: bold;
-      font-size: 12px; letter-spacing: 0.5px; padding: 6px 0; margin-bottom: 6px;
+      font-size: 12px; letter-spacing: 0.5px; padding: 6px 0; margin-bottom: 8px;
     }
-    .meta-table td { border: 1px solid #999; padding: 4px 8px; font-size: 9.5px; }
-    .meta-table td.label { font-weight: bold; width: 32%; }
+    /* Matches the reference layout: centered "Label: value" pairs (merged
+       into one cell each, not split label/value columns), grouped into three
+       bands — Number/Date, the shipment block, and Country of origin/
+       acquisition — each closed off by its own full-width rule instead of
+       one rule around the whole table. */
+    .meta-table { border-top: 1px solid #000; border-bottom: 1px solid #000; margin-bottom: 10px; }
+    .meta-table td { padding: 4px 10px; font-size: 9.5px; text-align: center; width: 50%; }
+    .meta-table tr:first-child td { padding: 6px 10px; border-bottom: 1px solid #000; }
+    .meta-table tr:last-child td { border-top: 1px solid #000; }
     .section-bar {
       background: #d9d9d9; text-align: center; font-weight: bold; font-size: 10px;
-      padding: 4px 0; border: 1px solid #999; border-top: none;
+      padding: 4px 0;
     }
-    .items-table td, .items-table th {
-      border: 1px solid #999; padding: 5px 6px; font-size: 9.5px; vertical-align: top;
+    .items-table th {
+      border-bottom: 1.5px solid #333; padding: 4px 6px; font-size: 8.5px;
+      text-transform: uppercase; text-align: left; font-weight: bold;
     }
-    .items-table th { background: #eee; font-size: 8.5px; text-transform: uppercase; text-align: left; }
+    .items-table td { border-bottom: 0.75px solid #999; padding: 5px 6px; font-size: 9.5px; vertical-align: top; }
     .items-table .num { text-align: right; }
     .items-table .desc-bullets { margin: 2px 0 0 14px; padding: 0; font-size: 9px; }
-    .totals-row td { font-weight: bold; background: #f2f2f2; }
-    .two-col { display: flex; gap: 0; margin-top: 0; }
-    .two-col .col { flex: 1; border: 1px solid #999; border-top: none; padding: 8px 10px; font-size: 9.5px; }
-    .two-col .col + .col { border-left: none; }
-    .two-col .col-title { font-weight: bold; text-align: center; margin: -8px -10px 8px; padding: 4px 0; background: #d9d9d9; border-bottom: 1px solid #999; }
+    .totals-row td { font-weight: bold; border-top: 1.5px solid #333; border-bottom: none; }
+    .two-col { display: flex; gap: 0; margin-top: 10px; border-top: 1px solid #333; }
+    .two-col .col { flex: 1; padding: 8px 14px; font-size: 9.5px; }
+    .two-col .col + .col { border-left: 1px solid #999; }
+    .two-col .col-title { font-weight: bold; text-align: center; margin: -8px -14px 8px; padding: 4px 0; background: #d9d9d9; }
+    /* Browsers default <p> to ~1em top/bottom margin — left unset, that
+       reads as scattered whitespace rather than a compact list of facts,
+       especially in the Shipment Details column which only has a handful of
+       short lines. Every line stays close to the one above/below it. */
+    .two-col p { margin: 3px 0; }
     .bank-block p { margin: 2px 0; }
     .small { font-size: 8.5px; color: #444; }
     .footer-note { margin-top: 14px; font-size: 8px; color: #777; text-align: center; }

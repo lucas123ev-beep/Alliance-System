@@ -195,23 +195,23 @@ function renderPackingList(params) {
 
   const body = `
     <table class="meta-table">
-      <tr><td class="label">Number:</td><td>${escapeHtml(number)}</td>
-          <td class="label">Date:</td><td>${fmtDateLong(date)}</td></tr>
-      <tr><td class="label">Way Of Shipment:</td><td>${escapeHtml(wayOfShipment || "By Sea")}.</td>
-          <td class="label">Country Of Origin:</td><td>${escapeHtml(countryOfOrigin || "China")}.</td></tr>
-      <tr><td class="label">Port Of Origin:</td><td>${escapeHtml(portOfOrigin || "—")}.</td>
-          <td class="label">Incoterm:</td><td>${escapeHtml(incoterm || "—")}</td></tr>
-      <tr><td class="label">Port Of Destination:</td><td>${escapeHtml(portOfDestination || "—")}.</td>
-          <td class="label">Manufacturer:</td><td>${escapeHtml(manufacturer.name || "—")}</td></tr>
-      <tr><td class="label">Manufacturer Address:</td><td colspan="3">${escapeHtml(manufacturer.address || "—")}${manufacturer.tel ? ` | Tel.: ${escapeHtml(manufacturer.tel)}` : ""}</td></tr>
-      <tr><td class="label">Country of origin and provenance:</td><td>${escapeHtml(countryOfOrigin || "China")}.</td>
-          <td class="label">Country of acquisition:</td><td>${escapeHtml(acq.countryOfAcquisition)}.</td></tr>
+      <tr><td><strong>Number:</strong> ${escapeHtml(number)}</td>
+          <td><strong>Date:</strong> ${fmtDateLong(date)}</td></tr>
+      <tr><td><strong>Way Of Shipment:</strong> ${escapeHtml(wayOfShipment || "By Sea")}.</td>
+          <td><strong>Country Of Origin:</strong> ${escapeHtml(countryOfOrigin || "China")}.</td></tr>
+      <tr><td><strong>Port Of Origin:</strong> ${escapeHtml(portOfOrigin || "—")}.</td>
+          <td><strong>Incoterm:</strong> ${escapeHtml(incoterm || "—")}</td></tr>
+      <tr><td><strong>Port Of Destination:</strong> ${escapeHtml(portOfDestination || "—")}.</td>
+          <td><strong>Manufacturer:</strong> ${escapeHtml(manufacturer.name || "—")}</td></tr>
+      <tr><td colspan="2"><strong>Manufacturer Address:</strong> ${escapeHtml(manufacturer.address || "—")}${manufacturer.tel ? ` | Tel.: ${escapeHtml(manufacturer.tel)}` : ""}</td></tr>
+      <tr><td><strong>Country of origin and provenance:</strong> ${escapeHtml(countryOfOrigin || "China")}.</td>
+          <td><strong>Country of acquisition:</strong> ${escapeHtml(acq.countryOfAcquisition)}.</td></tr>
     </table>
 
     ${sectionsHtml}
 
-    <div class="section-bar" style="margin-top:6px;">Shipment Details</div>
-    <div style="border:1px solid #999; border-top:none; padding:10px 14px;">
+    <div class="section-bar" style="margin-top:10px;">Shipment Details</div>
+    <div style="padding:10px 14px;">
       <p style="text-align:center; font-weight:bold; margin:0 0 6px;">Importer | Consignee | Notify Part:</p>
       <p style="text-align:center; font-weight:bold; margin:0 0 2px;">${escapeHtml(importer.name || "—")}</p>
       <p style="text-align:center; margin:0 0 2px;">${escapeHtml(importer.address || "—")}</p>
