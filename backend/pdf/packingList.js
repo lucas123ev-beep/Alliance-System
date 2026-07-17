@@ -22,22 +22,24 @@ function isTextileItem(item) {
   return !!(item.totalLength && parseFloat(item.totalLength) > 0);
 }
 
-function renderPackingList(params) {
-  const {
-    number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
-    incoterm, acq, manufacturer, items, totals, importer,
-  } = params;
+const descCell = item => `
+  <td>
+    <strong>${escapeHtml(item.description)}</strong>
+    ${item.bullets && item.bullets.length ? `<ul class="desc-bullets">${item.bullets.map(b => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
+    ${item.ncm ? `<div class="small">NCM: ${escapeHtml(item.ncm)}</div>` : ""}
+  </td>
+`;
 
+const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 0);
+
+// Renders the (up to) two category tables — Textile/DTF Film with a Total
+// Length column, everything else with a Quantity column — for one group of
+// items. Used both for a whole Packing List (no container split) and for a
+// single container's slice of items (multi-container split), so the split
+// logic doesn't have to be duplicated.
+function renderItemSections(items) {
   const textileItems = items.filter(isTextileItem);
   const otherItems = items.filter(i => !isTextileItem(i));
-
-  const descCell = item => `
-    <td>
-      <strong>${escapeHtml(item.description)}</strong>
-      ${item.bullets && item.bullets.length ? `<ul class="desc-bullets">${item.bullets.map(b => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
-      ${item.ncm ? `<div class="small">NCM: ${escapeHtml(item.ncm)}</div>` : ""}
-    </td>
-  `;
 
   const textileRows = textileItems.map(item => `
     <tr>
@@ -66,12 +68,10 @@ function renderPackingList(params) {
     </tr>
   `).join("");
 
-  const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 0);
-
-  let sectionsHtml = "";
+  let html = "";
 
   if (textileItems.length > 0) {
-    sectionsHtml += `
+    html += `
     <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
@@ -102,7 +102,7 @@ function renderPackingList(params) {
   }
 
   if (otherItems.length > 0) {
-    sectionsHtml += `
+    html += `
     <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
@@ -129,6 +129,53 @@ function renderPackingList(params) {
       </tbody>
     </table>
   `;
+  }
+
+  return html;
+}
+
+function renderPackingList(params) {
+  const {
+    number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
+    incoterm, acq, manufacturer, items, totals, importer, containers,
+  } = params;
+
+  // Multi-container shipments: split the items into one section per
+  // container, each headed by "Container 0N: <code>" and closed with its own
+  // combined TOTAL row (Length/Roll/Gross/Net/CBM for just that container) —
+  // matching the reference layout. Falls back to the old single-table
+  // rendering when there's one container or none was ever set up (older
+  // Packing Lists saved before this existed), so nothing changes for them.
+  const hasContainerSplit = Array.isArray(containers) && containers.length > 1;
+
+  let sectionsHtml = "";
+
+  if (hasContainerSplit) {
+    containers.forEach(c => {
+      // Skip zero-roll rows — those exist in the saved draft purely so the
+      // allocation screen could offer every item in every container to move
+      // between them; a row nobody actually allocated here shouldn't print.
+      const containerItems = items.filter(i => (i.container_seq || 1) === c.seq && (parseFloat(i.roll) || 0) > 0);
+      if (containerItems.length === 0) return;
+      sectionsHtml += `
+        <div class="section-bar" style="margin-top:14px;">Container ${String(c.seq).padStart(2, "0")}：${escapeHtml(c.code || "—")}</div>
+        ${renderItemSections(containerItems)}
+        <table class="items-table" style="margin-top:0;">
+          <tbody>
+            <tr class="totals-row">
+              <td>TOTAL:</td>
+              <td class="num">Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 3)}</td>
+              <td class="num">Roll: ${fmtNumber(sumOf(containerItems, "roll"), 0)}</td>
+              <td class="num">Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)}</td>
+              <td class="num">Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)}</td>
+              <td class="num">CBM: ${fmtNumber(sumOf(containerItems, "cbm"), 2)}</td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+    });
+  } else {
+    sectionsHtml += renderItemSections(items);
   }
 
   sectionsHtml += `

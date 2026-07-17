@@ -645,8 +645,17 @@ function tubeWeightKg(value, unit) {
   return v; // kg
 }
 
+// Splits an even integer total across `n` buckets as evenly as possible —
+// e.g. splitEven(971, 2) => [486, 485]. Used to divide a roll count across
+// multiple containers without fractional rolls.
+function splitEven(total, n) {
+  const base = Math.floor(total / n);
+  const remainder = total - base * n;
+  return Array.from({ length: n }, (_, i) => base + (i < remainder ? 1 : 0));
+}
+
 function buildPackingListDraft(order, products) {
-  const items = (order.items || []).map(item => {
+  const baseItems = (order.items || []).map(item => {
     const product = products.find(p => Number(p.id) === Number(item.product_id));
     // Total Length only means anything for goods sold by the meter —
     // Textile/DTF Film rolls. Machines, chemicals and other quantity-based
@@ -695,19 +704,65 @@ function buildPackingListDraft(order, products) {
   });
   const acq = getAcqCompany(order.acquisition_company || "HK");
 
+  // Multi-container shipments: split each item's roll count (and,
+  // proportionally, its weight/length) across the order's containers, so
+  // the Packing List/Commercial Invoice can show goods grouped by which
+  // physical container they're loaded into — same as the client's own
+  // reference documents ("Container 01: OOCU7979442", "Container 02: ...").
+  // A single-container order (or one with no container info at all) keeps
+  // exactly the old flat item list, just tagged onto one implicit container.
+  const containerQty = Math.max(1, parseInt(order.container_qty) || 1);
+  const containers = Array.from({ length: containerQty }, (_, i) => ({ seq: i + 1, code: "" }));
+
+  let items;
+  if (containerQty > 1) {
+    // Every item gets a row in every container (even a "0" starting point)
+    // rather than only the containers its default even split landed in —
+    // that's what makes the allocation screen actually usable: the user can
+    // freely move an item entirely from one container to another just by
+    // editing the numbers, instead of being stuck with whichever container(s)
+    // the automatic split happened to assign it to. Zero-roll rows are
+    // filtered back out when the PDF is generated, so they never show up as
+    // noise on the final document — only while allocating.
+    items = [];
+    baseItems.forEach(item => {
+      const totalRoll = parseFloat(item.roll) || 0;
+      const rollShares = splitEven(totalRoll, containerQty);
+      rollShares.forEach((rollShare, i) => {
+        const fraction = totalRoll > 0 ? rollShare / totalRoll : 0;
+        items.push({
+          ...item,
+          container_seq: i + 1,
+          roll: rollShare,
+          grossWeight: item.grossWeight !== "" ? Math.round(item.grossWeight * fraction * 10) / 10 : "",
+          netWeight: item.netWeight !== "" ? Math.round(item.netWeight * fraction * 10) / 10 : "",
+          totalLength: item.totalLength != null ? Math.round(item.totalLength * fraction * 100) / 100 : item.totalLength,
+        });
+      });
+    });
+  } else {
+    items = baseItems.map(item => ({ ...item, container_seq: 1 }));
+  }
+
   // CBM auto-fill from the Order's container info (type + quantity), so the
   // Packing List doesn't need it typed in by hand. Values are the standard
   // usable cargo capacities for each container type; still editable per-item
-  // afterwards since actual stowed volume can vary.
+  // afterwards since actual stowed volume can vary. Each container gets its
+  // own capacity — distributed across just the items loaded into it.
   const CONTAINER_CBM = { "20' Standard": 33, "40' Standard": 67, "40' High Cube": 76 };
-  const containerCbmTotal = order.container && CONTAINER_CBM[order.container]
-    ? CONTAINER_CBM[order.container] * (parseInt(order.container_qty) || 1)
-    : null;
-  if (containerCbmTotal != null && items.length) {
-    const grossSum = items.reduce((s, i) => s + (parseFloat(i.grossWeight) || 0), 0);
-    items.forEach(i => {
-      const share = grossSum > 0 ? (parseFloat(i.grossWeight) || 0) / grossSum : 1 / items.length;
-      i.cbm = Math.round(containerCbmTotal * share * 100) / 100;
+  const perContainerCbm = order.container && CONTAINER_CBM[order.container] ? CONTAINER_CBM[order.container] : null;
+  if (perContainerCbm != null) {
+    containers.forEach(c => {
+      // Only split CBM across rows that actually start with rolls allocated
+      // to this container — the zero-roll padding rows (there so the user
+      // can reallocate into them later) shouldn't soak up a share of CBM.
+      const containerItems = items.filter(i => i.container_seq === c.seq && (parseFloat(i.roll) || 0) > 0);
+      if (!containerItems.length) return;
+      const grossSum = containerItems.reduce((s, i) => s + (parseFloat(i.grossWeight) || 0), 0);
+      containerItems.forEach(i => {
+        const share = grossSum > 0 ? (parseFloat(i.grossWeight) || 0) / grossSum : 1 / containerItems.length;
+        i.cbm = Math.round(perContainerCbm * share * 100) / 100;
+      });
     });
   }
 
@@ -737,6 +792,11 @@ function buildPackingListDraft(order, products) {
     manufacturer_address: acq.address,
     _items: items,
     items_json: JSON.stringify(items),
+    // Container codes (e.g. "OOCU7979442") start blank — filled in on the
+    // Packing List screen. Only meaningful (and only shown in the UI/PDF)
+    // when there's more than one container.
+    _containers: containers,
+    containers_json: JSON.stringify(containers),
     total_length: totals.totalLength, total_roll: totals.totalRoll,
     total_gross_weight: totals.totalGrossWeight, total_net_weight: totals.totalNetWeight, total_cbm: totals.totalCbm,
     status: "Draft",
@@ -2677,6 +2737,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
   const [f, setF] = useState(() => ({
     ...initial,
     _items: initial._items || (initial.items_json ? (() => { try { return JSON.parse(initial.items_json); } catch { return []; } })() : []),
+    _containers: initial._containers || (initial.containers_json ? (() => { try { return JSON.parse(initial.containers_json); } catch { return []; } })() : []),
   }));
   const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }));
 
@@ -2699,7 +2760,51 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
     });
   };
 
+  const updateContainerCode = (seq, code) => {
+    setF(prev => {
+      const containers = (prev._containers || []).map(c => c.seq === seq ? { ...c, code } : c);
+      return { ...prev, _containers: containers, containers_json: JSON.stringify(containers) };
+    });
+  };
+
   const miniInput = { ...inputStyle, padding: "5px 8px", fontSize: "12px", width: "72px", textAlign: "right" };
+
+  // Multi-container allocation: group the flat item list by container_seq so
+  // each container gets its own "Container 0N — Code" block with just its
+  // slice of the items, still editable per-item exactly like the
+  // single-container view. Falls back to the plain flat list when there's
+  // only one container (or none set up — older Packing Lists).
+  const containers = f._containers || [];
+  const isMultiContainer = containers.length > 1;
+  const items = f._items || [];
+
+  const renderItemRow = (item, idx) => (
+    <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid #1e293b" }}>
+      <div style={{ fontSize: "13px", color: "#f1f5f9", marginBottom: "6px" }}>
+        <strong>{item.description}</strong>
+        <span style={{ color: "#64748b", marginLeft: "8px" }}>
+          {item.color} {item.width} {item.weightSpec}
+          {item.isTextile
+            ? ` · Length: ${parseFloat(item.totalLength || 0).toFixed(2)} m`
+            : (item.quantity != null ? ` · Qty: ${item.quantity} ${item.unit || ""}` : "")}
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+        <label style={{ fontSize: "11px", color: "#64748b" }}>{item.isTextile ? "Roll" : "Packages"}
+          <input type="number" value={item.roll} onChange={e => updateItem(idx, "roll", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
+        </label>
+        <label style={{ fontSize: "11px", color: "#64748b" }}>Gross Weight (kg)
+          <input type="number" value={item.grossWeight} onChange={e => updateItem(idx, "grossWeight", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
+        </label>
+        <label style={{ fontSize: "11px", color: "#64748b" }}>Net Weight (kg)
+          <input type="number" value={item.netWeight} onChange={e => updateItem(idx, "netWeight", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
+        </label>
+        <label style={{ fontSize: "11px", color: "#64748b" }}>CBM
+          <input type="number" value={item.cbm} onChange={e => updateItem(idx, "cbm", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
+        </label>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
@@ -2716,38 +2821,41 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
       <Field label="Manufacturer" half><Input value={f.manufacturer} onChange={set("manufacturer")} /></Field>
       <Field label="Manufacturer Address" half><Input value={f.manufacturer_address} onChange={set("manufacturer_address")} /></Field>
 
-      <Field label="Items — Roll / Gross Weight / Net Weight / CBM">
-        <div style={{ background: "#0f172a", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>
-          {(f._items || []).length === 0 && (
-            <div style={{ padding: "12px 14px", color: "#475569", fontSize: "13px" }}>No items.</div>
+      {!isMultiContainer && containers.length === 1 && (
+        // Single container: still worth capturing its code (shows at the top
+        // of the Packing List/CI), just without the full allocation UI.
+        <Field label="Container Code" half>
+          <Input value={containers[0].code || ""} onChange={e => updateContainerCode(containers[0].seq, e.target.value)} placeholder="e.g. OOCU7979442" />
+        </Field>
+      )}
+
+      <Field label={isMultiContainer ? "Items — allocated per container" : "Items — Roll / Gross Weight / Net Weight / CBM"}>
+        <div style={{ display: "flex", flexDirection: "column", gap: isMultiContainer ? "12px" : 0 }}>
+          {items.length === 0 && (
+            <div style={{ background: "#0f172a", borderRadius: "8px", border: "1px solid #334155", padding: "12px 14px", color: "#475569", fontSize: "13px" }}>No items.</div>
           )}
-          {(f._items || []).map((item, idx) => (
-            <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid #1e293b" }}>
-              <div style={{ fontSize: "13px", color: "#f1f5f9", marginBottom: "6px" }}>
-                <strong>{item.description}</strong>
-                <span style={{ color: "#64748b", marginLeft: "8px" }}>
-                  {item.color} {item.width} {item.weightSpec}
-                  {item.isTextile
-                    ? ` · Length: ${parseFloat(item.totalLength || 0).toFixed(2)} m`
-                    : (item.quantity != null ? ` · Qty: ${item.quantity} ${item.unit || ""}` : "")}
-                </span>
-              </div>
-              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                <label style={{ fontSize: "11px", color: "#64748b" }}>{item.isTextile ? "Roll" : "Packages"}
-                  <input type="number" value={item.roll} onChange={e => updateItem(idx, "roll", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
-                </label>
-                <label style={{ fontSize: "11px", color: "#64748b" }}>Gross Weight (kg)
-                  <input type="number" value={item.grossWeight} onChange={e => updateItem(idx, "grossWeight", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
-                </label>
-                <label style={{ fontSize: "11px", color: "#64748b" }}>Net Weight (kg)
-                  <input type="number" value={item.netWeight} onChange={e => updateItem(idx, "netWeight", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
-                </label>
-                <label style={{ fontSize: "11px", color: "#64748b" }}>CBM
-                  <input type="number" value={item.cbm} onChange={e => updateItem(idx, "cbm", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
-                </label>
-              </div>
+          {isMultiContainer ? (
+            containers.map(c => {
+              const indices = items.map((it, i) => i).filter(i => (items[i].container_seq || 1) === c.seq);
+              if (indices.length === 0) return null;
+              return (
+                <div key={c.seq} style={{ background: "#0f172a", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>
+                  <div style={{ background: "#1e293b", padding: "8px 14px", display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ fontSize: "12px", fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Container {String(c.seq).padStart(2, "0")}
+                    </span>
+                    <Input value={c.code || ""} onChange={e => updateContainerCode(c.seq, e.target.value)}
+                      placeholder="Container code, e.g. OOCU7979442" style={{ ...inputStyle, flex: 1, padding: "6px 10px", fontSize: "13px" }} />
+                  </div>
+                  {indices.map(idx => renderItemRow(items[idx], idx))}
+                </div>
+              );
+            })
+          ) : (
+            <div style={{ background: "#0f172a", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>
+              {items.map((item, idx) => renderItemRow(item, idx))}
             </div>
-          ))}
+          )}
         </div>
       </Field>
 

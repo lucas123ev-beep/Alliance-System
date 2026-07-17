@@ -159,7 +159,15 @@ function renderSalesInvoice(params) {
         <p><strong>2. End date of production:</strong> ${escapeHtml(productionDays || "28")} days after TT payment.</p>
         <p><strong>3. Goods delivered:</strong> ${escapeHtml(portOfOrigin || "—")}.</p>
         <p><strong>4. Delivery date at ${escapeHtml((portOfOrigin || "origin port").split(",")[0])}:</strong> ${escapeHtml(deliveryDays || "33")} days after TT payment.</p>
-        ${extraShipmentLine ? `<p><strong>5. Packing List Description:</strong> ${escapeHtml(extraShipmentLine)}.</p>` : ""}
+        ${extraShipmentLine ? `<p><strong>5. Packing List Description:</strong> ${
+          // Multi-container Packing Lists pass an array (one breakdown line
+          // per container, e.g. "Container 01: OOCU7979442 — Rolls: 561 |
+          // ...") — join with line breaks instead of one run-on sentence.
+          // Single-container / legacy callers still just pass a string.
+          Array.isArray(extraShipmentLine)
+            ? extraShipmentLine.map(l => escapeHtml(l)).join(".<br/>") + "."
+            : escapeHtml(extraShipmentLine) + "."
+        }</p>` : ""}
         <div class="bank-block" style="margin-top:8px;">
           <p><strong>Our bank information is as below:</strong></p>
           <p>Beneficiary Name: ${escapeHtml(acq.bank.beneficiary)}.</p>

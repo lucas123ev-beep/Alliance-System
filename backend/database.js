@@ -335,6 +335,14 @@ const migrations = [
   // Each installment gets its own Payment Notice PDF (see the
   // payment-notice-pdf route's ?pct=&label= params).
   ['financial_suppliers', 'payment_schedule', "TEXT DEFAULT '100'"],
+  // Multi-container shipments: JSON array of { seq, code } — one entry per
+  // physical container the order ships in. When there's more than one, each
+  // item row in items_json also carries a matching container_seq so the
+  // Packing List (and the Commercial Invoice's shipment summary) can group
+  // goods by which container they're loaded into, same as the client's own
+  // reference documents (each container gets its own "Container 0N: CODE"
+  // section with its own subtotal).
+  ['packing_lists', 'containers_json', 'TEXT'],
   ['order_items', 'product_code', 'TEXT'],
   ['order_items', 'supplier', 'TEXT'],
   ['order_items', 'currency', "TEXT DEFAULT 'USD'"],

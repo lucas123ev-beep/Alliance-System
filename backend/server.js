@@ -469,16 +469,16 @@ app.get('/api/packing-lists/:id', (req, res) => {
 app.post('/api/packing-lists', (req, res) => {
   const { order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
     port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
-    total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes } = req.body;
+    total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json } = req.body;
   try {
     const result = db.prepare(`
       INSERT INTO packing_lists (order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
         port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
-        total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, number, date, way_of_shipment || 'By Sea', country_of_origin || 'China', country_of_acquisition || '',
       port_of_origin || '', port_of_destination || '', incoterm || '', manufacturer || '', manufacturer_address || '', items_json || null,
-      total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '');
+      total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null);
     res.status(201).json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -488,15 +488,15 @@ app.post('/api/packing-lists', (req, res) => {
 app.put('/api/packing-lists/:id', (req, res) => {
   const { order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
     port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
-    total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes } = req.body;
+    total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json } = req.body;
   db.prepare(`
     UPDATE packing_lists SET order_id=?, number=?, date=?, way_of_shipment=?, country_of_origin=?, country_of_acquisition=?,
       port_of_origin=?, port_of_destination=?, incoterm=?, manufacturer=?, manufacturer_address=?, items_json=?,
-      total_length=?, total_roll=?, total_gross_weight=?, total_net_weight=?, total_cbm=?, status=?, notes=?
+      total_length=?, total_roll=?, total_gross_weight=?, total_net_weight=?, total_cbm=?, status=?, notes=?, containers_json=?
     WHERE id=?
   `).run(order_id || null, number, date, way_of_shipment || 'By Sea', country_of_origin || 'China', country_of_acquisition || '',
     port_of_origin || '', port_of_destination || '', incoterm || '', manufacturer || '', manufacturer_address || '', items_json || null,
-    total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', req.params.id);
+    total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, req.params.id);
   res.json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(req.params.id));
 });
 
@@ -913,7 +913,21 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
     const acq = getAcq(order?.acquisition_company || 'HK');
     const clientRow = findClientByName(ci.client);
     const pl = db.prepare('SELECT * FROM packing_lists WHERE order_id=? ORDER BY created_at DESC LIMIT 1').get(order?.id);
-    const plSummary = pl ? `Rolls: ${pl.total_roll || 0} | Gross Weight: ${pl.total_gross_weight || 0} kg | Net Weight: ${pl.total_net_weight || 0} kg | CBM: ${pl.total_cbm || 0}` : '';
+    // Multi-container Packing Lists get one breakdown line per container
+    // instead of a single aggregate line, matching the per-container
+    // Packing List PDF itself (see renderPackingList's containers grouping).
+    const plContainers = pl ? parseJsonSafe(pl.containers_json, []) : [];
+    const plItems = pl ? parseJsonSafe(pl.items_json, []) : [];
+    let plSummary = pl ? `Rolls: ${pl.total_roll || 0} | Gross Weight: ${pl.total_gross_weight || 0} kg | Net Weight: ${pl.total_net_weight || 0} kg | CBM: ${pl.total_cbm || 0}` : '';
+    if (pl && Array.isArray(plContainers) && plContainers.length > 1) {
+      const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 0);
+      plSummary = plContainers.map(c => {
+        // Same zero-roll filter as the Packing List PDF — unallocated rows
+        // that only exist for the allocation UI shouldn't show up here.
+        const containerItems = plItems.filter(i => (i.container_seq || 1) === c.seq && (parseFloat(i.roll) || 0) > 0);
+        return `Container ${String(c.seq).padStart(2, '0')}: ${c.code || '—'} — Rolls: ${sumOf(containerItems, 'roll')} | Gross Weight: ${sumOf(containerItems, 'grossWeight').toFixed(1)} kg | Net Weight: ${sumOf(containerItems, 'netWeight').toFixed(1)} kg | CBM: ${sumOf(containerItems, 'cbm').toFixed(1)}`;
+      }).filter(line => !/Rolls: 0 \|/.test(line));
+    }
 
     const html = renderSalesInvoice({
       title: 'COMMERCIAL INVOICE',
@@ -955,6 +969,7 @@ app.get('/api/packing-lists/:id/pdf', async (req, res) => {
     if (!pl) return res.status(404).json({ error: 'Packing list not found' });
     const order = pl.order_id ? db.prepare('SELECT * FROM orders WHERE id=?').get(pl.order_id) : null;
     const items = parseJsonSafe(pl.items_json, []);
+    const containers = parseJsonSafe(pl.containers_json, []);
     const clientRow = findClientByName(order?.client);
     const acq = getAcq(pl.country_of_acquisition === 'Hong Kong' ? 'HK' : (order?.acquisition_company || 'HK'));
 
@@ -969,6 +984,7 @@ app.get('/api/packing-lists/:id/pdf', async (req, res) => {
       acq,
       manufacturer: { name: pl.manufacturer, address: pl.manufacturer_address, tel: '' },
       items,
+      containers,
       totals: {
         totalLength: pl.total_length, totalRoll: pl.total_roll,
         totalGrossWeight: pl.total_gross_weight, totalNetWeight: pl.total_net_weight, totalCbm: pl.total_cbm,
