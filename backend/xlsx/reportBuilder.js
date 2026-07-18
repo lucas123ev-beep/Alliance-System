@@ -18,7 +18,10 @@ const { currencyLabel } = require("../pdf/helpers");
 // PDF-style banner this used to have — that read as a totally different
 // document family instead of "the same report they already know."
 const HEADER_RULE = { style: "medium", color: { argb: "FF000000" } };
-const HEADER_UNDERLINE = { style: "thin", color: { argb: "FF999999" } };
+// Same weight/color for the column-header underline and for the rule under
+// every single data row — one consistent "line per item" running the full
+// width of the table, not just a faint line under the header.
+const ROW_RULE = { style: "thin", color: { argb: "FF444444" } };
 
 // Turns a "YYYY-MM-DD" (or any parseable) date string into a real JS Date
 // for Excel — lets the user sort/filter by date naturally in Excel instead
@@ -86,7 +89,7 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows })
     const cell = headerRow.getCell(i + 1);
     cell.value = c.header;
     cell.font = { bold: true, size: 10 };
-    cell.border = { bottom: HEADER_UNDERLINE };
+    cell.border = { bottom: ROW_RULE };
     cell.alignment = { vertical: "middle" };
   });
   if (subtitle) sheet.getCell(3, columns.length).note = subtitle;
@@ -99,6 +102,10 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows })
       if (c.type === "money") cell.numFmt = "#,##0.00";
       if (c.type === "number") cell.numFmt = "#,##0.##";
       cell.alignment = { vertical: "top", wrapText: true };
+      // Every item gets the same rule under it as the header row, so each
+      // row reads as its own line instead of the table trailing off into
+      // blank space — matching the reference sheet's one-line-per-item look.
+      cell.border = { bottom: ROW_RULE };
       // First column (e.g. Order/Contract/Invoice Number) bold, matching
       // the reference report's bolded Order No. column.
       if (i === 0) cell.font = { bold: true };
@@ -111,7 +118,10 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows })
 
 // Splits already-fetched+mapped rows into {open, done} using a per-category
 // predicate, and writes both sheets (open first, per the requested layout).
-function addCategorySheets(workbook, { key, label, columns, rawRows, mapRow, isDone, since }) {
+// `plainTitle` drops the "— OPEN / NOT COMPLETED" / "— COMPLETED" suffix
+// from the on-sheet title (the two tabs already say Open/Done in their own
+// names, so for Shipment specifically that suffix just read as clutter).
+function addCategorySheets(workbook, { key, label, columns, rawRows, mapRow, isDone, since, plainTitle }) {
   const mapped = rawRows.map(mapRow);
   const open = mapped.filter(r => !isDone(r._raw));
   const done = mapped.filter(r => isDone(r._raw));
@@ -120,12 +130,12 @@ function addCategorySheets(workbook, { key, label, columns, rawRows, mapRow, isD
 
   addReportSheet(workbook, {
     sheetName: `${label} (Open)`.slice(0, 31),
-    title: `${label.toUpperCase()} — OPEN / NOT COMPLETED`,
+    title: plainTitle ? label.toUpperCase() : `${label.toUpperCase()} — OPEN / NOT COMPLETED`,
     subtitle, columns, rows: strip(open),
   });
   addReportSheet(workbook, {
     sheetName: `${label} (Done)`.slice(0, 31),
-    title: `${label.toUpperCase()} — COMPLETED`,
+    title: plainTitle ? label.toUpperCase() : `${label.toUpperCase()} — COMPLETED`,
     subtitle, columns, rows: strip(done),
   });
 }
@@ -393,21 +403,25 @@ function buildFullReportWorkbook(db, since, selectedCategories) {
   // Production Lead Time/Loading Date/Shipping Date/Remark), built off
   // Orders rather than packing_lists — packing_lists.status is unused, and
   // the reference sheet's fields line up with Order + its latest Proforma.
+  // `plainTitle: true` because the sheet tabs already say (Open)/(Done),
+  // so repeating "— OPEN / NOT COMPLETED" in the title itself was clutter.
   //
-  // Two fields don't have a clean 1:1 real column and are approximated:
-  //  - Production Lead Time is stored as a day-count (orders.production_
-  //    lead_time), not a date, so it's shown as Proforma Date + that many
-  //    days, matching how the reference sheet displays an actual date here.
-  //  - Loading Date has no matching field anywhere in the system (only one
-  //    shipment-out date, orders.shipment_date, is tracked, and that's used
-  //    for Shipping Date) — left blank rather than guessed.
+  // Production Lead Time has no clean 1:1 real column: it's stored as a
+  // day-count (orders.production_lead_time), not a date, so it's shown as
+  // Proforma Date + that many days, matching how the reference sheet
+  // displays an actual date here. Loading Date now comes from the most
+  // recent Packing List linked to the order (packing_lists.loading_date,
+  // entered on that screen), since Order itself only tracks one departure
+  // date (shipment_date, used for Shipping Date).
   if (include("shipment")) addCategorySheets(workbook, {
     label: "Shipment",
     since,
+    plainTitle: true,
     rawRows: db.prepare(`
       SELECT o.*,
         (SELECT p.issue_date FROM proformas p WHERE p.order_id = o.id ORDER BY p.created_at DESC LIMIT 1) AS proforma_date,
-        (SELECT GROUP_CONCAT(DISTINCT oi.product_name) FROM order_items oi WHERE oi.order_id = o.id) AS product_names
+        (SELECT GROUP_CONCAT(DISTINCT oi.product_name) FROM order_items oi WHERE oi.order_id = o.id) AS product_names,
+        (SELECT pl.loading_date FROM packing_lists pl WHERE pl.order_id = o.id ORDER BY pl.created_at DESC LIMIT 1) AS loading_date
       FROM orders o
       WHERE o.created_at >= ? ORDER BY o.created_at DESC
     `).all(sinceValue),
@@ -430,7 +444,7 @@ function buildFullReportWorkbook(db, since, selectedCategories) {
       product_name: r.product_names || r.product || "—",
       loading_port: r.port_of_loading,
       production_lead_time: addDaysToDate(r.proforma_date, r.production_lead_time),
-      loading_date: null,
+      loading_date: toExcelDate(r.loading_date),
       shipping_date: toExcelDate(r.shipment_date),
       remark: r.notes,
     }),

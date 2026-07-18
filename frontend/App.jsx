@@ -2988,6 +2988,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Number" half><Input value={f.number} onChange={set("number")} /></Field>
       <Field label="Date" half><Input type="date" value={f.date} onChange={set("date")} /></Field>
+      <Field label="Loading Date" half><Input type="date" value={f.loading_date || ""} onChange={set("loading_date")} /></Field>
       <Field label="Way of Shipment" half>
         <Select value={f.way_of_shipment} onChange={set("way_of_shipment")}>
           <option>By Sea</option><option>By Air</option><option>By Land</option>
@@ -4674,10 +4675,10 @@ const TABS = [
   { id: "inspections", label: "Inspections", icon: "🔍" },
   { id: "fin-suppliers", label: "Supplier Flow", icon: "📦" },
   { id: "samples", label: "Samples", icon: "✏️" },
-  { id: "reports", label: "Reports", icon: "📊" },
   { id: "products", label: "Products", icon: "🗂" },
   { id: "clients", label: "Clients", icon: "🏢" },
   { id: "suppliers", label: "Suppliers", icon: "🏭" },
+  { id: "reports", label: "Reports", icon: "📊" },
 ];
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────

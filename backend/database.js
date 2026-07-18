@@ -433,6 +433,10 @@ const migrations = [
   // of the same weight but different diameters actually stack in a container.
   ['products', 'roll_diameter', 'REAL'],
   ['products', 'roll_diameter_unit', "TEXT DEFAULT 'cm'"],
+  // Date cargo is actually loaded onto the container/vessel — distinct from
+  // `date` (the packing list's own issue date) and from the Order's
+  // shipment_date (when it departs), needed by the Shipment report.
+  ['packing_lists', 'loading_date', 'TEXT'],
 ];
 
 for (const [table, column, definition] of migrations) {

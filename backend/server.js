@@ -493,16 +493,16 @@ app.get('/api/packing-lists/:id', (req, res) => {
 app.post('/api/packing-lists', (req, res) => {
   const { order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
     port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
-    total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json } = req.body;
+    total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date } = req.body;
   try {
     const result = db.prepare(`
       INSERT INTO packing_lists (order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
         port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
-        total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, number, date, way_of_shipment || 'By Sea', country_of_origin || 'China', country_of_acquisition || '',
       port_of_origin || '', port_of_destination || '', incoterm || '', manufacturer || '', manufacturer_address || '', items_json || null,
-      total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null);
+      total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null);
     res.status(201).json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -512,15 +512,15 @@ app.post('/api/packing-lists', (req, res) => {
 app.put('/api/packing-lists/:id', (req, res) => {
   const { order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
     port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
-    total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json } = req.body;
+    total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date } = req.body;
   db.prepare(`
     UPDATE packing_lists SET order_id=?, number=?, date=?, way_of_shipment=?, country_of_origin=?, country_of_acquisition=?,
       port_of_origin=?, port_of_destination=?, incoterm=?, manufacturer=?, manufacturer_address=?, items_json=?,
-      total_length=?, total_roll=?, total_gross_weight=?, total_net_weight=?, total_cbm=?, status=?, notes=?, containers_json=?
+      total_length=?, total_roll=?, total_gross_weight=?, total_net_weight=?, total_cbm=?, status=?, notes=?, containers_json=?, loading_date=?
     WHERE id=?
   `).run(order_id || null, number, date, way_of_shipment || 'By Sea', country_of_origin || 'China', country_of_acquisition || '',
     port_of_origin || '', port_of_destination || '', incoterm || '', manufacturer || '', manufacturer_address || '', items_json || null,
-    total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, req.params.id);
+    total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null, req.params.id);
   res.json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(req.params.id));
 });
 
