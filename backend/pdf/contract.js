@@ -96,7 +96,8 @@ function renderContract(params) {
       <div class="party">
         <div class="role">卖方 / Seller: ${escapeHtml(supplier.name)}</div>
         <div>帐号 / Account: ${escapeHtml(supplier.accountNumber || "—")}</div>
-        <div>开户 / Bank: ${escapeHtml(supplier.bankName || "—")}${supplier.bankBranch ? " " + escapeHtml(supplier.bankBranch) : ""}</div>
+        <div>开户 / Bank: ${escapeHtml(supplier.bankName || "—")}</div>
+        ${supplier.bankBranch ? `<div>行号 / Bank Code: ${escapeHtml(supplier.bankBranch)}</div>` : ""}
         ${supplier.contactName ? `<div>联系人 / Attn: ${escapeHtml(supplier.contactName)} ${escapeHtml(supplier.phone || "")}</div>` : ""}
         <div class="sign-line">签名 / 公司盖章 &nbsp;&nbsp;&nbsp;&nbsp; 日期:</div>
       </div>

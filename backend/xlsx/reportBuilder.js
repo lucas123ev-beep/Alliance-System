@@ -59,7 +59,13 @@ function addDaysToDate(baseDateStr, days) {
 // same as the reference report's Order No. column.
 function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows }) {
   const sheet = workbook.addWorksheet(sheetName, {
-    views: [{ state: "frozen", ySplit: 3, showGridLines: false }],
+    // Without an explicit activeCell, Excel defaults the "selected cell" to
+    // A1 — which is the merged title cell (A1:I1) — and draws its green
+    // selection outline around that entire merged block, reading as a
+    // stray box sitting on top of the letterhead every time the file is
+    // opened. Pointing the active/top-left cell at the first real data row
+    // instead (below the frozen header) keeps that highlight out of view.
+    views: [{ state: "frozen", ySplit: 3, showGridLines: false, topLeftCell: "A4", activeCell: "A4" }],
   });
 
   sheet.columns = columns.map(c => ({ key: c.key, width: c.width || 16 }));
