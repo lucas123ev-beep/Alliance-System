@@ -17,11 +17,11 @@ const { currencyLabel } = require("../pdf/helpers");
 // otherwise no fill colors or cell borders anywhere) instead of the boxed
 // PDF-style banner this used to have — that read as a totally different
 // document family instead of "the same report they already know."
+// One single rule style used everywhere a horizontal line appears on the
+// sheet — the title's underline, the column-header underline, and the line
+// under every data row all need to read as the same weight, not have the
+// header rule look bold/black while the row-separator lines look fainter.
 const HEADER_RULE = { style: "medium", color: { argb: "FF000000" } };
-// Same weight/color for the column-header underline and for the rule under
-// every single data row — one consistent "line per item" running the full
-// width of the table, not just a faint line under the header.
-const ROW_RULE = { style: "thin", color: { argb: "FF444444" } };
 
 // Turns a "YYYY-MM-DD" (or any parseable) date string into a real JS Date
 // for Excel — lets the user sort/filter by date naturally in Excel instead
@@ -81,15 +81,15 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows })
   // Row 2: thin spacer between the letterhead and the column headers.
   sheet.getRow(2).height = 6;
 
-  // Row 3: column headers — bold, no fill, just a thin rule under them —
-  // this is what the autofilter/freeze anchor to.
+  // Row 3: column headers — bold, no fill, same rule weight as the title's
+  // underline above it — this is what the autofilter/freeze anchor to.
   const headerRow = sheet.getRow(3);
   headerRow.height = 18;
   columns.forEach((c, i) => {
     const cell = headerRow.getCell(i + 1);
     cell.value = c.header;
     cell.font = { bold: true, size: 10 };
-    cell.border = { bottom: ROW_RULE };
+    cell.border = { bottom: HEADER_RULE };
     cell.alignment = { vertical: "middle" };
   });
   if (subtitle) sheet.getCell(3, columns.length).note = subtitle;
@@ -102,10 +102,9 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows })
       if (c.type === "money") cell.numFmt = "#,##0.00";
       if (c.type === "number") cell.numFmt = "#,##0.##";
       cell.alignment = { vertical: "top", wrapText: true };
-      // Every item gets the same rule under it as the header row, so each
-      // row reads as its own line instead of the table trailing off into
-      // blank space — matching the reference sheet's one-line-per-item look.
-      cell.border = { bottom: ROW_RULE };
+      // Every item gets the exact same rule as the header row above it —
+      // no lighter/fainter line further down the table.
+      cell.border = { bottom: HEADER_RULE };
       // First column (e.g. Order/Contract/Invoice Number) bold, matching
       // the reference report's bolded Order No. column.
       if (i === 0) cell.font = { bold: true };
