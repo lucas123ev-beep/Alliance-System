@@ -1,6 +1,6 @@
 // Full cross-module Excel report — one workbook covering every tracking
 // screen (Quotations, Proformas, Orders, Commercial Invoices, Contracts,
-// Inspections, Supplier Flow, Samples, Packing Lists), each split into two
+// Inspections, Supplier Flow, Samples, Shipment), each split into two
 // sheets: everything still open/pending first, everything already
 // completed/closed second. Filtered from a given "since" date (on each
 // table's own created_at) through today.
@@ -35,6 +35,20 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+// Adds a day-count (e.g. orders.production_lead_time) onto a base date to
+// turn a duration into an actual target date, matching how the client's own
+// reference spreadsheet shows "Production Lead Time" as a calendar date
+// rather than a number of days.
+function addDaysToDate(baseDateStr, days) {
+  const base = toExcelDate(baseDateStr);
+  if (!base || days === null || days === undefined || days === "") return null;
+  const n = Number(days);
+  if (!Number.isFinite(n)) return null;
+  const result = new Date(base.getTime());
+  result.setDate(result.getDate() + n);
+  return result;
+}
+
 // Adds one sheet: small logo top-left + big bold title right-aligned (row
 // 1, no fill), a black rule closing off that header block, then a plain
 // bold column-header row (row 3, no fill either) with the Excel autofilter
@@ -42,14 +56,14 @@ function toNumber(value) {
 // same as the reference report's Order No. column.
 function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows }) {
   const sheet = workbook.addWorksheet(sheetName, {
-    views: [{ state: "frozen", ySplit: 3 }],
+    views: [{ state: "frozen", ySplit: 3, showGridLines: false }],
   });
 
   sheet.columns = columns.map(c => ({ key: c.key, width: c.width || 16 }));
 
   // Row 1: logo (floating, doesn't touch cell content) + right-aligned title.
   const titleRow = sheet.getRow(1);
-  titleRow.height = 30;
+  titleRow.height = 34;
   sheet.mergeCells(1, 1, 1, columns.length);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = title;
@@ -59,7 +73,7 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows })
   for (let col = 2; col <= columns.length; col++) sheet.getCell(1, col).border = { bottom: HEADER_RULE };
 
   const imageId = workbook.addImage({ base64: LOGO, extension: "png" });
-  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.15 }, ext: { width: 85, height: 19 } });
+  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.15 }, ext: { width: 130, height: 29 } });
 
   // Row 2: thin spacer between the letterhead and the column headers.
   sheet.getRow(2).height = 6;
@@ -373,42 +387,52 @@ function buildFullReportWorkbook(db, since, selectedCategories) {
     }),
   });
 
-  // ─── Packing Lists ─────────────────────────────────────────────────────
-  // packing_lists.status is never actually used by the UI (always stuck at
-  // "Draft"), so open/completed is based on the linked Order's own status
-  // instead — the Order Status column shows exactly why each row landed on
-  // whichever sheet it did.
-  if (include("packing-list")) addCategorySheets(workbook, {
-    label: "Packing List",
+  // ─── Shipment ──────────────────────────────────────────────────────────
+  // Mirrors the client's own "ORDER SHIPMENT" tracking sheet column-for-
+  // column (Order No./Importer/Proforma Date/Product Name/Loading Port/
+  // Production Lead Time/Loading Date/Shipping Date/Remark), built off
+  // Orders rather than packing_lists — packing_lists.status is unused, and
+  // the reference sheet's fields line up with Order + its latest Proforma.
+  //
+  // Two fields don't have a clean 1:1 real column and are approximated:
+  //  - Production Lead Time is stored as a day-count (orders.production_
+  //    lead_time), not a date, so it's shown as Proforma Date + that many
+  //    days, matching how the reference sheet displays an actual date here.
+  //  - Loading Date has no matching field anywhere in the system (only one
+  //    shipment-out date, orders.shipment_date, is tracked, and that's used
+  //    for Shipping Date) — left blank rather than guessed.
+  if (include("shipment")) addCategorySheets(workbook, {
+    label: "Shipment",
     since,
     rawRows: db.prepare(`
-      SELECT pl.*, o.order_number AS order_number, o.client AS order_client, o.status AS order_status,
-        o.shipment_date AS shipment_date, o.arrival_date AS arrival_date
-      FROM packing_lists pl LEFT JOIN orders o ON o.id = pl.order_id
-      WHERE pl.created_at >= ? ORDER BY pl.created_at DESC
+      SELECT o.*,
+        (SELECT p.issue_date FROM proformas p WHERE p.order_id = o.id ORDER BY p.created_at DESC LIMIT 1) AS proforma_date,
+        (SELECT GROUP_CONCAT(DISTINCT oi.product_name) FROM order_items oi WHERE oi.order_id = o.id) AS product_names
+      FROM orders o
+      WHERE o.created_at >= ? ORDER BY o.created_at DESC
     `).all(sinceValue),
-    isDone: r => r.order_status === "Completed",
+    isDone: r => r.status === "Completed",
     columns: [
-      { key: "number", header: "Number", width: 22 },
-      { key: "order_number", header: "Order Number", width: 18 },
-      { key: "client", header: "Client", width: 26 },
-      { key: "order_status", header: "Order Status", width: 16 },
-      { key: "date", header: "Date", width: 14, type: "date" },
-      { key: "shipment_date", header: "Shipment Date", width: 14, type: "date" },
-      { key: "arrival_date", header: "Arrival Date", width: 14, type: "date" },
-      { key: "total_roll", header: "Total Roll", width: 12, type: "number" },
-      { key: "total_gross_weight", header: "Gross Weight (kg)", width: 16, type: "number" },
-      { key: "total_net_weight", header: "Net Weight (kg)", width: 16, type: "number" },
-      { key: "total_cbm", header: "CBM", width: 12, type: "number" },
-      { key: "created_at", header: "Created At", width: 14, type: "date" },
+      { key: "order_number", header: "ORDER NO.", width: 16 },
+      { key: "client", header: "IMPORTER", width: 20 },
+      { key: "proforma_date", header: "PROFORMA DATE", width: 14, type: "date" },
+      { key: "product_name", header: "PRODUCT NAME", width: 26 },
+      { key: "loading_port", header: "LOADING PORT", width: 18 },
+      { key: "production_lead_time", header: "PRODUCTION LEAD TIME", width: 16, type: "date" },
+      { key: "loading_date", header: "LOADING DATE", width: 14, type: "date" },
+      { key: "shipping_date", header: "SHIPPING DATE", width: 14, type: "date" },
+      { key: "remark", header: "REMARK", width: 30 },
     ],
     mapRow: r => ({
       _raw: r,
-      number: r.number, order_number: r.order_number, client: r.order_client, order_status: r.order_status || "—",
-      date: toExcelDate(r.date), shipment_date: toExcelDate(r.shipment_date), arrival_date: toExcelDate(r.arrival_date),
-      total_roll: toNumber(r.total_roll), total_gross_weight: toNumber(r.total_gross_weight),
-      total_net_weight: toNumber(r.total_net_weight), total_cbm: toNumber(r.total_cbm),
-      created_at: toExcelDate(r.created_at),
+      order_number: r.order_number, client: r.client,
+      proforma_date: toExcelDate(r.proforma_date),
+      product_name: r.product_names || r.product || "—",
+      loading_port: r.port_of_loading,
+      production_lead_time: addDaysToDate(r.proforma_date, r.production_lead_time),
+      loading_date: null,
+      shipping_date: toExcelDate(r.shipment_date),
+      remark: r.notes,
     }),
   });
 
@@ -427,7 +451,7 @@ const CATEGORIES = [
   { key: "inspections", label: "Inspections" },
   { key: "supplier-flow", label: "Supplier Flow" },
   { key: "samples", label: "Samples" },
-  { key: "packing-list", label: "Packing List" },
+  { key: "shipment", label: "Shipment" },
 ];
 
 module.exports = { buildFullReportWorkbook, CATEGORIES };
