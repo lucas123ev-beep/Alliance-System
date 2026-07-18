@@ -19,6 +19,54 @@ const fmt = (n, cur = "USD") => {
 
 const fmtDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-US") : "—");
 
+// ─── INPUT MASKS ────────────────────────────────────────────────────────────
+// Auto-format the punctuation into these fields as the person types (instead
+// of requiring them to type the dots/dashes/slashes/parentheses themselves),
+// matching how CEP, CNPJ and phone numbers are always displayed in Brazil.
+// Clients/suppliers here aren't all Brazilian, though (Chinese suppliers,
+// importers elsewhere), so every mask backs off and returns the text
+// untouched — instead of silently mangling it — the moment it looks like it
+// isn't a Brazilian-format value: contains letters (many countries' postal
+// codes and tax IDs are alphanumeric), starts with "+" (international phone
+// prefix), or already has more digits than the Brazilian format ever has.
+
+// 00000-000
+const maskCEP = (v) => {
+  const raw = v || "";
+  if (/[a-zA-Z]/.test(raw)) return raw;
+  const d = raw.replace(/\D/g, "");
+  if (d.length > 8) return raw;
+  return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+};
+
+// 00.000.000/0000-00
+const maskCNPJ = (v) => {
+  const raw = v || "";
+  if (/[a-zA-Z]/.test(raw)) return raw;
+  const d = raw.replace(/\D/g, "");
+  if (d.length > 14) return raw;
+  if (d.length > 12) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+  if (d.length > 8) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8)}`;
+  if (d.length > 5) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5)}`;
+  if (d.length > 2) return `${d.slice(0, 2)}.${d.slice(2)}`;
+  return d;
+};
+
+// (00) 00000-0000 — also degrades correctly for an 8-digit landline
+// ((00) 0000-0000) since the split point depends on the digit count typed
+// so far, not a fixed mobile-only pattern.
+const maskPhone = (v) => {
+  const raw = v || "";
+  if (raw.trim().startsWith("+")) return raw;
+  const d = raw.replace(/\D/g, "");
+  if (d.length > 11) return raw;
+  if (d.length > 10) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length > 6) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  if (d.length > 2) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length > 0) return `(${d}`;
+  return d;
+};
+
 // The two Alliance Global trading entities used to issue Proformas, Commercial
 // Invoices and Packing Lists. Since the business is a trader, the "Manufacturer"
 // shown on client-facing documents is always one of these — never the real
@@ -163,7 +211,7 @@ const rollVolumeM3 = (product) => {
 };
 
 // The registered per-meter sale price on the product record — the 0%
-// reference point the item's Markup % is measured against.
+// reference point the item's Margin % is measured against.
 const registeredPerMeter = (product) => {
   const v = product ? parseFloat(product.sale_per_meter) : NaN;
   return Number.isFinite(v) && v > 0 ? v : null;
@@ -244,7 +292,7 @@ function recalcTextileItem(item, product, field, rawValue) {
 }
 
 // The registered flat sale price on the product record — the 0% reference
-// point for Markup % on every non-Textile/non-Chemical category (machines,
+// point for Margin % on every non-Textile/non-Chemical category (machines,
 // accessories, etc.), mirroring registeredPerMeter()/registeredPerLiter().
 const registeredUnitPrice = (product) => {
   const v = product ? parseFloat(product.sale_price) : NaN;
@@ -309,41 +357,76 @@ const volumeLOf = (product) => {
 };
 
 // The registered per-liter sale price on the product record — the 0%
-// reference point Markup % is measured against for Chemical/liquid items.
+// reference point Margin % is measured against for Chemical/liquid items.
 const registeredPerLiter = (product) => {
   const v = product ? parseFloat(product.sale_per_liter) : NaN;
   return Number.isFinite(v) && v > 0 ? v : null;
 };
 
+// Converts a product's registered `weight` (already used elsewhere to
+// compute an item's Total Weight in kg) into kg regardless of the unit it
+// was entered in — g/m and g/m² are Textile-only per-length weight units
+// and don't apply here, so they fall through to the plain kg branch same as
+// an unset unit would.
+const weightKgOf = (product) => {
+  if (!product) return 0;
+  const v = parseFloat(product.weight) || 0;
+  const wu = product.weight_unit || "kg";
+  if (wu === "g") return v / 1000;
+  if (wu === "lb") return v * 0.453592;
+  if (wu === "oz") return v * 0.0283495;
+  return v; // kg
+};
+
+// Tons per package — the Chemical/liquid-goods equivalent of volumeLOf(),
+// used when a product is priced by the ton instead of by the liter (bulk
+// chemicals are commonly quoted by weight, not drum volume). Reuses the
+// same registered Weight field every category already fills in for Total
+// Weight, so no separate "tons per package" field is needed.
+const tonsOf = (product) => weightKgOf(product) / 1000;
+
+// The registered per-ton sale price on the product record — the 0%
+// reference point Margin % is measured against for Chemical items priced by
+// the ton (see registeredPerLiter for the per-liter equivalent).
+const registeredPerTon = (product) => {
+  const v = product ? parseFloat(product.sale_per_ton) : NaN;
+  return Number.isFinite(v) && v > 0 ? v : null;
+};
+
 // Liquid-goods (Chemical category — sold in drums/barrels) equivalent of
-// recalcTextileItem: two-way Markup % / Value-per-Liter / Total, converting
-// through the product's registered drum volume.
+// recalcTextileItem: two-way Margin % / Value-per-X / Total, converting
+// through the product's registered drum volume (or, when this item is
+// priced by the ton instead, its registered weight per package — see
+// item.price_basis). rateKey switches between sale_per_liter and
+// sale_per_ton so the two bases never collide in the same item.
 function recalcLiquidItem(item, product, field, rawValue) {
-  const volumeL = volumeLOf(product);
+  const isTon = item.price_basis === "ton";
+  const rateKey = isTon ? "sale_per_ton" : "sale_per_liter";
+  const perPackage = isTon ? tonsOf(product) : volumeLOf(product);
   const qty = parseFloat(item.quantity) || 0;
-  const base = registeredPerLiter(product);
+  const base = isTon ? registeredPerTon(product) : registeredPerLiter(product);
 
   if (field === "sale_pct") {
     const pct = parseLocaleNumber(rawValue);
-    const spl = base != null && pct != null ? base * (1 + pct / 100) : null;
-    const unitPrice = spl != null && volumeL ? spl * volumeL : null;
+    const rate = base != null && pct != null ? base * (1 + pct / 100) : null;
+    const unitPrice = rate != null && perPackage ? rate * perPackage : null;
     const total = unitPrice != null && qty ? unitPrice * qty : null;
     return {
       ...item,
       sale_pct: rawValue,
-      sale_per_liter: spl != null ? spl.toFixed(2) : item.sale_per_liter,
+      [rateKey]: rate != null ? rate.toFixed(2) : item[rateKey],
       unit_price: unitPrice != null ? unitPrice.toFixed(2) : item.unit_price,
       total: total != null ? total.toFixed(2) : item.total,
     };
   }
-  if (field === "sale_per_liter") {
-    const spl = parseLocaleNumber(rawValue);
-    const unitPrice = spl != null && volumeL ? spl * volumeL : null;
+  if (field === rateKey) {
+    const rate = parseLocaleNumber(rawValue);
+    const unitPrice = rate != null && perPackage ? rate * perPackage : null;
     const total = unitPrice != null && qty ? unitPrice * qty : null;
-    const pct = base != null && spl != null ? ((spl / base) - 1) * 100 : null;
+    const pct = base != null && rate != null ? ((rate / base) - 1) * 100 : null;
     return {
       ...item,
-      sale_per_liter: rawValue,
+      [rateKey]: rawValue,
       unit_price: unitPrice != null ? unitPrice.toFixed(2) : item.unit_price,
       total: total != null ? total.toFixed(2) : item.total,
       sale_pct: pct != null ? pct.toFixed(2) : item.sale_pct,
@@ -352,13 +435,13 @@ function recalcLiquidItem(item, product, field, rawValue) {
   if (field === "total") {
     const total = parseLocaleNumber(rawValue);
     const price = total != null && qty ? total / qty : null;
-    const spl = price != null && volumeL ? price / volumeL : null;
-    const pct = base != null && spl != null ? ((spl / base) - 1) * 100 : null;
+    const rate = price != null && perPackage ? price / perPackage : null;
+    const pct = base != null && rate != null ? ((rate / base) - 1) * 100 : null;
     return {
       ...item,
       total: rawValue,
       unit_price: price != null ? price.toFixed(4) : item.unit_price,
-      sale_per_liter: spl != null ? spl.toFixed(2) : item.sale_per_liter,
+      [rateKey]: rate != null ? rate.toFixed(2) : item[rateKey],
       sale_pct: pct != null ? pct.toFixed(2) : item.sale_pct,
     };
   }
@@ -387,7 +470,7 @@ const targetPriceUnitSuffix = (item) => {
   return "";
 };
 
-// Shared inline Markup %/Value-per-X/Total editor for a single item row —
+// Shared inline Margin %/Value-per-X/Total editor for a single item row —
 // used by both QuotationForm and OrderForm. Add Product only ever holds
 // cost data, so this is the one place a sale price actually gets set; it
 // needs to exist in the Order screen too (not just Quotation), since a
@@ -397,6 +480,8 @@ const targetPriceUnitSuffix = (item) => {
 function PricingRow({ item, product, currency, onChange }) {
   const isTextile = item.category === "Textile" || item.category === "DTF Film";
   const isLiquid = item.category === "Chemical";
+  const isTon = isLiquid && item.price_basis === "ton";
+  const rateKey = isTon ? "sale_per_ton" : "sale_per_liter";
   const onPriceField = (field) => (e) => onChange(recalcTextileItem(item, product, field, e.target.value));
   const onLiquidField = (field) => (e) => onChange(recalcLiquidItem(item, product, field, e.target.value));
   const onSimpleField = (field) => (e) => onChange(recalcSimpleItem(item, product, field, e.target.value));
@@ -404,7 +489,7 @@ function PricingRow({ item, product, currency, onChange }) {
   const totalHandler = isTextile ? onPriceField("total") : isLiquid ? onLiquidField("total") : onSimpleField("total");
   return (
     <div style={{ display: "flex", gap: "12px", alignItems: "flex-end", marginTop: "8px", flexWrap: "wrap" }}>
-      <label style={{ fontSize: "11px", color: "#64748b" }}>Markup %
+      <label style={{ fontSize: "11px", color: "#64748b" }}>Margin %
         <input type="text" inputMode="decimal" value={item.sale_pct ?? ""} onChange={pctHandler}
           placeholder="0" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "70px" }} />
       </label>
@@ -426,8 +511,13 @@ function PricingRow({ item, product, currency, onChange }) {
           </label>
         </>
       ) : isLiquid ? (
-        <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Liter ({currencyLabel(currency)})
-          <input type="text" inputMode="decimal" value={item.sale_per_liter ?? ""} onChange={onLiquidField("sale_per_liter")}
+        // Value / Liter or Value / Ton depending on how this Chemical item
+        // is priced (item.price_basis, inherited from the product when it
+        // was added) — the two rates are kept in separate fields
+        // (sale_per_liter / sale_per_ton) so switching a product's basis
+        // later doesn't silently reinterpret an old item's registered rate.
+        <label style={{ fontSize: "11px", color: "#64748b" }}>Value / {isTon ? "Ton" : "Liter"} ({currencyLabel(currency)})
+          <input type="text" inputMode="decimal" value={item[rateKey] ?? ""} onChange={onLiquidField(rateKey)}
             placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
         </label>
       ) : (
@@ -497,6 +587,13 @@ const PAYMENT_SCHEDULES = {
   "20/80": { label: "20% Deposit / 80% Balance", parts: [{ pct: 20, label: "Deposit" }, { pct: 80, label: "Balance" }] },
   "30/70": { label: "30% Deposit / 70% Balance", parts: [{ pct: 30, label: "Deposit" }, { pct: 70, label: "Balance" }] },
   "50/50": { label: "50% / 50%", parts: [{ pct: 50, label: "1st Payment" }, { pct: 50, label: "2nd Payment" }] },
+  // TT deposit against the rest due once the goods are on the Bill of
+  // Lading — a common trade-finance term distinct from the generic
+  // "Deposit / Balance" presets above (which don't say how each part is
+  // actually settled). Each part's label feeds straight into the Payment
+  // Notice PDF's purpose line (see the payment-notice-pdf route).
+  "20TT/BL": { label: "20% TT / Balance Against BL", parts: [{ pct: 20, label: "TT" }, { pct: 80, label: "Balance Against BL" }] },
+  "30TT/BL": { label: "30% TT / Balance Against BL", parts: [{ pct: 30, label: "TT" }, { pct: 70, label: "Balance Against BL" }] },
 };
 
 // For Textile / DTF Film items, the roll price is derived from a per-meter
@@ -1013,18 +1110,24 @@ const selectProduct = (p) => {
 
   const isTextile = p.category === "Textile" || p.category === "DTF Film";
   const isLiquid = p.category === "Chemical";
+  const isTon = isLiquid && p.price_basis === "ton";
   const h = parseFloat(p.height) || 0;
   const heightM = p.height_unit === "cm" ? h * 0.01 : p.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(p);
+  const tons = tonsOf(p);
 
   const salePrice = isTextile && p.sale_per_meter && heightM
     ? (parseFloat(p.sale_per_meter) * heightM).toFixed(2)
+    : isTon && p.sale_per_ton && tons
+    ? (parseFloat(p.sale_per_ton) * tons).toFixed(2)
     : isLiquid && p.sale_per_liter && volL
     ? (parseFloat(p.sale_per_liter) * volL).toFixed(2)
     : p.sale_price || p.unit_cost || "";
 
   const costPrice = isTextile && p.cost_per_meter && heightM
     ? (parseFloat(p.cost_per_meter) * heightM).toFixed(2)
+    : isTon && p.cost_per_ton && tons
+    ? (parseFloat(p.cost_per_ton) * tons).toFixed(2)
     : isLiquid && p.cost_per_liter && volL
     ? (parseFloat(p.cost_per_liter) * volL).toFixed(2)
     : p.unit_cost || "";
@@ -1046,8 +1149,14 @@ const selectProduct = (p) => {
     cost_per_meter: isTextile ? (p.cost_per_meter || null) : null,
     sale_per_liter: isLiquid ? (p.sale_per_liter || null) : null,
     cost_per_liter: isLiquid ? (p.cost_per_liter || null) : null,
-    // Markup % now applies to every category, not just Textile/DTF — and
-    // starts from whatever default markup is registered on the product
+    // Which rate basis this item was priced under — carried onto the item
+    // itself (not just read from the product) so it keeps rendering
+    // correctly even if the product's own Price Basis is changed later.
+    price_basis: isLiquid ? (p.price_basis || "liter") : null,
+    sale_per_ton: isTon ? (p.sale_per_ton || null) : null,
+    cost_per_ton: isTon ? (p.cost_per_ton || null) : null,
+    // Margin % now applies to every category, not just Textile/DTF — and
+    // starts from whatever default margin is registered on the product
     // itself (instead of always 0), since it's usually the same standard
     // margin reused quote after quote.
     sale_pct: p.sale_pct != null && p.sale_pct !== "" ? String(p.sale_pct) : "0",
@@ -1350,7 +1459,7 @@ useEffect(() => {
         </Field>
         <Field label="Currency" half>
           <Select value={f.currency} onChange={set("currency")}>
-            <option>USD</option><option>EUR</option><option>BRL</option><option value="CNY">RMB</option>
+            <option>USD</option><option>EUR</option><option>BRL</option><option value="CNY">RMB</option><option value="HKD">HKD</option>
           </Select>
         </Field>
         <Field label="Prod. Lead Time (days)" half>
@@ -1443,6 +1552,15 @@ const [f, setF] = useState(initial || {
   sale_price: "", sale_currency: "USD", sale_pct: "",
   cost_per_meter: "", sale_per_meter: "",
   cost_per_liter: "", sale_per_liter: "",
+  // Chemical goods can be priced by the liter (drum volume, the original
+  // behavior) or by the ton (gross weight) — some suppliers quote bulk
+  // chemicals by weight instead of volume. price_basis picks which of the
+  // two rate fields below is the one actually driving Cost/Sale Price.
+  price_basis: "liter",
+  cost_per_ton: "", sale_per_ton: "",
+  // Informational only — not used in any pricing calculation, just a
+  // reference note shown next to Margin % for whoever's pricing the item.
+  vat_pct: "",
   category: "", supplier: "",
 });
   const [suppliers, setSuppliers] = useState([]);
@@ -1499,22 +1617,25 @@ const handleCostChange = (e) => {
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(f);
+  const tons = tonsOf(f);
   const cpm = heightM > 0 ? (cost / heightM).toFixed(4) : f.cost_per_meter;
   const cpl = volL > 0 ? (cost / volL).toFixed(4) : f.cost_per_liter;
+  const cpt = tons > 0 ? (cost / tons).toFixed(4) : f.cost_per_ton;
   setF((p) => ({
     ...p, unit_cost: e.target.value,
     cost_per_meter: heightM > 0 ? cpm : p.cost_per_meter,
     cost_per_liter: volL > 0 ? cpl : p.cost_per_liter,
+    cost_per_ton: tons > 0 ? cpt : p.cost_per_ton,
   }));
 };
 
-  // Markup % used to be measured against Cost Price (sale_pct = ((sale/cost)
+  // Margin % used to be measured against Cost Price (sale_pct = ((sale/cost)
   // - 1) * 100), which produced confusing/negative values whenever cost
   // wasn't filled in yet or was in a different currency than the sale price.
   // It's now a one-way "bump the sale price by X%" action with no relation
   // to cost at all — it takes whatever Sale Price was set when the field was
   // focused (markupBaseRef, snapshotted below) and adds the percentage on
-  // top of that, same direction as the Quotation/Order screens' Markup %
+  // top of that, same direction as the Quotation/Order screens' Margin %
   // (which is likewise always measured against a sale price, never cost).
   const markupBaseRef = useRef(null);
 
@@ -1523,12 +1644,15 @@ const handleCostChange = (e) => {
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(f);
+  const tons = tonsOf(f);
   const spm = heightM > 0 ? (sale / heightM).toFixed(4) : f.sale_per_meter;
   const spl = volL > 0 ? (sale / volL).toFixed(4) : f.sale_per_liter;
+  const spt = tons > 0 ? (sale / tons).toFixed(4) : f.sale_per_ton;
   setF((p) => ({
     ...p, sale_price: e.target.value,
     sale_per_meter: heightM > 0 ? spm : p.sale_per_meter,
     sale_per_liter: volL > 0 ? spl : p.sale_per_liter,
+    sale_per_ton: tons > 0 ? spt : p.sale_per_ton,
   }));
 };
 
@@ -1545,11 +1669,13 @@ const handleSalePctChange = (e) => {
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(f);
+  const tons = tonsOf(f);
   setF((p) => ({
     ...p, sale_pct: pctStr,
     sale_price: canCalc ? sale.toFixed(2) : p.sale_price,
     sale_per_meter: canCalc && heightM > 0 ? (sale / heightM).toFixed(4) : p.sale_per_meter,
     sale_per_liter: canCalc && volL > 0 ? (sale / volL).toFixed(4) : p.sale_per_liter,
+    sale_per_ton: canCalc && tons > 0 ? (sale / tons).toFixed(4) : p.sale_per_ton,
   }));
 };
 
@@ -1579,6 +1705,23 @@ const handleCostPerLiterChange = (e) => {
   setF((p) => ({ ...p, cost_per_liter: e.target.value, unit_cost: volL > 0 ? unit_cost : p.unit_cost }));
 };
 
+const handleCostPerTonChange = (e) => {
+  const cpt = parseFloat(e.target.value) || 0;
+  const tons = tonsOf(f);
+  const unit_cost = (cpt * tons).toFixed(2);
+  setF((p) => ({ ...p, cost_per_ton: e.target.value, unit_cost: tons > 0 ? unit_cost : p.unit_cost }));
+};
+
+const handleSalePerTonChange = (e) => {
+  const spt = parseFloat(e.target.value) || 0;
+  const tons = tonsOf(f);
+  const sale_price = (spt * tons).toFixed(2);
+  setF((p) => ({
+    ...p, sale_per_ton: e.target.value,
+    sale_price: tons > 0 ? sale_price : p.sale_price,
+  }));
+};
+
 const handleSalePerLiterChange = (e) => {
   const spl = parseFloat(e.target.value) || 0;
   const volL = volumeLOf(f);
@@ -1589,7 +1732,7 @@ const handleSalePerLiterChange = (e) => {
   }));
 };
 
-  const currencies = ["USD", "BRL", "CNY", "EUR", "GBP", "JPY"];
+  const currencies = ["USD", "BRL", "CNY", "EUR", "GBP", "JPY", "HKD"];
 
   const dropdownStyle = {
     position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
@@ -1726,6 +1869,20 @@ const handleSalePerLiterChange = (e) => {
   </Field>
 )}
 
+{f.category === "Chemical" && (
+  // Which of the two rate fields below (Cost/Sale per Liter or per Ton)
+  // actually drives Cost/Sale Price — some bulk chemicals are quoted by
+  // weight instead of drum volume. Uses the Weight field above (already
+  // filled in for every category's Total Weight calc) as tons/package,
+  // same way Volume above is used as liters/package.
+  <Field label="Price Basis">
+    <Select value={f.price_basis || "liter"} onChange={set("price_basis")}>
+      <option value="liter">Per Liter (uses Volume)</option>
+      <option value="ton">Per Ton (uses Weight)</option>
+    </Select>
+  </Field>
+)}
+
 {/* Cost and Sale fields laid out as two explicit columns (their own grid,
     spanning the full width of the outer form grid) so "Cost X" always sits
     on the left and "Sale X" always sits on the right, regardless of which
@@ -1742,9 +1899,14 @@ const handleSalePerLiterChange = (e) => {
         <Input type="number" value={f.cost_per_meter || ""} onChange={handleCostPerMeterChange} placeholder="0.00" />
       </Field>
     )}
-    {f.category === "Chemical" && (
+    {f.category === "Chemical" && (f.price_basis || "liter") === "liter" && (
       <Field label="Cost per Liter">
         <Input type="number" value={f.cost_per_liter || ""} onChange={handleCostPerLiterChange} placeholder="0.00" />
+      </Field>
+    )}
+    {f.category === "Chemical" && f.price_basis === "ton" && (
+      <Field label="Cost per Ton">
+        <Input type="number" value={f.cost_per_ton || ""} onChange={handleCostPerTonChange} placeholder="0.00" />
       </Field>
     )}
     <Field label="Cost Price">
@@ -1762,18 +1924,33 @@ const handleSalePerLiterChange = (e) => {
         <Input type="number" value={f.sale_per_meter || ""} onChange={handleSalePerMeterChange} placeholder="0.00" />
       </Field>
     )}
-    {f.category === "Chemical" && (
+    {f.category === "Chemical" && (f.price_basis || "liter") === "liter" && (
       <Field label="Sale per Liter">
         <Input type="number" value={f.sale_per_liter || ""} onChange={handleSalePerLiterChange} placeholder="0.00" />
+      </Field>
+    )}
+    {f.category === "Chemical" && f.price_basis === "ton" && (
+      <Field label="Sale per Ton">
+        <Input type="number" value={f.sale_per_ton || ""} onChange={handleSalePerTonChange} placeholder="0.00" />
       </Field>
     )}
     <Field label="Sale Price">
       <Input type="number" value={f.sale_price || ""} onChange={handleSalePriceChange} placeholder="0.00" />
     </Field>
-    <Field label="Markup %">
-      <Input type="number" value={f.sale_pct || ""} onFocus={handleMarkupFocus} onChange={handleSalePctChange} placeholder="e.g. 15" />
-      <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>Adds this % on top of the Sale Price — not calculated from Cost.</div>
-    </Field>
+    <div style={{ display: "flex", gap: "16px" }}>
+      <div style={{ flex: 1 }}>
+        <Field label="Margin %">
+          <Input type="number" value={f.sale_pct || ""} onFocus={handleMarkupFocus} onChange={handleSalePctChange} placeholder="e.g. 15" />
+          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>Adds this % on top of the Sale Price — not calculated from Cost.</div>
+        </Field>
+      </div>
+      <div style={{ flex: 1 }}>
+        <Field label="VAT %">
+          <Input type="number" value={f.vat_pct || ""} onChange={set("vat_pct")} placeholder="e.g. 13" />
+          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>Informational only — not used in any calculation.</div>
+        </Field>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -2115,7 +2292,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
     setF(p => ({ ...p, currency: cur }));
     setItems(prev => prev.map(i => ({ ...i, currency: cur })));
   }}>
-    {["USD","EUR","BRL","CNY"].map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
+    {["USD","EUR","BRL","CNY","HKD"].map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
   </Select>
 </Field>
       <Field label="Status" half>
@@ -2283,7 +2460,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
       <Field label="Amount" half><Input type="number" value={f.amount} onChange={set("amount")} /></Field>
       <Field label="Currency" half>
         <Select value={f.currency} onChange={set("currency")}>
-          <option>USD</option><option>EUR</option><option>BRL</option><option value="CNY">RMB</option>
+          <option>USD</option><option>EUR</option><option>BRL</option><option value="CNY">RMB</option><option value="HKD">HKD</option>
         </Select>
       </Field>
       <Field label="Due Date" half><Input type="date" value={f.due_date} onChange={set("due_date")} /></Field>
@@ -2513,7 +2690,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
     setF(p => ({ ...p, currency: cur }));
     setItems(prev => prev.map(i => ({ ...i, currency: cur })));
   }}>
-    {["USD","EUR","BRL","CNY"].map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
+    {["USD","EUR","BRL","CNY","HKD"].map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
   </Select>
 </Field>
 <Field label="Specifications"><Textarea value={f.specifications || ""} onChange={set("specifications")} /></Field>
@@ -2568,7 +2745,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
           <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
           <Btn onClick={async () => {
             // Normalize any BR-formatted text ("1.000,00") typed into the
-            // inline Markup %/Value-per-Meter/Total fields into plain
+            // inline Margin %/Value-per-Meter/Total fields into plain
             // numbers before saving, so downstream displays (which use
             // parseFloat) stay correct.
             const cleanedItems = items.map(item => ({
@@ -2577,6 +2754,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
               unit_price: item.unit_price !== "" && item.unit_price != null ? (parseLocaleNumber(item.unit_price) ?? item.unit_price) : item.unit_price,
               sale_per_meter: item.sale_per_meter !== "" && item.sale_per_meter != null ? (parseLocaleNumber(item.sale_per_meter) ?? item.sale_per_meter) : item.sale_per_meter,
               sale_per_liter: item.sale_per_liter !== "" && item.sale_per_liter != null ? (parseLocaleNumber(item.sale_per_liter) ?? item.sale_per_liter) : item.sale_per_liter,
+              sale_per_ton: item.sale_per_ton !== "" && item.sale_per_ton != null ? (parseLocaleNumber(item.sale_per_ton) ?? item.sale_per_ton) : item.sale_per_ton,
               sale_pct: item.sale_pct !== "" && item.sale_pct != null ? (parseLocaleNumber(item.sale_pct) ?? item.sale_pct) : item.sale_pct,
               target_price: item.target_price !== "" && item.target_price != null ? (parseLocaleNumber(item.target_price) ?? item.target_price) : item.target_price,
             }));
@@ -4001,7 +4179,7 @@ function ClientForm({ initial, onSave, onClose }) {
       <Field label="Company Name"><Input value={f.company_name} onChange={set("company_name")} /></Field>
       <Field label="Contact Name" half><Input value={f.contact_name} onChange={set("contact_name")} /></Field>
       <Field label="Email" half><Input type="email" value={f.email} onChange={set("email")} /></Field>
-      <Field label="Phone" half><Input value={f.phone} onChange={set("phone")} /></Field>
+      <Field label="Phone" half><Input value={f.phone} onChange={e => setF(p => ({ ...p, phone: maskPhone(e.target.value) }))} placeholder="(00) 00000-0000" /></Field>
       <Field label="Payment Terms" half>
         <div style={{ position: "relative" }}>
           <Input
@@ -4031,9 +4209,9 @@ function ClientForm({ initial, onSave, onClose }) {
       <Field label="Neighborhood" half><Input value={f.neighborhood} onChange={set("neighborhood")} placeholder="Bairro" /></Field>
       <Field label="City" half><Input value={f.city} onChange={set("city")} /></Field>
       <Field label="State / Province" half><Input value={f.state} onChange={set("state")} /></Field>
-      <Field label="ZIP / Postal Code" half><Input value={f.zip_code} onChange={set("zip_code")} placeholder="CEP" /></Field>
+      <Field label="ZIP / Postal Code" half><Input value={f.zip_code} onChange={e => setF(p => ({ ...p, zip_code: maskCEP(e.target.value) }))} placeholder="CEP" /></Field>
       <Field label="Country" half><Input value={f.country} onChange={set("country")} /></Field>
-      <Field label="Tax ID / CNPJ" half><Input value={f.tax_id} onChange={set("tax_id")} placeholder="For Proforma / Commercial Invoice" /></Field>
+      <Field label="Tax ID / CNPJ" half><Input value={f.tax_id} onChange={e => setF(p => ({ ...p, tax_id: maskCNPJ(e.target.value) }))} placeholder="00.000.000/0000-00" /></Field>
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
@@ -4136,7 +4314,7 @@ function SupplierForm({ initial, onSave, onClose }) {
       <Field label="Company Name"><Input value={f.company_name} onChange={set("company_name")} /></Field>
       <Field label="Contact Name" half><Input value={f.contact_name} onChange={set("contact_name")} /></Field>
       <Field label="Email" half><Input type="email" value={f.email} onChange={set("email")} /></Field>
-      <Field label="Phone" half><Input value={f.phone} onChange={set("phone")} /></Field>
+      <Field label="Phone" half><Input value={f.phone} onChange={e => setF(p => ({ ...p, phone: maskPhone(e.target.value) }))} placeholder="(00) 00000-0000" /></Field>
       <Field label="Payment Terms" half>
         <div style={{ position: "relative" }}>
           <Input
@@ -4166,7 +4344,7 @@ function SupplierForm({ initial, onSave, onClose }) {
       <Field label="Neighborhood" half><Input value={f.neighborhood} onChange={set("neighborhood")} placeholder="Bairro" /></Field>
       <Field label="City" half><Input value={f.city} onChange={set("city")} /></Field>
       <Field label="State / Province" half><Input value={f.state} onChange={set("state")} /></Field>
-      <Field label="ZIP / Postal Code" half><Input value={f.zip_code} onChange={set("zip_code")} placeholder="CEP" /></Field>
+      <Field label="ZIP / Postal Code" half><Input value={f.zip_code} onChange={e => setF(p => ({ ...p, zip_code: maskCEP(e.target.value) }))} placeholder="CEP" /></Field>
       <Field label="Country" half><Input value={f.country} onChange={set("country")} /></Field>
       <Field label="Product Types">
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>

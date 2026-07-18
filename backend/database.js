@@ -347,8 +347,8 @@ const migrations = [
   ['products', 'volume_unit', "TEXT DEFAULT 'L'"],
   ['products', 'cost_per_liter', 'REAL DEFAULT 0'],
   ['products', 'sale_per_liter', 'REAL DEFAULT 0'],
-  // Registered default markup % for this product — carried over as the
-  // starting Markup % on any Quotation item created from it (instead of
+  // Registered default margin % for this product — carried over as the
+  // starting Margin % on any Quotation item created from it (instead of
   // always starting at 0), since it's usually the same standard margin
   // reused quote after quote.
   ['products', 'sale_pct', 'REAL'],
@@ -465,6 +465,23 @@ const migrations = [
   // `date` (the packing list's own issue date) and from the Order's
   // shipment_date (when it departs), needed by the Shipment report.
   ['packing_lists', 'loading_date', 'TEXT'],
+  // Chemical goods can be priced by the liter (drum volume, the original
+  // behavior) or by the ton (gross weight) — some suppliers quote bulk
+  // chemicals by weight instead of volume. 'liter' keeps existing records
+  // reading the same as before; cost_per_ton/sale_per_ton mirror
+  // cost_per_liter/sale_per_liter for products priced the other way.
+  ['products', 'price_basis', "TEXT DEFAULT 'liter'"],
+  ['products', 'cost_per_ton', 'REAL DEFAULT 0'],
+  ['products', 'sale_per_ton', 'REAL DEFAULT 0'],
+  // Informational VAT % shown next to a product's Margin % — not used in
+  // any pricing calculation, just a reference note for whoever's pricing it.
+  ['products', 'vat_pct', 'REAL'],
+  // Per-item mirror of the above for order_items, so a Quotation/Order item
+  // remembers which basis it was priced under even if the product's own
+  // registration changes later.
+  ['order_items', 'price_basis', 'TEXT'],
+  ['order_items', 'sale_per_ton', 'REAL'],
+  ['order_items', 'cost_per_ton', 'REAL'],
   // Audit trail: name of whoever last created/edited each record, now that
   // logins are per-person instead of one shared password. Stored as plain
   // text (the user's display name at the time of the edit) rather than a

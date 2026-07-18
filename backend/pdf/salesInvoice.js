@@ -54,13 +54,19 @@ function renderSalesInvoice(params) {
     </tr>
   `).join("");
 
+  // Chemical items priced by the ton (item.priceBasis === "ton") show their
+  // weight in tons instead of kg here — matches whatever unit the deal was
+  // actually struck in, instead of always showing kg regardless of how the
+  // item was priced.
   const otherRows = otherItems.map(item => `
     <tr>
       ${descCell(item)}
       <td>${escapeHtml(item.color || "—")}</td>
       <td>${escapeHtml(item.width || "—")}</td>
       <td>${item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
-      <td class="num">${item.totalWeight ? `${fmtNumber(item.totalWeight, 1)} kg` : "—"}</td>
+      <td class="num">${item.totalWeight
+        ? (item.priceBasis === "ton" ? `${fmtNumber(item.totalWeight / 1000, 3)} t` : `${fmtNumber(item.totalWeight, 1)} kg`)
+        : "—"}</td>
       <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
       <td class="num">${fmtMoney(item.total, currency)}</td>
     </tr>
