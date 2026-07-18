@@ -509,12 +509,47 @@ const perMeterLabel = (item, field, cur) => {
   return `${fmt(parseFloat(rate), cur)}/m`;
 };
 
+// Module-level (not React state) so `api()` — called from dozens of places
+// that aren't React components — can always read the current session token
+// without it being threaded through props. Set once on login/logout via
+// `setAuthToken`, which also mirrors it into localStorage so a page reload
+// doesn't force everyone to log in again.
+let authToken = null;
+function setAuthToken(token) {
+  authToken = token;
+  if (token) localStorage.setItem("af_token", token);
+  else localStorage.removeItem("af_token");
+}
+setAuthToken(typeof localStorage !== "undefined" ? localStorage.getItem("af_token") : null);
+
+// PDF/Excel downloads open via window.open(url) — a plain browser
+// navigation, not a fetch() call — so there's no way to attach the
+// Authorization header the rest of the app uses. The backend's requireAuth
+// middleware accepts the session token as a `?token=` query param as a
+// fallback specifically for this case; this helper appends it correctly
+// whether `path` already has its own query string or not.
+function authUrl(path) {
+  if (!authToken) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(authToken)}`;
+}
+
 async function api(path, method = "GET", body) {
+  const headers = { "Content-Type": "application/json" };
+  if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
   const res = await fetch(`${API}${path}`, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
+  if (res.status === 401) {
+    // Session is gone (logged out elsewhere, revoked, or just expired) —
+    // clear it locally and bounce back to the login screen instead of
+    // leaving the app stuck on a broken/half-loaded screen.
+    setAuthToken(null);
+    localStorage.removeItem("af_user");
+    window.location.reload();
+    throw new Error("Session expired");
+  }
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -620,6 +655,19 @@ function Btn({ children, onClick, color = "#3b82f6", small, outline, disabled })
     >
       {children}
     </button>
+  );
+}
+
+// Small audit-trail tag shown at the end of each row's Actions column —
+// who last created/edited that record. Every write route now stamps
+// `updated_by` with the signed-in user's name (see backend/auth.js),
+// replacing the old setup where nothing tracked who touched what.
+function LastModifiedBy({ name }) {
+  if (!name) return null;
+  return (
+    <span style={{ fontSize: "10.5px", color: "#475569", whiteSpace: "nowrap", alignSelf: "center" }} title="Last modified by">
+      ✎ {name}
+    </span>
   );
 }
 
@@ -2136,7 +2184,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        {f.id && <Btn outline color="#10b981" onClick={() => window.open(`${API}/proformas/${f.id}/pdf`, "_blank")}>📄 Download PDF</Btn>}
+        {f.id && <Btn outline color="#10b981" onClick={() => window.open(authUrl(`${API}/proformas/${f.id}/pdf`), "_blank")}>📄 Download PDF</Btn>}
         <Btn onClick={async () => { await onSave({ ...f, items: JSON.stringify(items) }); onClose(); }}>Save Proforma</Btn>
       </div>
     </div>
@@ -2286,7 +2334,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
             schedule falls back to the one plain button it had before. */}
         {!isClient && f.id && (PAYMENT_SCHEDULES[f.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]).parts.map((part, i) => (
           <Btn key={i} outline color="#10b981"
-            onClick={() => window.open(`${API}/financial/suppliers/${f.id}/payment-notice-pdf${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`, "_blank")}>
+            onClick={() => window.open(authUrl(`${API}/financial/suppliers/${f.id}/payment-notice-pdf${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`), "_blank")}>
             📄 {part.label ? `${part.label} PDF (${part.pct}%)` : "Payment Notice PDF"}
           </Btn>
         ))}
@@ -2679,6 +2727,7 @@ console.log('quotations set:', quotations?.length);
       </Btn>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/quotations/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+      <LastModifiedBy name={r.updated_by} />
     </div>
   );
 }},
@@ -3050,7 +3099,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
 
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        {f.id && <Btn outline color="#10b981" onClick={() => window.open(`${API}/packing-lists/${f.id}/pdf`, "_blank")}>📄 Download PDF</Btn>}
+        {f.id && <Btn outline color="#10b981" onClick={() => window.open(authUrl(`${API}/packing-lists/${f.id}/pdf`), "_blank")}>📄 Download PDF</Btn>}
         <Btn onClick={async () => { await onSave(f); onClose(); }}>Save Packing List</Btn>
       </div>
     </div>
@@ -3430,6 +3479,7 @@ const hasCommercial = commercials.find(c => Number(c.order_id) === Number(r.id))
 </Btn>
       <Btn small outline color="#64748b" onClick={() => setEditOrder(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/orders/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+      <LastModifiedBy name={r.updated_by} />
     </div>
   );
 }},
@@ -3495,6 +3545,7 @@ cols={[
     <div style={{ display: "flex", gap: "6px" }}>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/products/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+      <LastModifiedBy name={r.updated_by} />
     </div>
   )},
 ]}
@@ -3562,6 +3613,7 @@ function Samples() {
     <div style={{ display: "flex", gap: "6px" }}>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/samples/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+      <LastModifiedBy name={r.updated_by} />
     </div>
   )},
 ]}
@@ -3692,9 +3744,10 @@ cols={[
       <Btn small color={r.order_id ? "#10b981" : "#334155"} onClick={() => !r.order_id && createOrderFromProforma(r)}>
         🛒 {r.order_id ? "Order ✓" : "Create Order"}
       </Btn>
-      <Btn small outline color="#10b981" onClick={() => window.open(`${API}/proformas/${r.id}/pdf`, "_blank")}>📄 PDF</Btn>
+      <Btn small outline color="#10b981" onClick={() => window.open(authUrl(`${API}/proformas/${r.id}/pdf`), "_blank")}>📄 PDF</Btn>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/proformas/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+      <LastModifiedBy name={r.updated_by} />
     </div>
   )},
 ]}
@@ -3754,9 +3807,10 @@ function Contracts() {
           )},
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
-              <Btn small outline color="#10b981" onClick={() => window.open(`${API}/contracts/${r.id}/pdf`, "_blank")}>📄 PDF</Btn>
+              <Btn small outline color="#10b981" onClick={() => window.open(authUrl(`${API}/contracts/${r.id}/pdf`), "_blank")}>📄 PDF</Btn>
               <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
               <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/contracts/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              <LastModifiedBy name={r.updated_by} />
             </div>
           )},
         ]}
@@ -3890,12 +3944,13 @@ cols={[
           100% schedule still renders as the single original button. */}
       {!isClient && (PAYMENT_SCHEDULES[r.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]).parts.map((part, i) => (
         <Btn key={i} small outline color="#10b981"
-          onClick={() => window.open(`${API}/financial/suppliers/${r.id}/payment-notice-pdf${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`, "_blank")}>
+          onClick={() => window.open(authUrl(`${API}/financial/suppliers/${r.id}/payment-notice-pdf${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`), "_blank")}>
           📄 {part.label ? `${part.label} (${part.pct}%)` : "PDF"}
         </Btn>
       ))}
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`${endpoint}/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+      <LastModifiedBy name={r.updated_by} />
     </div>
   )},
 ]}
@@ -4028,6 +4083,7 @@ function Clients() {
             <div style={{ display: "flex", gap: "6px" }}>
               <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
               <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/clients/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              <LastModifiedBy name={r.updated_by} />
             </div>
           )},
         ]}
@@ -4196,6 +4252,7 @@ function Suppliers() {
             <div style={{ display: "flex", gap: "6px" }}>
               <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
               <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/suppliers/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              <LastModifiedBy name={r.updated_by} />
             </div>
           )},
         ]}
@@ -4314,7 +4371,7 @@ function CommercialInvoices() {
             const hasPackingList = packingLists.find(p => Number(p.order_id) === Number(r.order_id));
             return (
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                <Btn small outline color="#10b981" onClick={() => window.open(`${API}/commercial-invoices/${r.id}/pdf`, "_blank")}>📄 PDF</Btn>
+                <Btn small outline color="#10b981" onClick={() => window.open(authUrl(`${API}/commercial-invoices/${r.id}/pdf`), "_blank")}>📄 PDF</Btn>
                 <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
                 {order && (
                   <Btn small outline={!hasPackingList} color={hasPackingList ? "#06b6d4" : "#64748b"}
@@ -4323,6 +4380,7 @@ function CommercialInvoices() {
                   </Btn>
                 )}
                 <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/commercial-invoices/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+                <LastModifiedBy name={r.updated_by} />
               </div>
             );
           }},
@@ -4382,9 +4440,10 @@ function PackingLists() {
           { label: "Status", key: "status" },
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
-              <Btn small outline color="#10b981" onClick={() => window.open(`${API}/packing-lists/${r.id}/pdf`, "_blank")}>📄 PDF</Btn>
+              <Btn small outline color="#10b981" onClick={() => window.open(authUrl(`${API}/packing-lists/${r.id}/pdf`), "_blank")}>📄 PDF</Btn>
               <Btn small outline color="#64748b" onClick={() => setEditList(r)}>Edit</Btn>
               <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/packing-lists/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              <LastModifiedBy name={r.updated_by} />
             </div>
           )},
         ]}
@@ -4561,6 +4620,7 @@ function Inspections() {
             <div style={{ display: "flex", gap: "6px" }}>
               <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
               <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/inspections/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              <LastModifiedBy name={r.updated_by} />
             </div>
           )},
         ]}
@@ -4610,7 +4670,7 @@ function Reports() {
     // in the (most common) all-selected case.
     if (!allChecked) params.set("categories", selectedKeys.join(","));
     const qs = params.toString();
-    window.open(`${API}/reports/full${qs ? `?${qs}` : ""}`, "_blank");
+    window.open(authUrl(`${API}/reports/full${qs ? `?${qs}` : ""}`), "_blank");
   };
 
   return (
@@ -4683,68 +4743,219 @@ const TABS = [
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 
-const SENHA = "hkag2026";
+// Replaces the old single shared password (which lived in this file, in
+// plain text, shipped straight to every visitor's browser) with real
+// per-person logins verified server-side. Each of the 9 accounts has its
+// own username/password; the backend hashes and checks passwords and every
+// API route now requires the session token this screen gets back.
+function LoginScreen({ onLoggedIn }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-export default function App() {
-  const [autenticado, setAutenticado] = useState(false);
-  const [senha, setSenha] = useState("");
-  const [erro, setErro] = useState(false);
-  const [tab, setTab] = useState("dashboard");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const submit = async () => {
+    if (!username || !password || busy) return;
+    setError("");
+    setBusy(true);
+    try {
+      const res = await fetch(`${API}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Incorrect username or password.");
+        return;
+      }
+      setAuthToken(data.token);
+      const user = { name: data.name, username: data.username, mustChangePassword: !!data.mustChangePassword };
+      localStorage.setItem("af_user", JSON.stringify(user));
+      onLoggedIn(user);
+    } catch {
+      setError("Could not reach the server. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
-  if (!autenticado) {
-    return (
+  return (
+    <div style={{
+      minHeight: "100vh", background: "#020617", display: "flex",
+      alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans', sans-serif",
+    }}>
       <div style={{
-        minHeight: "100vh", background: "#020617", display: "flex",
-        alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans', sans-serif",
+        background: "#0f172a", border: "1px solid #1e293b", borderRadius: "16px",
+        padding: "40px 48px", width: "100%", maxWidth: "380px",
+        boxShadow: "0 25px 60px rgba(0,0,0,0.6)", display: "flex", flexDirection: "column", gap: "24px",
       }}>
-        <div style={{
-          background: "#0f172a", border: "1px solid #1e293b", borderRadius: "16px",
-          padding: "40px 48px", width: "100%", maxWidth: "380px",
-          boxShadow: "0 25px 60px rgba(0,0,0,0.6)", display: "flex", flexDirection: "column", gap: "24px",
-        }}>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: "22px", fontWeight: 800, color: "#f1f5f9", letterSpacing: "-0.02em" }}>Alliance Global System</div>
-            <div style={{ fontSize: "12px", color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "4px" }}>Order Management</div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Password</label>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: "22px", fontWeight: 800, color: "#f1f5f9", letterSpacing: "-0.02em" }}>Alliance Global System</div>
+          <div style={{ fontSize: "12px", color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "4px" }}>Order Management</div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div>
+            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Username</label>
             <input
-              type="password"
-              value={senha}
-              onChange={e => { setSenha(e.target.value); setErro(false); }}
-              onKeyDown={e => {
-                if (e.key === "Enter") {
-                  if (senha === SENHA) setAutenticado(true);
-                  else setErro(true);
-                }
-              }}
-              placeholder="Enter password…"
+              type="text"
+              value={username}
+              onChange={e => { setUsername(e.target.value); setError(""); }}
+              onKeyDown={e => { if (e.key === "Enter") submit(); }}
+              placeholder="e.g. lucas"
+              autoCapitalize="off" autoCorrect="off"
               style={{
-                background: "#1e293b", border: `1px solid ${erro ? "#ef4444" : "#334155"}`,
+                background: "#1e293b", border: `1px solid ${error ? "#ef4444" : "#334155"}`,
                 borderRadius: "8px", padding: "12px 14px", color: "#f1f5f9",
-                fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box",
+                fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", marginTop: "6px",
               }}
               autoFocus
             />
-            {erro && <div style={{ color: "#ef4444", fontSize: "12px" }}>Incorrect password. Try again.</div>}
-            <button
-              onClick={() => {
-                if (senha === SENHA) setAutenticado(true);
-                else setErro(true);
-              }}
-              style={{
-                background: "#3b82f6", border: "none", borderRadius: "8px",
-                padding: "12px", color: "#fff", fontSize: "14px", fontWeight: 600,
-                cursor: "pointer", marginTop: "4px",
-              }}
-            >
-              Enter
-            </button>
           </div>
+          <div>
+            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => { setPassword(e.target.value); setError(""); }}
+              onKeyDown={e => { if (e.key === "Enter") submit(); }}
+              placeholder="Enter password…"
+              style={{
+                background: "#1e293b", border: `1px solid ${error ? "#ef4444" : "#334155"}`,
+                borderRadius: "8px", padding: "12px 14px", color: "#f1f5f9",
+                fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", marginTop: "6px",
+              }}
+            />
+          </div>
+          {error && <div style={{ color: "#ef4444", fontSize: "12px" }}>{error}</div>}
+          <button
+            onClick={submit}
+            disabled={busy}
+            style={{
+              background: "#3b82f6", border: "none", borderRadius: "8px",
+              padding: "12px", color: "#fff", fontSize: "14px", fontWeight: 600,
+              cursor: busy ? "not-allowed" : "pointer", marginTop: "4px", opacity: busy ? 0.6 : 1,
+            }}
+          >
+            {busy ? "Signing in…" : "Enter"}
+          </button>
         </div>
       </div>
-    );
+    </div>
+  );
+}
+
+// Shown right after login for any account still on its original temporary
+// password (must_change_password) — forces setting a real one before the
+// person can reach any actual data.
+function ForceChangePasswordScreen({ user, onDone }) {
+  const [pw1, setPw1] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (busy) return;
+    if (pw1.length < 6) return setError("Password must be at least 6 characters.");
+    if (pw1 !== pw2) return setError("Passwords don't match.");
+    setError("");
+    setBusy(true);
+    try {
+      await api("/change-password", "POST", { newPassword: pw1 });
+      const updated = { ...user, mustChangePassword: false };
+      localStorage.setItem("af_user", JSON.stringify(updated));
+      onDone(updated);
+    } catch {
+      setError("Couldn't update your password. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{
+      minHeight: "100vh", background: "#020617", display: "flex",
+      alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans', sans-serif",
+    }}>
+      <div style={{
+        background: "#0f172a", border: "1px solid #1e293b", borderRadius: "16px",
+        padding: "40px 48px", width: "100%", maxWidth: "380px",
+        boxShadow: "0 25px 60px rgba(0,0,0,0.6)", display: "flex", flexDirection: "column", gap: "20px",
+      }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: "18px", fontWeight: 800, color: "#f1f5f9" }}>Welcome, {user.name}</div>
+          <div style={{ fontSize: "12.5px", color: "#94a3b8", marginTop: "8px", lineHeight: 1.5 }}>
+            This is your first time signing in. Set a new password to continue — the temporary one won't work again after this.
+          </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div>
+            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>New password</label>
+            <input
+              type="password" value={pw1}
+              onChange={e => { setPw1(e.target.value); setError(""); }}
+              style={{
+                background: "#1e293b", border: `1px solid ${error ? "#ef4444" : "#334155"}`,
+                borderRadius: "8px", padding: "12px 14px", color: "#f1f5f9",
+                fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", marginTop: "6px",
+              }}
+              autoFocus
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Confirm password</label>
+            <input
+              type="password" value={pw2}
+              onChange={e => { setPw2(e.target.value); setError(""); }}
+              onKeyDown={e => { if (e.key === "Enter") submit(); }}
+              style={{
+                background: "#1e293b", border: `1px solid ${error ? "#ef4444" : "#334155"}`,
+                borderRadius: "8px", padding: "12px 14px", color: "#f1f5f9",
+                fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", marginTop: "6px",
+              }}
+            />
+          </div>
+          {error && <div style={{ color: "#ef4444", fontSize: "12px" }}>{error}</div>}
+          <button
+            onClick={submit}
+            disabled={busy}
+            style={{
+              background: "#3b82f6", border: "none", borderRadius: "8px",
+              padding: "12px", color: "#fff", fontSize: "14px", fontWeight: 600,
+              cursor: busy ? "not-allowed" : "pointer", marginTop: "4px", opacity: busy ? 0.6 : 1,
+            }}
+          >
+            {busy ? "Saving…" : "Set password & continue"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [user, setUser] = useState(() => {
+    try {
+      const raw = localStorage.getItem("af_user");
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  });
+  const [tab, setTab] = useState("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const logout = async () => {
+    try { await api("/logout", "POST"); } catch { /* token may already be gone — fine either way */ }
+    setAuthToken(null);
+    localStorage.removeItem("af_user");
+    setUser(null);
+  };
+
+  if (!user) {
+    return <LoginScreen onLoggedIn={setUser} />;
+  }
+
+  if (user.mustChangePassword) {
+    return <ForceChangePasswordScreen user={user} onDone={setUser} />;
   }
 
 const renderTab = () => {
@@ -4815,7 +5026,34 @@ const renderTab = () => {
               </button>
             ))}
           </nav>
-          <div style={{ padding: "12px 8px", borderTop: "1px solid #1e293b" }}>
+          <div style={{ padding: "10px 12px", borderTop: "1px solid #1e293b" }}>
+            {sidebarOpen ? (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                <div style={{ overflow: "hidden" }}>
+                  <div style={{ fontSize: "12.5px", fontWeight: 600, color: "#cbd5e1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.name}</div>
+                  <div style={{ fontSize: "10px", color: "#475569" }}>@{user.username}</div>
+                </div>
+                <button onClick={logout} title="Log out"
+                  style={{
+                    background: "none", border: "none", color: "#64748b", cursor: "pointer",
+                    fontSize: "13px", padding: "4px 6px", borderRadius: "6px", flexShrink: 0,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
+                  onMouseLeave={e => e.currentTarget.style.color = "#64748b"}
+                >⏻</button>
+              </div>
+            ) : (
+              <button onClick={logout} title={`Log out (${user.name})`}
+                style={{
+                  width: "100%", background: "none", border: "none", color: "#64748b",
+                  cursor: "pointer", fontSize: "16px", textAlign: "center", padding: "4px",
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
+                onMouseLeave={e => e.currentTarget.style.color = "#64748b"}
+              >⏻</button>
+            )}
+          </div>
+          <div style={{ padding: "8px 8px 12px", borderTop: "1px solid #1e293b" }}>
             <button onClick={() => setSidebarOpen(o => !o)}
               style={{
                 width: "100%", padding: "8px", background: "none", border: "none",

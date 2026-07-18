@@ -10,6 +10,7 @@ const { renderPaymentNotice } = require('./pdf/paymentNotice');
 const ACQUISITION_COMPANIES = require('./pdf/acquisitionCompanies');
 const { parseJsonSafe, contentDisposition } = require('./pdf/helpers');
 const { buildFullReportWorkbook, CATEGORIES: REPORT_CATEGORIES } = require('./xlsx/reportBuilder');
+const { hashPassword, verifyPassword, generateToken, requireAuth, actorName } = require('./auth');
 
 const cloudinary = require('cloudinary').v2;
 cloudinary.config({
@@ -34,6 +35,51 @@ app.use(cors({
   }
 }));
 app.use(express.json());
+
+// ─── AUTH ────────────────────────────────────────────────────────────────────
+// Replaces the old setup where a single password lived in the frontend
+// bundle and the backend had no login check at all. /api/login is the only
+// route below that's reachable without a valid session — the requireAuth
+// middleware registered right after it protects every route defined below
+// this point in the file (Express applies middleware in registration
+// order, so anything defined above this block is NOT covered by it — keep
+// all real routes below this block).
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(String(username).trim().toLowerCase());
+  if (!user || !verifyPassword(password, user.password_hash)) {
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+  const token = generateToken();
+  db.prepare('INSERT INTO sessions (token, user_id) VALUES (?, ?)').run(token, user.id);
+  res.json({
+    token, name: user.name, username: user.username,
+    mustChangePassword: !!user.must_change_password,
+  });
+});
+
+app.use('/api', requireAuth(db));
+
+app.post('/api/logout', (req, res) => {
+  const token = (req.headers.authorization || '').replace(/^Bearer /, '');
+  db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  res.json({ success: true });
+});
+
+app.get('/api/me', (req, res) => {
+  res.json(req.user);
+});
+
+app.post('/api/change-password', (req, res) => {
+  const { newPassword } = req.body || {};
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+  db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?')
+    .run(hashPassword(newPassword), req.user.id);
+  res.json({ success: true });
+});
 
 // ─── ORDERS ──────────────────────────────────────────────────────────────────
 
@@ -61,10 +107,10 @@ app.post('/api/orders', (req, res) => {
     const insert = db.transaction(() => {
       const result = db.prepare(`
         INSERT INTO orders (order_number, client, supplier, product, value, currency, production_lead_time, delivery_days,
-          shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, acquisition_company, container, container_qty, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, acquisition_company, container, container_qty, notes, updated_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(order_number, client, supplier, product, value, currency || 'USD', production_lead_time || null, delivery_days || null,
-        shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, acquisition_company || '', container || '', container_qty, notes);
+        shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, acquisition_company || '', container || '', container_qty, notes, actorName(req));
       const orderId = result.lastInsertRowid;
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
@@ -96,11 +142,11 @@ app.put('/api/orders/:id', (req, res) => {
     UPDATE orders SET order_number=?, client=?, supplier=?, product=?, value=?, currency=?,
       production_lead_time=?, delivery_days=?, shipment_date=?, arrival_date=?, incoterm=?,
       payment_terms=?, port_of_loading=?, port_of_discharge=?, acquisition_company=?, container=?, container_qty=?, notes=?,
-      updated_at=datetime('now')
+      updated_by=?, updated_at=datetime('now')
     WHERE id=?
   `).run(order_number, client, supplier, product, value, currency, production_lead_time || null, delivery_days || null,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
-    port_of_discharge, acquisition_company || '', container || '', container_qty || null, notes, req.params.id);
+    port_of_discharge, acquisition_company || '', container || '', container_qty || null, notes, actorName(req), req.params.id);
 
 db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
 if (items && items.length > 0) {
@@ -147,8 +193,8 @@ app.patch('/api/orders/:id/status', (req, res) => {
   const { status } = req.body;
   const validStatuses = ['Pending', 'In Production', 'Inspection', 'Shipment', 'Completed'];
   if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' });
-  db.prepare(`UPDATE orders SET status=?, updated_at=datetime('now') WHERE id=?`)
-    .run(status, req.params.id);
+  db.prepare(`UPDATE orders SET status=?, updated_by=?, updated_at=datetime('now') WHERE id=?`)
+    .run(status, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id));
 });
 
@@ -166,9 +212,9 @@ app.post('/api/products', (req, res) => {
   const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO products (code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(code, name, description, unit || 'unit', ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost || 0, cost_currency || 'USD', category, supplier, sale_price || 0, sale_currency || 'USD', cost_per_meter || 0, sale_per_meter || 0, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null);
+      INSERT INTO products (code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(code, name, description, unit || 'unit', ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost || 0, cost_currency || 'USD', category, supplier, sale_price || 0, sale_currency || 'USD', cost_per_meter || 0, sale_per_meter || 0, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM products WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -178,9 +224,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 app.put('/api/products/:id', (req, res) => {
   const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media } = req.body;
   db.prepare(`
-    UPDATE products SET code=?, name=?, description=?, unit=?, ncm=?, hs_code=?, color=?, width=?, width_unit=?, height=?, height_unit=?, thickness=?, thickness_unit=?, weight=?, weight_unit=?, tube_weight=?, tube_weight_unit=?, roll_diameter=?, roll_diameter_unit=?, volume=?, volume_unit=?, unit_cost=?, cost_currency=?, category=?, supplier=?, sale_price=?, sale_currency=?, cost_per_meter=?, sale_per_meter=?, cost_per_liter=?, sale_per_liter=?, sale_pct=?, media=?
+    UPDATE products SET code=?, name=?, description=?, unit=?, ncm=?, hs_code=?, color=?, width=?, width_unit=?, height=?, height_unit=?, thickness=?, thickness_unit=?, weight=?, weight_unit=?, tube_weight=?, tube_weight_unit=?, roll_diameter=?, roll_diameter_unit=?, volume=?, volume_unit=?, unit_cost=?, cost_currency=?, category=?, supplier=?, sale_price=?, sale_currency=?, cost_per_meter=?, sale_per_meter=?, cost_per_liter=?, sale_per_liter=?, sale_pct=?, media=?, updated_by=?
 WHERE id=?
-`).run(code, name, description, unit, ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost, cost_currency || 'USD', category, supplier, sale_price, sale_currency || 'USD', cost_per_meter, sale_per_meter, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, req.params.id);
+`).run(code, name, description, unit, ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost, cost_currency || 'USD', category, supplier, sale_price, sale_currency || 'USD', cost_per_meter, sale_per_meter, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id));
 });
 
@@ -198,24 +244,24 @@ app.get('/api/samples', (req, res) => {
 app.post('/api/samples', (req, res) => {
   const { code, product_id, product_name, category, client, requested_date, sent_date, feedback_date, status, notes } = req.body;
   const result = db.prepare(`
-    INSERT INTO samples (code, product_id, product_name, category, client, requested_date, sent_date, feedback_date, status, notes)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(code || '', product_id || null, product_name, category || '', client, requested_date, sent_date, feedback_date, status || 'Requested', notes);
+    INSERT INTO samples (code, product_id, product_name, category, client, requested_date, sent_date, feedback_date, status, notes, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(code || '', product_id || null, product_name, category || '', client, requested_date, sent_date, feedback_date, status || 'Requested', notes, actorName(req));
   res.status(201).json(db.prepare('SELECT * FROM samples WHERE id=?').get(result.lastInsertRowid));
 });
 
 app.put('/api/samples/:id', (req, res) => {
   const { code, product_name, category, client, requested_date, sent_date, status, notes, media } = req.body;
   db.prepare(`
-UPDATE samples SET code=?, product_name=?, category=?, client=?, requested_date=?, sent_date=?, status=?, notes=?, media=?
+UPDATE samples SET code=?, product_name=?, category=?, client=?, requested_date=?, sent_date=?, status=?, notes=?, media=?, updated_by=?
 WHERE id=?
-`).run(code || '', product_name, category || '', client, requested_date, sent_date, status, notes, media || null, req.params.id);
+`).run(code || '', product_name, category || '', client, requested_date, sent_date, status, notes, media || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM samples WHERE id=?').get(req.params.id));
 });
 
 app.patch('/api/samples/:id/status', (req, res) => {
   const { status } = req.body;
-  db.prepare('UPDATE samples SET status=? WHERE id=?').run(status, req.params.id);
+  db.prepare('UPDATE samples SET status=?, updated_by=? WHERE id=?').run(status, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM samples WHERE id=?').get(req.params.id));
 });
 
@@ -238,11 +284,11 @@ app.post('/api/proformas', (req, res) => {
     const result = db.prepare(`
 INSERT INTO proformas (order_id, quotation_id, number, issue_date, validity, client, total, currency, status, notes,
   acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier,
-  payment_terms, production_days, delivery_days, items)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  payment_terms, production_days, delivery_days, items, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `).run(order_id || null, quotation_id || null, number, issue_date, validity, client, total, currency || 'USD', status || 'Draft', notes,
       acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', supplier || '',
-      payment_terms || null, production_days || null, delivery_days || null, items || null);
+      payment_terms || null, production_days || null, delivery_days || null, items || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM proformas WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -256,11 +302,11 @@ app.put('/api/proformas/:id', (req, res) => {
   db.prepare(`
     UPDATE proformas SET order_id=?, number=?, issue_date=?, validity=?, client=?, total=?, currency=?, status=?, notes=?,
       acquisition_company=?, incoterm=?, way_of_shipment=?, port_of_loading=?, port_of_discharge=?, supplier=?,
-      payment_terms=?, production_days=?, delivery_days=?, items=?
+      payment_terms=?, production_days=?, delivery_days=?, items=?, updated_by=?
     WHERE id=?
   `).run(order_id || null, number, issue_date, validity, client, total, currency, status, notes,
     acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', supplier || '',
-    payment_terms || null, production_days || null, delivery_days || null, items || null, req.params.id);
+    payment_terms || null, production_days || null, delivery_days || null, items || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM proformas WHERE id=?').get(req.params.id));
 });
 
@@ -279,9 +325,9 @@ app.post('/api/contracts', (req, res) => {
   const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, items_json } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO supplier_contracts (order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, items_json)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency || 'USD', status || 'Draft', notes, items_json || null);
+      INSERT INTO supplier_contracts (order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, items_json, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency || 'USD', status || 'Draft', notes, items_json || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM supplier_contracts WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -291,9 +337,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 app.put('/api/contracts/:id', (req, res) => {
   const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes } = req.body;
   db.prepare(`
-    UPDATE supplier_contracts SET order_id=?, contract_number=?, supplier=?, sign_date=?, delivery_date=?, total=?, currency=?, status=?, notes=?
+    UPDATE supplier_contracts SET order_id=?, contract_number=?, supplier=?, sign_date=?, delivery_date=?, total=?, currency=?, status=?, notes=?, updated_by=?
     WHERE id=?
-  `).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, req.params.id);
+  `).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM supplier_contracts WHERE id=?').get(req.params.id));
 });
 
@@ -311,18 +357,18 @@ app.get('/api/financial/clients', (req, res) => {
 app.post('/api/financial/clients', (req, res) => {
   const { order_id, client, description, type, amount, currency, due_date, paid_date, status, notes, paid_amount } = req.body;
   const result = db.prepare(`
-    INSERT INTO financial_clients (order_id, client, description, type, amount, currency, due_date, paid_date, status, notes, paid_amount)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(order_id || null, client, description, type, amount, currency || 'USD', due_date, paid_date, status || 'Pending', notes, paid_amount || 0);
+    INSERT INTO financial_clients (order_id, client, description, type, amount, currency, due_date, paid_date, status, notes, paid_amount, updated_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(order_id || null, client, description, type, amount, currency || 'USD', due_date, paid_date, status || 'Pending', notes, paid_amount || 0, actorName(req));
   res.status(201).json(db.prepare('SELECT * FROM financial_clients WHERE id=?').get(result.lastInsertRowid));
 });
 
 app.put('/api/financial/clients/:id', (req, res) => {
   const { order_id, client, description, type, amount, currency, due_date, paid_date, status, notes, paid_amount } = req.body;
   db.prepare(`
-    UPDATE financial_clients SET order_id=?, client=?, description=?, type=?, amount=?, currency=?, due_date=?, paid_date=?, status=?, notes=?, paid_amount=?
+    UPDATE financial_clients SET order_id=?, client=?, description=?, type=?, amount=?, currency=?, due_date=?, paid_date=?, status=?, notes=?, paid_amount=?, updated_by=?
     WHERE id=?
-  `).run(order_id || null, client, description, type, amount, currency || 'USD', due_date, paid_date || null, status || 'Pending', notes, paid_amount || 0, req.params.id);
+  `).run(order_id || null, client, description, type, amount, currency || 'USD', due_date, paid_date || null, status || 'Pending', notes, paid_amount || 0, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM financial_clients WHERE id=?').get(req.params.id));
 });
 
@@ -333,7 +379,7 @@ app.patch('/api/financial/clients/:id/status', (req, res) => {
   const { status, paid_date, paid_amount } = req.body;
   const row = db.prepare('SELECT amount FROM financial_clients WHERE id=?').get(req.params.id);
   const normalizedPaidAmount = status === 'Paid' ? (row?.amount || 0) : status === 'Partial' ? (paid_amount || 0) : 0;
-  db.prepare('UPDATE financial_clients SET status=?, paid_date=?, paid_amount=? WHERE id=?').run(status, paid_date || null, normalizedPaidAmount, req.params.id);
+  db.prepare('UPDATE financial_clients SET status=?, paid_date=?, paid_amount=?, updated_by=? WHERE id=?').run(status, paid_date || null, normalizedPaidAmount, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM financial_clients WHERE id=?').get(req.params.id));
 });
 
@@ -354,10 +400,10 @@ app.post('/api/financial/suppliers', (req, res) => {
   try {
     const result = db.prepare(`
       INSERT INTO financial_suppliers (order_id, supplier, description, type, amount, currency, due_date, status, notes, contract_id, items_json,
-        payer, payment_method, applicant, approved_by, payment_schedule, paid_amount)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        payer, payment_method, applicant, approved_by, payment_schedule, paid_amount, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, status || 'Pending', notes, contract_id || null, items_json || null,
-      payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', payment_schedule || '100', paid_amount || 0);
+      payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', payment_schedule || '100', paid_amount || 0, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(result.lastInsertRowid));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -370,10 +416,10 @@ app.put('/api/financial/suppliers/:id', (req, res) => {
   try {
     db.prepare(`
       UPDATE financial_suppliers SET order_id=?, supplier=?, description=?, type=?, amount=?, currency=?, due_date=?, status=?, notes=?,
-        contract_id=?, items_json=?, payer=?, payment_method=?, applicant=?, approved_by=?, paid_date=?, payment_schedule=?, paid_amount=?
+        contract_id=?, items_json=?, payer=?, payment_method=?, applicant=?, approved_by=?, paid_date=?, payment_schedule=?, paid_amount=?, updated_by=?
       WHERE id=?
     `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, status || 'Pending', notes,
-      contract_id || null, items_json || null, payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', paid_date || null, payment_schedule || '100', paid_amount || 0, req.params.id);
+      contract_id || null, items_json || null, payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', paid_date || null, payment_schedule || '100', paid_amount || 0, actorName(req), req.params.id);
     res.json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(req.params.id));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -390,7 +436,7 @@ app.patch('/api/financial/suppliers/:id/status', (req, res) => {
   const { status, paid_date, paid_amount } = req.body;
   const row = db.prepare('SELECT amount FROM financial_suppliers WHERE id=?').get(req.params.id);
   const normalizedPaidAmount = status === 'Paid' ? (row?.amount || 0) : status === 'Partial' ? (paid_amount || 0) : 0;
-  db.prepare('UPDATE financial_suppliers SET status=?, paid_date=?, paid_amount=? WHERE id=?').run(status, paid_date || null, normalizedPaidAmount, req.params.id);
+  db.prepare('UPDATE financial_suppliers SET status=?, paid_date=?, paid_amount=?, updated_by=? WHERE id=?').run(status, paid_date || null, normalizedPaidAmount, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(req.params.id));
 });
 
@@ -432,9 +478,9 @@ app.post('/api/commercial-invoices', (req, res) => {
   const { order_id, number, issue_date, client, total, currency, status, notes } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO commercial_invoices (order_id, number, issue_date, client, total, currency, status, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(order_id || null, number, issue_date, client, total, currency || 'USD', status || 'Pending', notes);
+      INSERT INTO commercial_invoices (order_id, number, issue_date, client, total, currency, status, notes, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(order_id || null, number, issue_date, client, total, currency || 'USD', status || 'Pending', notes, actorName(req));
     res.status(201).json(getCommercialInvoiceWithDates(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -444,9 +490,9 @@ app.post('/api/commercial-invoices', (req, res) => {
 app.put('/api/commercial-invoices/:id', (req, res) => {
   const { order_id, number, issue_date, client, total, currency, status, notes, shipment_date, arrival_date } = req.body;
   db.prepare(`
-    UPDATE commercial_invoices SET order_id=?, number=?, issue_date=?, client=?, total=?, currency=?, status=?, notes=?
+    UPDATE commercial_invoices SET order_id=?, number=?, issue_date=?, client=?, total=?, currency=?, status=?, notes=?, updated_by=?
     WHERE id=?
-  `).run(order_id || null, number, issue_date, client, total, currency, status, notes, req.params.id);
+  `).run(order_id || null, number, issue_date, client, total, currency, status, notes, actorName(req), req.params.id);
   // Editing the shipment/arrival date from the Commercial Invoice screen
   // writes straight through to the linked Order — same value, same column,
   // so a change made here is immediately reflected back on the Order (and
@@ -498,11 +544,11 @@ app.post('/api/packing-lists', (req, res) => {
     const result = db.prepare(`
       INSERT INTO packing_lists (order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
         port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
-        total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, number, date, way_of_shipment || 'By Sea', country_of_origin || 'China', country_of_acquisition || '',
       port_of_origin || '', port_of_destination || '', incoterm || '', manufacturer || '', manufacturer_address || '', items_json || null,
-      total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null);
+      total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -516,11 +562,11 @@ app.put('/api/packing-lists/:id', (req, res) => {
   db.prepare(`
     UPDATE packing_lists SET order_id=?, number=?, date=?, way_of_shipment=?, country_of_origin=?, country_of_acquisition=?,
       port_of_origin=?, port_of_destination=?, incoterm=?, manufacturer=?, manufacturer_address=?, items_json=?,
-      total_length=?, total_roll=?, total_gross_weight=?, total_net_weight=?, total_cbm=?, status=?, notes=?, containers_json=?, loading_date=?
+      total_length=?, total_roll=?, total_gross_weight=?, total_net_weight=?, total_cbm=?, status=?, notes=?, containers_json=?, loading_date=?, updated_by=?
     WHERE id=?
   `).run(order_id || null, number, date, way_of_shipment || 'By Sea', country_of_origin || 'China', country_of_acquisition || '',
     port_of_origin || '', port_of_destination || '', incoterm || '', manufacturer || '', manufacturer_address || '', items_json || null,
-    total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null, req.params.id);
+    total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(req.params.id));
 });
 
@@ -548,9 +594,9 @@ app.post('/api/quotations', (req, res) => {
  const { number, client, suppliers, currency, deadline, specifications, notes, status, media, items, total, target_price } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO quotations (number, client, suppliers, currency, deadline, specifications, notes, status, media, items, total, target_price)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(number, client, suppliers, currency || 'USD', deadline, specifications, notes, status || 'Open', media || null, items || null, total || null, target_price || null);
+      INSERT INTO quotations (number, client, suppliers, currency, deadline, specifications, notes, status, media, items, total, target_price, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(number, client, suppliers, currency || 'USD', deadline, specifications, notes, status || 'Open', media || null, items || null, total || null, target_price || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM quotations WHERE id=?').get(result.lastInsertRowid));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -560,9 +606,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 app.put('/api/quotations/:id', (req, res) => {
   const { number, client, suppliers, currency, deadline, specifications, notes, status, media, items, total, target_price } = req.body;
   db.prepare(`
-    UPDATE quotations SET number=?, client=?, suppliers=?, currency=?, deadline=?, specifications=?, notes=?, status=?, media=?, items=?, total=?, target_price=?
+    UPDATE quotations SET number=?, client=?, suppliers=?, currency=?, deadline=?, specifications=?, notes=?, status=?, media=?, items=?, total=?, target_price=?, updated_by=?
     WHERE id=?
-  `).run(number, client, suppliers, currency, deadline, specifications, notes, status, media || null, items || null, total || null, target_price || null, req.params.id);
+  `).run(number, client, suppliers, currency, deadline, specifications, notes, status, media || null, items || null, total || null, target_price || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM quotations WHERE id=?').get(req.params.id));
 });
 
@@ -580,9 +626,9 @@ app.post('/api/inspections', (req, res) => {
   const { order_id, number, inspection_date, inspector, result, observations, media } = req.body;
   try {
     const r = db.prepare(`
-      INSERT INTO inspections (order_id, number, inspection_date, inspector, result, observations, media)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(order_id || null, number, inspection_date, inspector, result || 'Pending', observations, media || null);
+      INSERT INTO inspections (order_id, number, inspection_date, inspector, result, observations, media, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(order_id || null, number, inspection_date, inspector, result || 'Pending', observations, media || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM inspections WHERE id=?').get(r.lastInsertRowid));
   } catch(e) { res.status(400).json({ error: e.message }); }
 });
@@ -590,9 +636,9 @@ app.post('/api/inspections', (req, res) => {
 app.put('/api/inspections/:id', (req, res) => {
   const { order_id, number, inspection_date, inspector, result, observations, media } = req.body;
   db.prepare(`
-    UPDATE inspections SET order_id=?, number=?, inspection_date=?, inspector=?, result=?, observations=?, media=?
+    UPDATE inspections SET order_id=?, number=?, inspection_date=?, inspector=?, result=?, observations=?, media=?, updated_by=?
     WHERE id=?
-  `).run(order_id || null, number, inspection_date, inspector, result, observations, media || null, req.params.id);
+  `).run(order_id || null, number, inspection_date, inspector, result, observations, media || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM inspections WHERE id=?').get(req.params.id));
 });
 
@@ -709,10 +755,10 @@ app.post('/api/clients', (req, res) => {
     email, phone, contact_name, payment_terms, tax_id, notes } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO clients (company_name, address, address2, address_number, neighborhood, city, state, zip_code, country, email, phone, contact_name, payment_terms, tax_id, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO clients (company_name, address, address2, address_number, neighborhood, city, state, zip_code, country, email, phone, contact_name, payment_terms, tax_id, notes, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(company_name, address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
-      email, phone, contact_name, payment_terms, tax_id || '', notes);
+      email, phone, contact_name, payment_terms, tax_id || '', notes, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM clients WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -723,10 +769,10 @@ app.put('/api/clients/:id', (req, res) => {
   const { company_name, address, address2, address_number, neighborhood, city, state, zip_code, country,
     email, phone, contact_name, payment_terms, tax_id, notes } = req.body;
   db.prepare(`
-    UPDATE clients SET company_name=?, address=?, address2=?, address_number=?, neighborhood=?, city=?, state=?, zip_code=?, country=?, email=?, phone=?, contact_name=?, payment_terms=?, tax_id=?, notes=?
+    UPDATE clients SET company_name=?, address=?, address2=?, address_number=?, neighborhood=?, city=?, state=?, zip_code=?, country=?, email=?, phone=?, contact_name=?, payment_terms=?, tax_id=?, notes=?, updated_by=?
     WHERE id=?
   `).run(company_name, address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
-    email, phone, contact_name, payment_terms, tax_id || '', notes, req.params.id);
+    email, phone, contact_name, payment_terms, tax_id || '', notes, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM clients WHERE id=?').get(req.params.id));
 });
 
@@ -748,11 +794,11 @@ app.post('/api/suppliers', (req, res) => {
   try {
     const result = db.prepare(`
       INSERT INTO suppliers (company_name, address, address2, address_number, neighborhood, city, state, zip_code, country, email, phone, contact_name, payment_terms, product_types, notes,
-        beneficiary_name, bank_name, bank_branch, account_number, swift_code)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        beneficiary_name, bank_name, bank_branch, account_number, swift_code, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(company_name, address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
       email, phone, contact_name, payment_terms, product_types, notes,
-      beneficiary_name || '', bank_name || '', bank_branch || '', account_number || '', swift_code || '');
+      beneficiary_name || '', bank_name || '', bank_branch || '', account_number || '', swift_code || '', actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM suppliers WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -765,11 +811,11 @@ app.put('/api/suppliers/:id', (req, res) => {
     beneficiary_name, bank_name, bank_branch, account_number, swift_code } = req.body;
   db.prepare(`
     UPDATE suppliers SET company_name=?, address=?, address2=?, address_number=?, neighborhood=?, city=?, state=?, zip_code=?, country=?, email=?, phone=?, contact_name=?, payment_terms=?, product_types=?, notes=?,
-      beneficiary_name=?, bank_name=?, bank_branch=?, account_number=?, swift_code=?
+      beneficiary_name=?, bank_name=?, bank_branch=?, account_number=?, swift_code=?, updated_by=?
     WHERE id=?
   `).run(company_name, address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
     email, phone, contact_name, payment_terms, product_types, notes,
-    beneficiary_name || '', bank_name || '', bank_branch || '', account_number || '', swift_code || '', req.params.id);
+    beneficiary_name || '', bank_name || '', bank_branch || '', account_number || '', swift_code || '', actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM suppliers WHERE id=?').get(req.params.id));
 });
 

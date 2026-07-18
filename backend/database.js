@@ -291,6 +291,28 @@ db.exec(`
     swift_code TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
+
+  -- Real per-person accounts, replacing the old single shared frontend
+  -- password. One row per team member; password_hash is a bcrypt hash,
+  -- never the plain password.
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    must_change_password INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Opaque bearer tokens issued on login. Stored server-side so logout (or
+  -- an admin revoking access) just deletes the row — no JWT secret to
+  -- manage, no way to keep using a token after it's deleted.
+  CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT DEFAULT (datetime('now')),
+    last_seen_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // ─── Defensive migrations for pre-existing databases (e.g. Render disk) ──────
@@ -437,6 +459,24 @@ const migrations = [
   // `date` (the packing list's own issue date) and from the Order's
   // shipment_date (when it departs), needed by the Shipment report.
   ['packing_lists', 'loading_date', 'TEXT'],
+  // Audit trail: name of whoever last created/edited each record, now that
+  // logins are per-person instead of one shared password. Stored as plain
+  // text (the user's display name at the time of the edit) rather than a
+  // foreign key, so it keeps reading correctly even if that person's
+  // account is later renamed or removed.
+  ['quotations', 'updated_by', 'TEXT'],
+  ['proformas', 'updated_by', 'TEXT'],
+  ['orders', 'updated_by', 'TEXT'],
+  ['commercial_invoices', 'updated_by', 'TEXT'],
+  ['supplier_contracts', 'updated_by', 'TEXT'],
+  ['inspections', 'updated_by', 'TEXT'],
+  ['financial_suppliers', 'updated_by', 'TEXT'],
+  ['financial_clients', 'updated_by', 'TEXT'],
+  ['samples', 'updated_by', 'TEXT'],
+  ['packing_lists', 'updated_by', 'TEXT'],
+  ['products', 'updated_by', 'TEXT'],
+  ['clients', 'updated_by', 'TEXT'],
+  ['suppliers', 'updated_by', 'TEXT'],
 ];
 
 for (const [table, column, definition] of migrations) {
@@ -448,5 +488,11 @@ for (const [table, column, definition] of migrations) {
     }
   }
 }
+
+// Creates the initial 9 logins from backend/seedUsers.js the first time
+// this runs against an empty `users` table (i.e. right after this deploy
+// goes live) — a no-op on every boot after that. See that file to fill in
+// the actual names before deploying.
+require('./seedUsers').seedInitialUsersIfEmpty(db);
 
 module.exports = db;
