@@ -4796,13 +4796,13 @@ function LoginScreen({ onLoggedIn }) {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div>
-            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Username</label>
+            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Name</label>
             <input
               type="text"
               value={username}
               onChange={e => { setUsername(e.target.value); setError(""); }}
               onKeyDown={e => { if (e.key === "Enter") submit(); }}
-              placeholder="e.g. lucas"
+              placeholder="Name"
               autoCapitalize="off" autoCorrect="off"
               style={{
                 background: "#1e293b", border: `1px solid ${error ? "#ef4444" : "#334155"}`,

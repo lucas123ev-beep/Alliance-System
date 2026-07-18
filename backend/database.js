@@ -301,6 +301,12 @@ db.exec(`
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     must_change_password INTEGER DEFAULT 1,
+    -- Login lockout: counts consecutive failed attempts, reset to 0 on a
+    -- successful login. Once it hits the threshold (see auth.js), locked_until
+    -- gets set to a few minutes in the future and login is refused until
+    -- then, regardless of whether the password given is actually correct.
+    failed_attempts INTEGER DEFAULT 0,
+    locked_until TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -477,6 +483,12 @@ const migrations = [
   ['products', 'updated_by', 'TEXT'],
   ['clients', 'updated_by', 'TEXT'],
   ['suppliers', 'updated_by', 'TEXT'],
+  // Login lockout counters — see the users table's own CREATE TABLE comment.
+  // Listed again here (in addition to that CREATE TABLE) so this also
+  // lands correctly on a `users` table that already exists from an earlier
+  // deploy, before these two columns existed.
+  ['users', 'failed_attempts', 'INTEGER DEFAULT 0'],
+  ['users', 'locked_until', 'TEXT'],
 ];
 
 for (const [table, column, definition] of migrations) {

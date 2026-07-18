@@ -10,7 +10,10 @@ const { renderPaymentNotice } = require('./pdf/paymentNotice');
 const ACQUISITION_COMPANIES = require('./pdf/acquisitionCompanies');
 const { parseJsonSafe, contentDisposition } = require('./pdf/helpers');
 const { buildFullReportWorkbook, CATEGORIES: REPORT_CATEGORIES } = require('./xlsx/reportBuilder');
-const { hashPassword, verifyPassword, generateToken, requireAuth, actorName } = require('./auth');
+const {
+  hashPassword, verifyPassword, generateToken, requireAuth, actorName,
+  isLockedOut, lockoutMinutesRemaining, recordFailedLogin, resetFailedLogins,
+} = require('./auth');
 
 const cloudinary = require('cloudinary').v2;
 cloudinary.config({
@@ -48,9 +51,24 @@ app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(String(username).trim().toLowerCase());
+
+  // Checked before verifying the password so a locked-out account can't be
+  // used to keep guessing indefinitely just by re-sending the same request.
+  if (user && isLockedOut(user)) {
+    return res.status(429).json({
+      error: `Too many failed attempts. Try again in ${lockoutMinutesRemaining(user)} minute(s).`,
+    });
+  }
+
   if (!user || !verifyPassword(password, user.password_hash)) {
+    // Only real accounts accumulate failed attempts — recording them for a
+    // username that doesn't exist would let someone probe which usernames
+    // are valid by watching for a lockout response.
+    if (user) recordFailedLogin(db, user);
     return res.status(401).json({ error: 'Invalid username or password' });
   }
+
+  resetFailedLogins(db, user.id);
   const token = generateToken();
   db.prepare('INSERT INTO sessions (token, user_id) VALUES (?, ?)').run(token, user.id);
   res.json({

@@ -15,6 +15,26 @@ const crypto = require("crypto");
 
 const SALT_ROUNDS = 10;
 
+// Login lockout: after this many consecutive wrong passwords, the account
+// is refused for a while regardless of what password is given next —
+// slows down anyone trying to guess their way in. Resets to 0 on any
+// successful login.
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_LOCKOUT_MINUTES = 15;
+
+// Sessions go stale after this many days with no API activity — keeps a
+// token that leaked (or a session left logged-in on a lost/stolen device)
+// from working forever just because nobody explicitly logged out.
+const SESSION_IDLE_DAYS = 14;
+
+// SQLite's datetime('now') returns "YYYY-MM-DD HH:MM:SS" in UTC but with no
+// timezone marker — new Date() on that exact string gets parsed as local
+// time in some JS engines, which silently produces the wrong offset. This
+// normalizes it into a form every engine parses as UTC.
+function parseSqliteUtc(str) {
+  return new Date(str.replace(" ", "T") + "Z");
+}
+
 function hashPassword(plain) {
   return bcrypt.hashSync(plain, SALT_ROUNDS);
 }
@@ -41,8 +61,9 @@ function generateTempPassword(length = 10) {
 }
 
 // Applied to every /api/* route except /api/login. Reads the bearer token,
-// looks up the session, and rejects with 401 if it's missing/invalid —
-// nothing past this point in server.js should be reachable without it.
+// looks up the session, and rejects with 401 if it's missing/invalid, or if
+// it's gone stale from SESSION_IDLE_DAYS of no activity — nothing past this
+// point in server.js should be reachable without a live session.
 //
 // PDF and Excel report downloads open via `window.open(url)` (a plain
 // browser navigation to a new tab) instead of the `api()` fetch helper —
@@ -57,16 +78,54 @@ function requireAuth(db) {
     if (!token) return res.status(401).json({ error: "Not authenticated" });
 
     const session = db.prepare(`
-      SELECT s.token, u.id, u.name, u.username
+      SELECT s.token, s.last_seen_at, u.id, u.name, u.username
       FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token = ?
     `).get(token);
     if (!session) return res.status(401).json({ error: "Session expired or invalid" });
 
+    const idleMs = Date.now() - parseSqliteUtc(session.last_seen_at).getTime();
+    if (idleMs > SESSION_IDLE_DAYS * 24 * 60 * 60 * 1000) {
+      db.prepare(`DELETE FROM sessions WHERE token = ?`).run(token);
+      return res.status(401).json({ error: "Session expired due to inactivity — please log in again" });
+    }
+
     db.prepare(`UPDATE sessions SET last_seen_at = datetime('now') WHERE token = ?`).run(token);
     req.user = { id: session.id, name: session.name, username: session.username };
     next();
   };
+}
+
+// Login lockout helpers — kept here next to requireAuth since they're the
+// other half of "don't let someone brute-force their way past a login."
+function isLockedOut(user) {
+  return !!(user.locked_until && parseSqliteUtc0(user.locked_until) > new Date());
+}
+
+// locked_until is written as a real ISO string (see recordFailedLogin), not
+// a SQLite datetime('now') string, so it doesn't need the space→T/UTC fixup
+// parseSqliteUtc does — this tiny wrapper just documents that distinction
+// instead of reusing the same function for two differently-shaped inputs.
+function parseSqliteUtc0(isoStr) {
+  return new Date(isoStr);
+}
+
+function lockoutMinutesRemaining(user) {
+  return Math.max(1, Math.ceil((parseSqliteUtc0(user.locked_until) - new Date()) / 60000));
+}
+
+function recordFailedLogin(db, user) {
+  const attempts = (user.failed_attempts || 0) + 1;
+  if (attempts >= LOGIN_MAX_ATTEMPTS) {
+    const lockedUntil = new Date(Date.now() + LOGIN_LOCKOUT_MINUTES * 60000).toISOString();
+    db.prepare("UPDATE users SET failed_attempts = ?, locked_until = ? WHERE id = ?").run(attempts, lockedUntil, user.id);
+  } else {
+    db.prepare("UPDATE users SET failed_attempts = ? WHERE id = ?").run(attempts, user.id);
+  }
+}
+
+function resetFailedLogins(db, userId) {
+  db.prepare("UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = ?").run(userId);
 }
 
 // Convenience accessor used by every write route when filling in
@@ -77,4 +136,7 @@ function actorName(req) {
   return (req.user && req.user.name) || "Unknown";
 }
 
-module.exports = { hashPassword, verifyPassword, generateToken, generateTempPassword, requireAuth, actorName };
+module.exports = {
+  hashPassword, verifyPassword, generateToken, generateTempPassword, requireAuth, actorName,
+  isLockedOut, lockoutMinutesRemaining, recordFailedLogin, resetFailedLogins,
+};
