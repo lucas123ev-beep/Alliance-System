@@ -54,18 +54,18 @@ function addDaysToDate(baseDateStr, days) {
 
 // Adds one sheet: small logo top-left + big bold title right-aligned (row
 // 1, no fill), a black rule closing off that header block, then a plain
-// bold column-header row (row 3, no fill either) with the Excel autofilter
-// + frozen panes anchored to it, then the data rows — first column bold,
-// same as the reference report's Order No. column.
+// bold column-header row (row 3, no fill either) with the Excel autofilter,
+// then the data rows — first column bold, same as the reference report's
+// Order No. column.
 function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows }) {
   const sheet = workbook.addWorksheet(sheetName, {
-    // Without an explicit activeCell, Excel defaults the "selected cell" to
-    // A1 — which is the merged title cell (A1:I1) — and draws its green
-    // selection outline around that entire merged block, reading as a
-    // stray box sitting on top of the letterhead every time the file is
-    // opened. Pointing the active/top-left cell at the first real data row
-    // instead (below the frozen header) keeps that highlight out of view.
-    views: [{ state: "frozen", ySplit: 3, showGridLines: false, topLeftCell: "A4", activeCell: "A4" }],
+    // No frozen panes: freezing draws Excel's own black divider line at the
+    // split row, and that line always spans the full window width — past
+    // the table's real columns — with no way to scope or hide it while
+    // freeze stays on. Not worth it just to keep the header sticky.
+    // activeCell still points past the merged title (A1:I1) so Excel
+    // doesn't open with its green selection box sitting on the letterhead.
+    views: [{ showGridLines: false, activeCell: "A4" }],
   });
 
   sheet.columns = columns.map(c => ({ key: c.key, width: c.width || 16 }));
