@@ -620,7 +620,7 @@ app.get('/api/reports/full', async (req, res) => {
     const categories = req.query.categories ? new Set(req.query.categories.split(',').filter(Boolean)) : null;
     const workbook = buildFullReportWorkbook(db, since, categories);
     const buffer = await workbook.xlsx.writeBuffer();
-    const filename = `ExportFlow-Report${since ? `-since-${since}` : ""}.xlsx`;
+    const filename = `AllianceFlow-Report${since ? `-since-${since}` : ""}.xlsx`;
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': contentDisposition(filename),

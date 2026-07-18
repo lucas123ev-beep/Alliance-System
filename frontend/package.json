@@ -1,7 +1,7 @@
 {
-  "name": "exportflow-frontend",
+  "name": "alliance-flow-frontend",
   "version": "1.0.0",
-  "description": "Export Order Management System - Frontend",
+  "description": "Alliance Flow - Order Management System - Frontend",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

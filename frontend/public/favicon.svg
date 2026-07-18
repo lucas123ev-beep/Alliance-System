@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="700" viewBox="0 0 700 700">
+  <rect width="700" height="700" fill="#132A63"/>
+  <rect x="100" y="100" width="500" height="500" rx="25" fill="white"/>
+  <line x1="350" y1="170" x2="350" y2="530" stroke="#132A63" stroke-width="6"/>
+  <line x1="200" y1="350" x2="500" y2="350" stroke="#132A63" stroke-width="6"/>
+  <text x="230" y="295" font-size="110" font-family="Montserrat, Arial, sans-serif" fill="#132A63">H</text>
+  <text x="390" y="295" font-size="110" font-family="Montserrat, Arial, sans-serif" fill="#132A63">K</text>
+  <text x="230" y="480" font-size="110" font-family="Montserrat, Arial, sans-serif" fill="#132A63">A</text>
+  <text x="390" y="480" font-size="110" font-family="Montserrat, Arial, sans-serif" fill="#132A63">G</text>
+</svg>

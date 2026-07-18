@@ -4788,7 +4788,7 @@ const renderTab = () => {
           <div style={{ padding: "20px 16px", borderBottom: "1px solid #1e293b" }}>
             {sidebarOpen ? (
               <div>
-                <div style={{ fontSize: "16px", fontWeight: 800, color: "#f1f5f9", letterSpacing: "-0.02em" }}>ExportFlow</div>
+                <div style={{ fontSize: "16px", fontWeight: 800, color: "#f1f5f9", letterSpacing: "-0.02em" }}>Alliance Flow</div>
                 <div style={{ fontSize: "10px", color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em" }}>Order Management</div>
               </div>
             ) : (

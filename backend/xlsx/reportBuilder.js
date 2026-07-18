@@ -154,7 +154,7 @@ function buildFullReportWorkbook(db, since, selectedCategories) {
   const sinceValue = since || "0000-01-01";
   const include = key => !selectedCategories || selectedCategories.has(key);
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "ExportFlow";
+  workbook.creator = "Alliance Flow";
   workbook.created = new Date();
 
   // ─── Quotations ────────────────────────────────────────────────────────
