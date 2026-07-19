@@ -67,6 +67,44 @@ const maskPhone = (v) => {
   return d;
 };
 
+// 0000.00.00 — Brazilian customs tariff code (NCM), always 8 digits grouped
+// 4.2.2. HS Code is left unmasked since it's an international field entered
+// in whatever grouping the person's customs paperwork already uses.
+const maskNCM = (v) => {
+  const raw = v || "";
+  if (/[a-zA-Z]/.test(raw)) return raw;
+  const d = raw.replace(/\D/g, "");
+  if (d.length > 8) return raw;
+  if (d.length > 6) return `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)}`;
+  if (d.length > 4) return `${d.slice(0, 4)}.${d.slice(4)}`;
+  return d;
+};
+
+// Live thousands-separator + decimal formatting for money amounts
+// (1.234,56) — digits fill in as cents from the right, the same behavior
+// every Brazilian banking/POS amount field uses (type "150000", see
+// "1.500,00" appear). This is the only style of live mask that survives
+// being re-applied to its own previous output on every keystroke: once the
+// mask has inserted a "." as a thousands separator, that character is
+// visually indistinguishable from a decimal point the person typed
+// themselves, so re-deriving "where's the decimal" from the punctuation in
+// the string (instead of always from raw digit count) breaks the moment
+// more digits are typed after it. Safe to feed straight into
+// parseLocaleNumber(), which every price field's save path already uses.
+const maskMoney = (v) => {
+  const raw = v == null ? "" : String(v);
+  // Strip ALL leading zeros (not just ones followed by another digit) so
+  // that repeatedly backspacing a typed amount actually reaches a fully
+  // empty field instead of getting stuck floored at "0,00" forever.
+  const digits = raw.replace(/\D/g, "").replace(/^0+/, "");
+  if (!digits) return "";
+  const padded = digits.padStart(3, "0");
+  const cents = padded.slice(-2);
+  const intPart = padded.slice(0, -2).replace(/^0+/, "") || "0";
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `${grouped},${cents}`;
+};
+
 // The two Alliance Global trading entities used to issue Proformas, Commercial
 // Invoices and Packing Lists. Since the business is a trader, the "Manufacturer"
 // shown on client-facing documents is always one of these — never the real
@@ -482,9 +520,13 @@ function PricingRow({ item, product, currency, onChange }) {
   const isLiquid = item.category === "Chemical";
   const isTon = isLiquid && item.price_basis === "ton";
   const rateKey = isTon ? "sale_per_ton" : "sale_per_liter";
-  const onPriceField = (field) => (e) => onChange(recalcTextileItem(item, product, field, e.target.value));
-  const onLiquidField = (field) => (e) => onChange(recalcLiquidItem(item, product, field, e.target.value));
-  const onSimpleField = (field) => (e) => onChange(recalcSimpleItem(item, product, field, e.target.value));
+  // Live thousands-separator formatting on every money field here (Value/X,
+  // Unit Price, Total) — Margin % is a percentage, not a money amount, so
+  // it's left as plain typed digits.
+  const moneyMask = (field, value) => (field === "sale_pct" ? value : maskMoney(value));
+  const onPriceField = (field) => (e) => onChange(recalcTextileItem(item, product, field, moneyMask(field, e.target.value)));
+  const onLiquidField = (field) => (e) => onChange(recalcLiquidItem(item, product, field, moneyMask(field, e.target.value)));
+  const onSimpleField = (field) => (e) => onChange(recalcSimpleItem(item, product, field, moneyMask(field, e.target.value)));
   const pctHandler = isTextile ? onPriceField("sale_pct") : isLiquid ? onLiquidField("sale_pct") : onSimpleField("sale_pct");
   const totalHandler = isTextile ? onPriceField("total") : isLiquid ? onLiquidField("total") : onSimpleField("total");
   return (
@@ -1260,7 +1302,7 @@ const handleHeightUnitChange = (e) => {
           <Input value={item.supplier || ""} onChange={e => setItem(p => ({ ...p, supplier: e.target.value }))} placeholder="Auto-filled from product" />
         </Field>
 <Field label={`Cost Price (${currencyLabel(item.cost_currency || "USD")})`}>
-  <Input type="number" value={item.cost_price || ""} onChange={e => setItem(prev => ({ ...prev, cost_price: e.target.value }))} placeholder="0.00" />
+  <Input type="text" inputMode="decimal" value={item.cost_price || ""} onChange={e => setItem(prev => ({ ...prev, cost_price: maskMoney(e.target.value) }))} placeholder="0.00" />
 </Field>
 <Field label="Total Weight" half>
   <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: item.total_weight ? "#10b981" : "#475569", fontWeight: item.total_weight ? 700 : 400, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
@@ -1274,7 +1316,14 @@ const handleHeightUnitChange = (e) => {
 </Field>
         <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
           <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-          <Btn onClick={() => { onSave(item); onClose(); }}>
+          <Btn onClick={() => {
+            // cost_price displays with live thousands-separator formatting
+            // (maskMoney) while editing — convert back to a plain number
+            // before it joins the item list (which ultimately gets sent to
+            // the backend's REAL cost_price column).
+            onSave({ ...item, cost_price: item.cost_price !== "" && item.cost_price != null ? (parseLocaleNumber(item.cost_price) ?? item.cost_price) : item.cost_price });
+            onClose();
+          }}>
             {initial ? "Update Item" : "Add Item"}
           </Btn>
         </div>
@@ -1361,7 +1410,23 @@ useEffect(() => {
   };
 
   const submit = async () => {
-    await onSave({ ...f, items });
+    // Value displays with live thousands-separator formatting (maskMoney)
+    // while editing — convert back to a plain number here. Same cleanup as
+    // QuotationForm's cleanedItems for the item rows themselves, since
+    // Order items go through this same PricingRow editor and can just as
+    // easily end up holding BR-formatted text in whichever field was last
+    // typed into directly.
+    const cleanedItems = items.map(item => ({
+      ...item,
+      total: item.total !== "" && item.total != null ? (parseLocaleNumber(item.total) ?? item.total) : item.total,
+      unit_price: item.unit_price !== "" && item.unit_price != null ? (parseLocaleNumber(item.unit_price) ?? item.unit_price) : item.unit_price,
+      sale_per_meter: item.sale_per_meter !== "" && item.sale_per_meter != null ? (parseLocaleNumber(item.sale_per_meter) ?? item.sale_per_meter) : item.sale_per_meter,
+      sale_per_liter: item.sale_per_liter !== "" && item.sale_per_liter != null ? (parseLocaleNumber(item.sale_per_liter) ?? item.sale_per_liter) : item.sale_per_liter,
+      sale_per_ton: item.sale_per_ton !== "" && item.sale_per_ton != null ? (parseLocaleNumber(item.sale_per_ton) ?? item.sale_per_ton) : item.sale_per_ton,
+      sale_pct: item.sale_pct !== "" && item.sale_pct != null ? (parseLocaleNumber(item.sale_pct) ?? item.sale_pct) : item.sale_pct,
+      target_price: item.target_price !== "" && item.target_price != null ? (parseLocaleNumber(item.target_price) ?? item.target_price) : item.target_price,
+    }));
+    await onSave({ ...f, value: parseLocaleNumber(f.value) ?? 0, items: cleanedItems });
     onClose();
   };
 
@@ -1455,7 +1520,7 @@ useEffect(() => {
         )}
 
         <Field label="Value" half>
-         <Input type="number" value={f.value} onChange={set("value")} placeholder="0.00" />
+         <Input type="text" inputMode="decimal" value={f.value} onChange={e => setF(p => ({ ...p, value: maskMoney(e.target.value) }))} placeholder="0.00" />
         </Field>
         <Field label="Currency" half>
           <Select value={f.currency} onChange={set("currency")}>
@@ -1613,7 +1678,8 @@ const handleUpload = async (e) => {
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
 const handleCostChange = (e) => {
-  const cost = parseFloat(e.target.value) || 0;
+  const masked = maskMoney(e.target.value);
+  const cost = parseLocaleNumber(masked) || 0;
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(f);
@@ -1622,7 +1688,7 @@ const handleCostChange = (e) => {
   const cpl = volL > 0 ? (cost / volL).toFixed(4) : f.cost_per_liter;
   const cpt = tons > 0 ? (cost / tons).toFixed(4) : f.cost_per_ton;
   setF((p) => ({
-    ...p, unit_cost: e.target.value,
+    ...p, unit_cost: masked,
     cost_per_meter: heightM > 0 ? cpm : p.cost_per_meter,
     cost_per_liter: volL > 0 ? cpl : p.cost_per_liter,
     cost_per_ton: tons > 0 ? cpt : p.cost_per_ton,
@@ -1640,7 +1706,8 @@ const handleCostChange = (e) => {
   const markupBaseRef = useRef(null);
 
   const handleSalePriceChange = (e) => {
-  const sale = parseFloat(e.target.value) || 0;
+  const masked = maskMoney(e.target.value);
+  const sale = parseLocaleNumber(masked) || 0;
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(f);
@@ -1649,7 +1716,7 @@ const handleCostChange = (e) => {
   const spl = volL > 0 ? (sale / volL).toFixed(4) : f.sale_per_liter;
   const spt = tons > 0 ? (sale / tons).toFixed(4) : f.sale_per_ton;
   setF((p) => ({
-    ...p, sale_price: e.target.value,
+    ...p, sale_price: masked,
     sale_per_meter: heightM > 0 ? spm : p.sale_per_meter,
     sale_per_liter: volL > 0 ? spl : p.sale_per_liter,
     sale_per_ton: tons > 0 ? spt : p.sale_per_ton,
@@ -1657,13 +1724,13 @@ const handleCostChange = (e) => {
 };
 
 const handleMarkupFocus = () => {
-  markupBaseRef.current = parseFloat(f.sale_price) || 0;
+  markupBaseRef.current = parseLocaleNumber(f.sale_price) || 0;
 };
 
 const handleSalePctChange = (e) => {
   const pctStr = e.target.value;
   const pct = parseFloat(pctStr);
-  const base = markupBaseRef.current != null ? markupBaseRef.current : (parseFloat(f.sale_price) || 0);
+  const base = markupBaseRef.current != null ? markupBaseRef.current : (parseLocaleNumber(f.sale_price) || 0);
   const canCalc = base > 0 && !isNaN(pct);
   const sale = canCalc ? base * (1 + pct / 100) : null;
   const h = parseFloat(f.height) || 0;
@@ -1672,7 +1739,7 @@ const handleSalePctChange = (e) => {
   const tons = tonsOf(f);
   setF((p) => ({
     ...p, sale_pct: pctStr,
-    sale_price: canCalc ? sale.toFixed(2) : p.sale_price,
+    sale_price: canCalc ? maskMoney(sale.toFixed(2)) : p.sale_price,
     sale_per_meter: canCalc && heightM > 0 ? (sale / heightM).toFixed(4) : p.sale_per_meter,
     sale_per_liter: canCalc && volL > 0 ? (sale / volL).toFixed(4) : p.sale_per_liter,
     sale_per_ton: canCalc && tons > 0 ? (sale / tons).toFixed(4) : p.sale_per_ton,
@@ -1683,7 +1750,7 @@ const handleCostPerMeterChange = (e) => {
   const cpm = parseFloat(e.target.value) || 0;
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
-  const unit_cost = (cpm * heightM).toFixed(2);
+  const unit_cost = maskMoney((cpm * heightM).toFixed(2));
   setF((p) => ({ ...p, cost_per_meter: e.target.value, unit_cost: heightM > 0 ? unit_cost : p.unit_cost }));
 };
 
@@ -1691,7 +1758,7 @@ const handleSalePerMeterChange = (e) => {
   const spm = parseFloat(e.target.value) || 0;
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
-  const sale_price = (spm * heightM).toFixed(2);
+  const sale_price = maskMoney((spm * heightM).toFixed(2));
   setF((p) => ({
     ...p, sale_per_meter: e.target.value,
     sale_price: heightM > 0 ? sale_price : p.sale_price,
@@ -1701,21 +1768,21 @@ const handleSalePerMeterChange = (e) => {
 const handleCostPerLiterChange = (e) => {
   const cpl = parseFloat(e.target.value) || 0;
   const volL = volumeLOf(f);
-  const unit_cost = (cpl * volL).toFixed(2);
+  const unit_cost = maskMoney((cpl * volL).toFixed(2));
   setF((p) => ({ ...p, cost_per_liter: e.target.value, unit_cost: volL > 0 ? unit_cost : p.unit_cost }));
 };
 
 const handleCostPerTonChange = (e) => {
   const cpt = parseFloat(e.target.value) || 0;
   const tons = tonsOf(f);
-  const unit_cost = (cpt * tons).toFixed(2);
+  const unit_cost = maskMoney((cpt * tons).toFixed(2));
   setF((p) => ({ ...p, cost_per_ton: e.target.value, unit_cost: tons > 0 ? unit_cost : p.unit_cost }));
 };
 
 const handleSalePerTonChange = (e) => {
   const spt = parseFloat(e.target.value) || 0;
   const tons = tonsOf(f);
-  const sale_price = (spt * tons).toFixed(2);
+  const sale_price = maskMoney((spt * tons).toFixed(2));
   setF((p) => ({
     ...p, sale_per_ton: e.target.value,
     sale_price: tons > 0 ? sale_price : p.sale_price,
@@ -1725,7 +1792,7 @@ const handleSalePerTonChange = (e) => {
 const handleSalePerLiterChange = (e) => {
   const spl = parseFloat(e.target.value) || 0;
   const volL = volumeLOf(f);
-  const sale_price = (spl * volL).toFixed(2);
+  const sale_price = maskMoney((spl * volL).toFixed(2));
   setF((p) => ({
     ...p, sale_per_liter: e.target.value,
     sale_price: volL > 0 ? sale_price : p.sale_price,
@@ -1748,7 +1815,7 @@ const handleSalePerLiterChange = (e) => {
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Product Code" half><Input value={f.code} onChange={set("code")} placeholder="001" /></Field>
       <Field label="Name" half><Input value={f.name} onChange={set("name")} /></Field>
-      <Field label="NCM" half><Input value={f.ncm} onChange={set("ncm")} placeholder="0000.00.00" /></Field>
+      <Field label="NCM" half><Input value={f.ncm} onChange={e => setF(p => ({ ...p, ncm: maskNCM(e.target.value) }))} placeholder="0000.00.00" /></Field>
       <Field label="HS Code" half><Input value={f.hs_code || ""} onChange={set("hs_code")} placeholder="0000.00" /></Field>
       <Field label="Color" half><Input value={f.color || ""} onChange={set("color")} placeholder="e.g. Red, Navy Blue" /></Field>
       <Field label="Category" half>
@@ -1907,11 +1974,24 @@ const handleSalePerLiterChange = (e) => {
     {f.category === "Chemical" && f.price_basis === "ton" && (
       <Field label="Cost per Ton">
         <Input type="number" value={f.cost_per_ton || ""} onChange={handleCostPerTonChange} placeholder="0.00" />
+        <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
+          1 package ≈ {tonsOf(f).toFixed(3)} t (from Weight above) — Cost/Sale Price below = this rate × that weight.
+        </div>
       </Field>
     )}
-    <Field label="Cost Price">
-      <Input type="number" value={f.unit_cost} onChange={handleCostChange} placeholder="0.00" />
-    </Field>
+    <div style={{ display: "flex", gap: "16px" }}>
+      <div style={{ flex: 1 }}>
+        <Field label="Cost Price">
+          <Input type="text" inputMode="decimal" value={f.unit_cost} onChange={handleCostChange} placeholder="0.00" />
+        </Field>
+      </div>
+      <div style={{ flex: 1 }}>
+        <Field label="VAT %">
+          <Input type="number" value={f.vat_pct || ""} onChange={set("vat_pct")} placeholder="e.g. 13" />
+          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>Informational only — not used in any calculation.</div>
+        </Field>
+      </div>
+    </div>
   </div>
   <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
     <Field label="Sale Currency">
@@ -1935,22 +2015,12 @@ const handleSalePerLiterChange = (e) => {
       </Field>
     )}
     <Field label="Sale Price">
-      <Input type="number" value={f.sale_price || ""} onChange={handleSalePriceChange} placeholder="0.00" />
+      <Input type="text" inputMode="decimal" value={f.sale_price || ""} onChange={handleSalePriceChange} placeholder="0.00" />
     </Field>
-    <div style={{ display: "flex", gap: "16px" }}>
-      <div style={{ flex: 1 }}>
-        <Field label="Margin %">
-          <Input type="number" value={f.sale_pct || ""} onFocus={handleMarkupFocus} onChange={handleSalePctChange} placeholder="e.g. 15" />
-          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>Adds this % on top of the Sale Price — not calculated from Cost.</div>
-        </Field>
-      </div>
-      <div style={{ flex: 1 }}>
-        <Field label="VAT %">
-          <Input type="number" value={f.vat_pct || ""} onChange={set("vat_pct")} placeholder="e.g. 13" />
-          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>Informational only — not used in any calculation.</div>
-        </Field>
-      </div>
-    </div>
+    <Field label="Margin %">
+      <Input type="number" value={f.sale_pct || ""} onFocus={handleMarkupFocus} onChange={handleSalePctChange} placeholder="e.g. 15" />
+      <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>Adds this % on top of the Sale Price — not calculated from Cost.</div>
+    </Field>
   </div>
 </div>
 
@@ -1994,7 +2064,19 @@ const handleSalePerLiterChange = (e) => {
   </div>
 </Field>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={async () => { await onSave({ ...f, media: JSON.stringify(media) }); onClose(); }}>Save Product</Btn>
+        <Btn onClick={async () => {
+          // unit_cost/sale_price display with live thousands-separator
+          // formatting (see maskMoney) while editing — convert back to
+          // plain numbers here so the backend's REAL columns get an actual
+          // number, not a "1.225,60"-style formatted string.
+          await onSave({
+            ...f,
+            unit_cost: parseLocaleNumber(f.unit_cost) ?? 0,
+            sale_price: parseLocaleNumber(f.sale_price) ?? 0,
+            media: JSON.stringify(media),
+          });
+          onClose();
+        }}>Save Product</Btn>
       </div>
     </div>
   );
@@ -2362,7 +2444,22 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
         {f.id && <Btn outline color="#10b981" onClick={() => window.open(authUrl(`${API}/proformas/${f.id}/pdf`), "_blank")}>📄 Download PDF</Btn>}
-        <Btn onClick={async () => { await onSave({ ...f, items: JSON.stringify(items) }); onClose(); }}>Save Proforma</Btn>
+        <Btn onClick={async () => {
+          // Same BR-formatted-text cleanup as QuotationForm/OrderForm — the
+          // items here go through the same PricingRow editor.
+          const cleanedItems = items.map(item => ({
+            ...item,
+            total: item.total !== "" && item.total != null ? (parseLocaleNumber(item.total) ?? item.total) : item.total,
+            unit_price: item.unit_price !== "" && item.unit_price != null ? (parseLocaleNumber(item.unit_price) ?? item.unit_price) : item.unit_price,
+            sale_per_meter: item.sale_per_meter !== "" && item.sale_per_meter != null ? (parseLocaleNumber(item.sale_per_meter) ?? item.sale_per_meter) : item.sale_per_meter,
+            sale_per_liter: item.sale_per_liter !== "" && item.sale_per_liter != null ? (parseLocaleNumber(item.sale_per_liter) ?? item.sale_per_liter) : item.sale_per_liter,
+            sale_per_ton: item.sale_per_ton !== "" && item.sale_per_ton != null ? (parseLocaleNumber(item.sale_per_ton) ?? item.sale_per_ton) : item.sale_per_ton,
+            sale_pct: item.sale_pct !== "" && item.sale_pct != null ? (parseLocaleNumber(item.sale_pct) ?? item.sale_pct) : item.sale_pct,
+            target_price: item.target_price !== "" && item.target_price != null ? (parseLocaleNumber(item.target_price) ?? item.target_price) : item.target_price,
+          }));
+          await onSave({ ...f, items: JSON.stringify(cleanedItems) });
+          onClose();
+        }}>Save Proforma</Btn>
       </div>
     </div>
     </>
@@ -2457,7 +2554,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
           {txTypes.map(t => <option key={t}>{t}</option>)}
         </Select>
       </Field>
-      <Field label="Amount" half><Input type="number" value={f.amount} onChange={set("amount")} /></Field>
+      <Field label="Amount" half><Input type="text" inputMode="decimal" value={f.amount} onChange={e => setF(p => ({ ...p, amount: maskMoney(e.target.value) }))} /></Field>
       <Field label="Currency" half>
         <Select value={f.currency} onChange={set("currency")}>
           <option>USD</option><option>EUR</option><option>BRL</option><option value="CNY">RMB</option><option value="HKD">HKD</option>
@@ -2470,7 +2567,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
           amount stuck in Pending regardless of what's actually been paid. */}
       {f.status === "Partial" && (
         <Field label="Amount Paid So Far" half>
-          <Input type="number" value={f.paid_amount} onChange={set("paid_amount")} />
+          <Input type="text" inputMode="decimal" value={f.paid_amount} onChange={e => setF(p => ({ ...p, paid_amount: maskMoney(e.target.value) }))} />
         </Field>
       )}
       <Field label="Description">
@@ -2515,7 +2612,18 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
             📄 {part.label ? `${part.label} PDF (${part.pct}%)` : "Payment Notice PDF"}
           </Btn>
         ))}
-        <Btn color={isClient ? "#3b82f6" : "#8b5cf6"} onClick={async () => { await onSave(f); onClose(); }}>Save</Btn>
+        <Btn color={isClient ? "#3b82f6" : "#8b5cf6"} onClick={async () => {
+          // Amount/Amount Paid display with live thousands-separator
+          // formatting (see maskMoney) while editing — convert back to
+          // plain numbers here so the backend's REAL columns get an actual
+          // number, not a "1.225,60"-style formatted string.
+          await onSave({
+            ...f,
+            amount: parseLocaleNumber(f.amount) ?? 0,
+            paid_amount: f.paid_amount !== "" && f.paid_amount != null ? (parseLocaleNumber(f.paid_amount) ?? 0) : f.paid_amount,
+          });
+          onClose();
+        }}>Save</Btn>
       </div>
     </div>
   );
