@@ -37,7 +37,7 @@ function renderSalesInvoice(params) {
   // client's own reference documents), not name-plus-paragraph stacked in
   // one cell — NCM and any extra facts (CAS number, etc.) sit under the
   // description as a small bulleted list.
-  const nameCell = item => `<td><strong>${escapeHtml(item.description)}</strong></td>`;
+  const nameCell = item => `<td class="center"><strong>${escapeHtml(item.description)}</strong></td>`;
   const descCell = item => `
     <td>
       ${item.descriptionText ? `<p class="desc-text">${escapeHtml(item.descriptionText)}</p>` : ""}
@@ -62,10 +62,11 @@ function renderSalesInvoice(params) {
     </tr>
   `).join("");
 
-  // Total Weight only means anything for Chemical items priced by the ton
-  // (the weight IS the traded quantity there) — every other category in
-  // this table (machines, accessories, liter-priced chemicals...) leaves it
-  // blank instead of printing a kg figure nobody asked to see on this row.
+  // Ton-priced Chemical items already show their weight as the Quantity
+  // itself ("48 t (≈ 240 Drums)") — repeating it in Total Weight is
+  // redundant, so that column is left fully empty (not even a "—") for
+  // those rows. Every other category still shows its registered weight in
+  // kg here, since nothing else on the row carries that information.
   const otherRows = otherItems.map(item => `
     <tr>
       ${nameCell(item)}
@@ -75,9 +76,9 @@ function renderSalesInvoice(params) {
       <td class="center">${item.quantityLabel
         ? escapeHtml(item.quantityLabel)
         : item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
-      <td class="num">${item.priceBasis === "ton" && item.totalWeight
-        ? `${fmtNumber(item.totalWeight / 1000, 3)} t`
-        : "—"}</td>
+      <td class="num">${item.priceBasis === "ton"
+        ? ""
+        : (item.totalWeight ? `${fmtNumber(item.totalWeight, 1)} kg` : "—")}</td>
       <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
       <td class="num">${fmtMoney(item.total, currency)}</td>
     </tr>

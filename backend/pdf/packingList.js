@@ -26,7 +26,7 @@ function isTextileItem(item) {
 // client's own reference documents), not name-plus-paragraph stacked in one
 // cell — NCM and any extra facts (CAS number, etc.) sit under the
 // description as a small bulleted list.
-const nameCell = item => `<td><strong>${escapeHtml(item.description)}</strong></td>`;
+const nameCell = item => `<td class="center"><strong>${escapeHtml(item.description)}</strong></td>`;
 const descCell = item => `
   <td>
     ${item.descriptionText ? `<p class="desc-text">${escapeHtml(item.descriptionText)}</p>` : ""}
