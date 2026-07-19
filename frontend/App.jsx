@@ -3340,6 +3340,14 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
       const netPerRoll = sumField("netWeight") / total;
       const cbmPerRoll = sumField("cbm") / total;
       const lengthPerRoll = item.isTextile ? sumField("totalLength") / total : null;
+      // Ton-priced Chemical: Gross Weight per container is recomputed
+      // directly from Packages × the product's registered per-drum weight
+      // (tons_per_package × 1000) every time, instead of carrying forward a
+      // "per-roll rate" — that rate can only stay exactly right if it's
+      // never touched by an edit made under different numbers, and any
+      // drift there would silently break "Packages × weight = Gross
+      // Weight" (which is what should always be checkable at a glance).
+      const perDrumWeightKg = item.tons_per_package ? item.tons_per_package * 1000 : null;
 
       const otherSum = sameProduct
         .filter(i => i !== idx && i !== partnerIdx)
@@ -3354,7 +3362,9 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
         items[i] = {
           ...items[i],
           roll,
-          grossWeight: Math.round(grossPerRoll * roll * 10) / 10,
+          grossWeight: perDrumWeightKg != null
+            ? Math.round(roll * perDrumWeightKg * 10) / 10
+            : Math.round(grossPerRoll * roll * 10) / 10,
           netWeight: Math.round(netPerRoll * roll * 10) / 10,
           cbm: Math.round(cbmPerRoll * roll * 100) / 100,
           totalLength: lengthPerRoll != null ? Math.round(lengthPerRoll * roll * 100) / 100 : items[i].totalLength,

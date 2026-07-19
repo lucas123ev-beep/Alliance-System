@@ -1127,6 +1127,12 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
         return `Container ${String(c.seq).padStart(2, '0')}: ${c.code || '—'} — ${unitSummary(containerItems)} | Gross Weight: ${sumOf(containerItems, 'grossWeight').toFixed(1)} kg | Net Weight: ${sumOf(containerItems, 'netWeight').toFixed(1)} kg | CBM: ${sumOf(containerItems, 'cbm').toFixed(1)}`;
       }).filter(Boolean);
     }
+    // "2x 40' High Cube" — shown right next to the "Packing List
+    // Description" label so the container count/type is visible at a
+    // glance instead of only implied by however many lines follow.
+    const containerSummaryText = order?.container_qty && order?.container
+      ? `${order.container_qty}x ${order.container}`
+      : '';
 
     const html = renderSalesInvoice({
       title: 'COMMERCIAL INVOICE',
@@ -1150,6 +1156,7 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
       productionDays: order?.production_lead_time,
       deliveryDays: order?.delivery_days,
       extraShipmentLine: plSummary,
+      extraShipmentLineLabel: containerSummaryText,
       importer: { name: ci.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
     });
 

@@ -16,12 +16,13 @@ const { escapeHtml, fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLab
 //   totalLength, totalWeight, totalQuantity, totalAmount, currency
 //   paymentTerms, productionDays, deliveryDays
 //   importer: { name, address, taxId, tel }
-//   extraShipmentLine: optional extra line for Shipment Details column (e.g. Packing List summary)
+//   extraShipmentLine: optional extra line(s) for Shipment Details column (e.g. Packing List summary)
+//   extraShipmentLineLabel: optional short suffix for the "Packing List Description" label (e.g. "2x 40' High Cube")
 function renderSalesInvoice(params) {
   const {
     title, number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
     incoterm, acq, manufacturer, items, totalLength, totalWeight, totalQuantity, totalAmount, currency,
-    paymentTerms, productionDays, deliveryDays, importer, extraShipmentLine,
+    paymentTerms, productionDays, deliveryDays, importer, extraShipmentLine, extraShipmentLineLabel,
   } = params;
 
   // Textile/DTF Film rolls are quoted and measured by the meter, so they get
@@ -181,15 +182,19 @@ function renderSalesInvoice(params) {
         <p><strong>2. End date of production:</strong> ${escapeHtml(productionDays || "28")} days after TT payment.</p>
         <p><strong>3. Goods delivered:</strong> ${escapeHtml(portOfOrigin || "—")}.</p>
         <p><strong>4. Delivery date at ${escapeHtml((portOfOrigin || "origin port").split(",")[0])}:</strong> ${escapeHtml(deliveryDays || "33")} days after TT payment.</p>
-        ${extraShipmentLine ? `<p><strong>5. Packing List Description:</strong> ${
+        ${extraShipmentLine ? `
+        <p style="margin-bottom:2px;"><strong>5. Packing List Description${extraShipmentLineLabel ? `: ${escapeHtml(extraShipmentLineLabel)}` : ""}</strong></p>
+        ${
           // Multi-container Packing Lists pass an array (one breakdown line
-          // per container, e.g. "Container 01: OOCU7979442 — Rolls: 561 |
-          // ...") — join with line breaks instead of one run-on sentence.
-          // Single-container / legacy callers still just pass a string.
+          // per container, e.g. "Container 01: OOCU7979442 — Tons: 26.928 |
+          // ..."). Each container gets its own indented line instead of
+          // being run together in one paragraph, so they read as a list
+          // instead of a wall of text. Single-container/legacy callers
+          // still just pass a plain string.
           Array.isArray(extraShipmentLine)
-            ? extraShipmentLine.map(l => escapeHtml(l)).join(".<br/>") + "."
-            : escapeHtml(extraShipmentLine) + "."
-        }</p>` : ""}
+            ? extraShipmentLine.map(l => `<p style="margin:2px 0 2px 12px;">${escapeHtml(l)}.</p>`).join("")
+            : `<p style="margin:2px 0 2px 12px;">${escapeHtml(extraShipmentLine)}.</p>`
+        }` : ""}
         <div class="bank-block" style="margin-top:8px;">
           <p><strong>Our bank information is as below:</strong></p>
           <p>Beneficiary Name: ${escapeHtml(acq.bank.beneficiary)}.</p>
