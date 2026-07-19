@@ -39,6 +39,12 @@ const descCell = item => `
 
 const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 0);
 
+// "Roll" only means something for Textile/DTF Film — everything else
+// (chemicals in drums, machines in crates...) reads "Packages" instead,
+// matching the column header already used for that section's table
+// instead of a hardcoded term that only applies to rolled fabric.
+const packageLabel = (arr) => (arr.length && arr.every(isTextileItem)) ? "Roll" : "Packages";
+
 // Renders the (up to) two category tables — Textile/DTF Film with a Total
 // Length column, everything else with a Quantity column — for one group of
 // items. Used both for a whole Packing List (no container split) and for a
@@ -178,7 +184,7 @@ function renderPackingList(params) {
             <tr class="totals-row">
               <td>TOTAL:</td>
               <td class="num">Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 3)}</td>
-              <td class="num">Roll: ${fmtNumber(sumOf(containerItems, "roll"), 0)}</td>
+              <td class="num">${packageLabel(containerItems)}: ${fmtNumber(sumOf(containerItems, "roll"), 0)}</td>
               <td class="num">Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)}</td>
               <td class="num">Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)}</td>
               <td class="num">CBM: ${fmtNumber(sumOf(containerItems, "cbm"), 2)}</td>
@@ -201,7 +207,7 @@ function renderPackingList(params) {
         <tr class="totals-row">
           <td>GRAND TOTAL:</td>
           <td class="num">Length: ${fmtNumber(totals.totalLength, 3)}</td>
-          <td class="num">Roll: ${fmtNumber(totals.totalRoll, 0)}</td>
+          <td class="num">${packageLabel(items)}: ${fmtNumber(totals.totalRoll, 0)}</td>
           <td class="num">Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}</td>
           <td class="num">Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}</td>
           <td class="num">CBM: ${fmtNumber(totals.totalCbm, 2)}</td>
