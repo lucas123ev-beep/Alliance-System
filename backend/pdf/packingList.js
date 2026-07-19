@@ -22,9 +22,13 @@ function isTextileItem(item) {
   return !!(item.totalLength && parseFloat(item.totalLength) > 0);
 }
 
+// Product name and description are two separate columns (matching the
+// client's own reference documents), not name-plus-paragraph stacked in one
+// cell — NCM and any extra facts (CAS number, etc.) sit under the
+// description as a small bulleted list.
+const nameCell = item => `<td><strong>${escapeHtml(item.description)}</strong></td>`;
 const descCell = item => `
   <td>
-    <strong>${escapeHtml(item.description)}</strong>
     ${item.descriptionText ? `<p class="desc-text">${escapeHtml(item.descriptionText)}</p>` : ""}
     ${(item.bullets && item.bullets.length) || item.ncm ? `<ul class="desc-bullets">
       ${(item.bullets || []).map(b => `<li>${escapeHtml(b)}</li>`).join("")}
@@ -46,10 +50,11 @@ function renderItemSections(items) {
 
   const textileRows = textileItems.map(item => `
     <tr>
+      ${nameCell(item)}
       ${descCell(item)}
-      <td>${escapeHtml(item.color || "—")}</td>
-      <td>${escapeHtml(item.width || "—")}</td>
-      <td>${escapeHtml(item.weightSpec || "—")}</td>
+      <td class="center">${escapeHtml(item.color || "—")}</td>
+      <td class="center">${escapeHtml(item.width || "—")}</td>
+      <td class="center">${escapeHtml(item.weightSpec || "—")}</td>
       <td class="num">${fmtNumber(item.totalLength, 3)}</td>
       <td class="num">${fmtNumber(item.roll, 0)}</td>
       <td class="num">${fmtNumber(item.grossWeight, 3)}</td>
@@ -60,10 +65,11 @@ function renderItemSections(items) {
 
   const otherRows = otherItems.map(item => `
     <tr>
+      ${nameCell(item)}
       ${descCell(item)}
-      <td>${escapeHtml(item.color || "—")}</td>
-      <td>${escapeHtml(item.priceUnitLabel || item.width || "—")}</td>
-      <td>${item.quantityLabel
+      <td class="center">${escapeHtml(item.color || "—")}</td>
+      <td class="center">${escapeHtml(item.priceUnitLabel || item.width || "—")}</td>
+      <td class="center">${item.quantityLabel
         ? escapeHtml(item.quantityLabel)
         : item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
       <td class="num">${fmtNumber(item.roll, 0)}</td>
@@ -80,7 +86,8 @@ function renderItemSections(items) {
     <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
-          <th style="width:22%">Descriptions of Goods</th>
+          <th style="width:11%">Product</th>
+          <th style="width:17%">Description</th>
           <th>Color</th>
           <th>Width</th>
           <th>Weight</th>
@@ -94,7 +101,7 @@ function renderItemSections(items) {
       <tbody>
         ${textileRows}
         <tr class="totals-row">
-          <td colspan="4">SUBTOTAL:</td>
+          <td colspan="5">SUBTOTAL:</td>
           <td class="num">${fmtNumber(sumOf(textileItems, "totalLength"), 3)}</td>
           <td class="num">${fmtNumber(sumOf(textileItems, "roll"), 0)}</td>
           <td class="num">${fmtNumber(sumOf(textileItems, "grossWeight"), 3)}</td>
@@ -111,7 +118,8 @@ function renderItemSections(items) {
     <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
-          <th style="width:22%">Descriptions of Goods</th>
+          <th style="width:11%">Product</th>
+          <th style="width:17%">Description</th>
           <th>Color</th>
           <th>Unit</th>
           <th>Quantity</th>
@@ -124,7 +132,7 @@ function renderItemSections(items) {
       <tbody>
         ${otherRows}
         <tr class="totals-row">
-          <td colspan="3">SUBTOTAL:</td>
+          <td colspan="4">SUBTOTAL:</td>
           <td></td>
           <td class="num">${fmtNumber(sumOf(otherItems, "roll"), 0)}</td>
           <td class="num">${fmtNumber(sumOf(otherItems, "grossWeight"), 3)}</td>

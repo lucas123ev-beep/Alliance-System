@@ -33,9 +33,13 @@ function renderSalesInvoice(params) {
   const textileItems = items.filter(i => i.isTextile);
   const otherItems = items.filter(i => !i.isTextile);
 
+  // Product name and description are two separate columns (matching the
+  // client's own reference documents), not name-plus-paragraph stacked in
+  // one cell — NCM and any extra facts (CAS number, etc.) sit under the
+  // description as a small bulleted list.
+  const nameCell = item => `<td><strong>${escapeHtml(item.description)}</strong></td>`;
   const descCell = item => `
     <td>
-      <strong>${escapeHtml(item.description)}</strong>
       ${item.descriptionText ? `<p class="desc-text">${escapeHtml(item.descriptionText)}</p>` : ""}
       ${(item.bullets && item.bullets.length) || item.ncm ? `<ul class="desc-bullets">
         ${(item.bullets || []).map(b => `<li>${escapeHtml(b)}</li>`).join("")}
@@ -46,10 +50,11 @@ function renderSalesInvoice(params) {
 
   const textileRows = textileItems.map(item => `
     <tr>
+      ${nameCell(item)}
       ${descCell(item)}
-      <td>${escapeHtml(item.color || "—")}</td>
-      <td>${escapeHtml(item.width || "—")}</td>
-      <td>${escapeHtml(item.weightSpec || "—")}</td>
+      <td class="center">${escapeHtml(item.color || "—")}</td>
+      <td class="center">${escapeHtml(item.width || "—")}</td>
+      <td class="center">${escapeHtml(item.weightSpec || "—")}</td>
       <td class="num">${item.metersPerRoll ? fmtNumber(item.metersPerRoll, 2) : "—"}</td>
       <td class="num">${fmtNumber(item.totalLength, 3)}</td>
       <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
@@ -57,20 +62,21 @@ function renderSalesInvoice(params) {
     </tr>
   `).join("");
 
-  // Chemical items priced by the ton (item.priceBasis === "ton") show their
-  // weight in tons instead of kg here — matches whatever unit the deal was
-  // actually struck in, instead of always showing kg regardless of how the
-  // item was priced.
+  // Total Weight only means anything for Chemical items priced by the ton
+  // (the weight IS the traded quantity there) — every other category in
+  // this table (machines, accessories, liter-priced chemicals...) leaves it
+  // blank instead of printing a kg figure nobody asked to see on this row.
   const otherRows = otherItems.map(item => `
     <tr>
+      ${nameCell(item)}
       ${descCell(item)}
-      <td>${escapeHtml(item.color || "—")}</td>
-      <td>${escapeHtml(item.priceUnitLabel || item.width || "—")}</td>
-      <td>${item.quantityLabel
+      <td class="center">${escapeHtml(item.color || "—")}</td>
+      <td class="center">${escapeHtml(item.priceUnitLabel || item.width || "—")}</td>
+      <td class="center">${item.quantityLabel
         ? escapeHtml(item.quantityLabel)
         : item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
-      <td class="num">${item.totalWeight
-        ? (item.priceBasis === "ton" ? `${fmtNumber(item.totalWeight / 1000, 3)} t` : `${fmtNumber(item.totalWeight, 1)} kg`)
+      <td class="num">${item.priceBasis === "ton" && item.totalWeight
+        ? `${fmtNumber(item.totalWeight / 1000, 3)} t`
         : "—"}</td>
       <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
       <td class="num">${fmtMoney(item.total, currency)}</td>
@@ -87,7 +93,8 @@ function renderSalesInvoice(params) {
     <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
-          <th style="width:26%">Descriptions of Goods</th>
+          <th style="width:13%">Product</th>
+          <th style="width:22%">Description</th>
           <th>Color</th>
           <th>Width</th>
           <th>Weight</th>
@@ -109,7 +116,8 @@ function renderSalesInvoice(params) {
     <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
-          <th style="width:28%">Descriptions of Goods</th>
+          <th style="width:14%">Product</th>
+          <th style="width:24%">Description</th>
           <th>Color</th>
           <th>Unit</th>
           <th>Quantity</th>

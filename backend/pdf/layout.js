@@ -43,11 +43,15 @@ function baseCss() {
       padding: 4px 0;
     }
     .items-table th {
-      border-bottom: 1.5px solid #333; padding: 4px 6px; font-size: 8.5px;
-      text-transform: uppercase; text-align: left; font-weight: bold;
+      border-bottom: 1.5px solid #333; padding: 6px 9px; font-size: 8.5px;
+      text-transform: uppercase; text-align: center; font-weight: bold;
     }
-    .items-table td { border-bottom: 0.75px solid #999; padding: 5px 6px; font-size: 9.5px; vertical-align: middle; }
+    .items-table td { border-bottom: 0.75px solid #999; padding: 7px 9px; font-size: 9.5px; vertical-align: middle; }
     .items-table .num { text-align: right; }
+    /* Short single-value columns (Color, Width/Unit, Quantity, weight
+       spec...) read as a tidy grid when centered — unlike Product/
+       Description, which stay left-aligned since they hold running text. */
+    .items-table .center { text-align: center; }
     /* Product description is its own paragraph, set apart from the bold
        product name above it — not folded into the bulleted facts list
        (CAS number, NCM, etc.) below it. */
