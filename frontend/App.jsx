@@ -144,7 +144,11 @@ const BRAZIL_PORTS_OPTIONS = [
   "Porto Alegre, BR", "Recife, BR", "Maceió, BR", "Natal, BR", "São Luís, BR",
   "Aratu, BR", "Angra dos Reis, BR", "Sepetiba, BR", "Presidente Epitácio, BR",
   "Santarém, BR", "Porto Velho, BR", "Corumbá, BR", "Ladário, BR",
-  "Ilhéus, BR", "Cabedelo, BR", "Pecém, BR",
+  "Ilhéus, BR", "Cabedelo, BR", "Pecém, BR", "Itapoá, BR", "Itaguaí, BR",
+  "Itaqui, BR", "São Sebastião, BR", "Barra do Riacho, BR", "Areia Branca, BR",
+  "Antonina, BR", "Cotegipe, BR", "Praia Mole, BR", "Tubarão, BR",
+  "Itacoatiara, BR", "Barcarena, BR", "Vila do Conde, BR", "Macapá, BR",
+  "Niterói, BR", "Forno, BR", "Itaperi, BR", "Camaçari, BR", "Guarujá, BR",
 ];
 
 const PORT_DROPDOWN_STYLE = {
@@ -924,17 +928,43 @@ function buildPackingListDraft(order, products) {
     // not something the Packing List itself should own) — stripped out
     // again before the draft is returned.
     const _cbmPerRoll = isTextile ? rollVolumeM3(product) : null;
+    // Same split used server-side for Proforma/Commercial Invoice (see
+    // splitDescription in server.js): the product's registered description
+    // renders as its own paragraph (descriptionText), separate from the
+    // bold product name above it — any further lines (e.g. a CAS number)
+    // stay as a bulleted facts list underneath.
+    const descLines = product?.description ? String(product.description).split(/\r?\n/).map(s => s.trim()).filter(Boolean) : [];
+    const priceBasis = item.price_basis || product?.price_basis || null;
+    // "Width" only means something for Textile/DTF Film rolls — every other
+    // category shows what unit the Quantity is expressed in instead (TON,
+    // LITER, or the registered package unit), same as the PDF backend logic.
+    const priceUnitLabel = !isTextile
+      ? (category === "Chemical" ? (priceBasis === "ton" ? "TON" : "LITER") : (item.unit || product?.unit || "").toUpperCase())
+      : null;
+    // Ton-priced Chemical items: Quantity is stored directly in tons, so the
+    // Quantity column needs its own label (tons + estimated drum count)
+    // instead of the generic "{quantity} {unit}" — mirrors quantityLabel in
+    // server.js's normalizeSalesItem.
+    let quantityLabel = null;
+    if (category === "Chemical" && priceBasis === "ton" && item.quantity != null) {
+      const perDrumTons = tonsOf(product);
+      const drums = perDrumTons > 0 ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons) : null;
+      quantityLabel = `${item.quantity} t${drums ? ` (≈ ${drums} ${item.unit || "packages"})` : ""}`;
+    }
     return {
       product_id: item.product_id,
       description: product?.name || item.product_name,
-      bullets: product?.description ? String(product.description).split(/\r?\n/).map(s => s.trim()).filter(Boolean) : [],
+      descriptionText: descLines[0] || "",
+      bullets: descLines.slice(1),
       ncm: product?.ncm || "",
       color: product?.color || "",
       width: product?.width ? `${product.width}${product.width_unit || ""}` : "",
+      priceUnitLabel,
       weightSpec: product?.weight ? `${product.weight} ${product.weight_unit || ""}` : "",
       category,
       isTextile,
       quantity: item.quantity != null ? item.quantity : null,
+      quantityLabel,
       unit: item.unit || "",
       totalLength,
       // Roll count auto-pulled from the order item's quantity — still

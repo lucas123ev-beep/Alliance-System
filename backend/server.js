@@ -883,6 +883,26 @@ function descriptionBullets(product) {
   return String(product.description).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 }
 
+// Splits a product's registered description into a lead paragraph (first
+// line — the actual descriptive text, shown as its own field on
+// Proforma/Commercial Invoice/Packing List, like the client's own reference
+// docs) plus any remaining lines (extra facts such as a CAS number), which
+// keep rendering as a bulleted list underneath it.
+function splitDescription(product) {
+  const lines = descriptionBullets(product);
+  return { text: lines[0] || '', bullets: lines.slice(1) };
+}
+
+// "Width" only means something for Textile/DTF Film rolls — for every other
+// category (machines, chemicals, accessories...) that column is repurposed
+// to show what unit the Quantity is actually expressed in (e.g. "TON" for a
+// ton-priced Chemical, "LITER" for a liter-priced one, or the registered
+// package unit otherwise), so the reader knows what they're buying units of.
+function priceUnitLabel(category, priceBasis, unit) {
+  if (category === 'Chemical') return priceBasis === 'ton' ? 'TON' : 'LITER';
+  return (unit || '').toUpperCase();
+}
+
 // Normalizes an order_item / quotation item row (+ its linked product) into
 // the shape the Proforma / Commercial Invoice / Packing List templates need.
 function metersOf(value, unit) {
@@ -941,12 +961,17 @@ function normalizeSalesItem(item, fallbackCurrency) {
   const metersPerRoll = isTextile
     ? (metersOf(item.height, item.height_unit) ?? metersOf(product?.height, product?.height_unit))
     : null;
+  const { text: descriptionText, bullets } = splitDescription(product);
   return {
     description: product?.name || item.product_name || '—',
-    bullets: descriptionBullets(product),
+    descriptionText,
+    bullets,
     ncm: product?.ncm || '',
     color: product?.color || '',
     width: product?.width ? `${product.width}${product.width_unit || ''}` : '',
+    // Non-textile items don't have a real Width, so their column shows what
+    // unit the Quantity is expressed in instead (see priceUnitLabel above).
+    priceUnitLabel: !isTextile ? priceUnitLabel(category, priceBasis, item.unit || product?.unit) : null,
     weightSpec: product?.weight ? `${product.weight} ${product.weight_unit || ''}` : '',
     category,
     isTextile,

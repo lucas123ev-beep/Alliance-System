@@ -25,8 +25,11 @@ function isTextileItem(item) {
 const descCell = item => `
   <td>
     <strong>${escapeHtml(item.description)}</strong>
-    ${item.bullets && item.bullets.length ? `<ul class="desc-bullets">${item.bullets.map(b => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
-    ${item.ncm ? `<div class="small">NCM: ${escapeHtml(item.ncm)}</div>` : ""}
+    ${item.descriptionText ? `<p class="desc-text">${escapeHtml(item.descriptionText)}</p>` : ""}
+    ${(item.bullets && item.bullets.length) || item.ncm ? `<ul class="desc-bullets">
+      ${(item.bullets || []).map(b => `<li>${escapeHtml(b)}</li>`).join("")}
+      ${item.ncm ? `<li>NCM: ${escapeHtml(item.ncm)}</li>` : ""}
+    </ul>` : ""}
   </td>
 `;
 
@@ -59,8 +62,10 @@ function renderItemSections(items) {
     <tr>
       ${descCell(item)}
       <td>${escapeHtml(item.color || "—")}</td>
-      <td>${escapeHtml(item.width || "—")}</td>
-      <td>${item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
+      <td>${escapeHtml(item.priceUnitLabel || item.width || "—")}</td>
+      <td>${item.quantityLabel
+        ? escapeHtml(item.quantityLabel)
+        : item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
       <td class="num">${fmtNumber(item.roll, 0)}</td>
       <td class="num">${fmtNumber(item.grossWeight, 3)}</td>
       <td class="num">${fmtNumber(item.netWeight, 3)}</td>
@@ -108,7 +113,7 @@ function renderItemSections(items) {
         <tr>
           <th style="width:22%">Descriptions of Goods</th>
           <th>Color</th>
-          <th>Width</th>
+          <th>Unit</th>
           <th>Quantity</th>
           <th>Packages</th>
           <th>Gross Weight</th>

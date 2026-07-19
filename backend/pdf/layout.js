@@ -46,13 +46,22 @@ function baseCss() {
       border-bottom: 1.5px solid #333; padding: 4px 6px; font-size: 8.5px;
       text-transform: uppercase; text-align: left; font-weight: bold;
     }
-    .items-table td { border-bottom: 0.75px solid #999; padding: 5px 6px; font-size: 9.5px; vertical-align: top; }
+    .items-table td { border-bottom: 0.75px solid #999; padding: 5px 6px; font-size: 9.5px; vertical-align: middle; }
     .items-table .num { text-align: right; }
-    .items-table .desc-bullets { margin: 2px 0 0 14px; padding: 0; font-size: 9px; }
+    /* Product description is its own paragraph, set apart from the bold
+       product name above it — not folded into the bulleted facts list
+       (CAS number, NCM, etc.) below it. */
+    .items-table .desc-text { margin: 4px 0 3px; font-size: 9px; line-height: 1.4; color: #222; }
+    .items-table .desc-bullets { margin: 3px 0 0 14px; padding: 0; font-size: 9px; line-height: 1.5; }
+    .items-table .desc-bullets li { margin-bottom: 2px; }
     .totals-row td { font-weight: bold; border-top: 1.5px solid #333; border-bottom: none; }
     .two-col { display: flex; gap: 0; margin-top: 10px; border-top: 1px solid #333; }
     .two-col .col { flex: 1; padding: 8px 14px; font-size: 9.5px; }
     .two-col .col + .col { border-left: 1px solid #999; }
+    /* Shipment Details (always the second/last column) reads as a centered
+       block of facts in the client's own reference documents, unlike
+       Payment Instructions which stays left-aligned prose. */
+    .two-col .col:last-child { text-align: center; }
     .two-col .col-title { font-weight: bold; text-align: center; margin: -8px -14px 8px; padding: 4px 0; background: #d9d9d9; }
     /* Browsers default <p> to ~1em top/bottom margin — left unset, that
        reads as scattered whitespace rather than a compact list of facts,
