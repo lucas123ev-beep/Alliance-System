@@ -1100,15 +1100,32 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
     // Packing List PDF itself (see renderPackingList's containers grouping).
     const plContainers = pl ? parseJsonSafe(pl.containers_json, []) : [];
     const plItems = pl ? parseJsonSafe(pl.items_json, []) : [];
-    let plSummary = pl ? `Rolls: ${pl.total_roll || 0} | Gross Weight: ${pl.total_gross_weight || 0} kg | Net Weight: ${pl.total_net_weight || 0} kg | CBM: ${pl.total_cbm || 0}` : '';
+    const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 0);
+    // Describes the "how many units" part of the summary using whatever
+    // unit this specific order was actually negotiated in — Tons for a
+    // ton-priced Chemical shipment, Rolls for Textile/DTF Film, Packages
+    // for everything else — instead of a hardcoded "Rolls" that doesn't
+    // apply once chemicals sold by weight are involved. Driven entirely by
+    // each item's own price_basis/tons_per_package (set by
+    // buildPackingListDraft), so it follows whatever the order was actually
+    // filled in as, not a fixed assumption.
+    const unitSummary = (arr) => {
+      if (!arr.length) return 'Packages: 0';
+      if (arr.every(i => i.price_basis === 'ton' && i.tons_per_package)) {
+        const tons = arr.reduce((s, i) => s + (parseFloat(i.roll) || 0) * (parseFloat(i.tons_per_package) || 0), 0);
+        return `Tons: ${tons.toFixed(3)}`;
+      }
+      return `${arr.every(i => i.isTextile) ? 'Rolls' : 'Packages'}: ${sumOf(arr, 'roll')}`;
+    };
+    let plSummary = pl ? `${unitSummary(plItems)} | Gross Weight: ${pl.total_gross_weight || 0} kg | Net Weight: ${pl.total_net_weight || 0} kg | CBM: ${pl.total_cbm || 0}` : '';
     if (pl && Array.isArray(plContainers) && plContainers.length > 1) {
-      const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 0);
       plSummary = plContainers.map(c => {
         // Same zero-roll filter as the Packing List PDF — unallocated rows
         // that only exist for the allocation UI shouldn't show up here.
         const containerItems = plItems.filter(i => (i.container_seq || 1) === c.seq && (parseFloat(i.roll) || 0) > 0);
-        return `Container ${String(c.seq).padStart(2, '0')}: ${c.code || '—'} — Rolls: ${sumOf(containerItems, 'roll')} | Gross Weight: ${sumOf(containerItems, 'grossWeight').toFixed(1)} kg | Net Weight: ${sumOf(containerItems, 'netWeight').toFixed(1)} kg | CBM: ${sumOf(containerItems, 'cbm').toFixed(1)}`;
-      }).filter(line => !/Rolls: 0 \|/.test(line));
+        if (!containerItems.length) return null;
+        return `Container ${String(c.seq).padStart(2, '0')}: ${c.code || '—'} — ${unitSummary(containerItems)} | Gross Weight: ${sumOf(containerItems, 'grossWeight').toFixed(1)} kg | Net Weight: ${sumOf(containerItems, 'netWeight').toFixed(1)} kg | CBM: ${sumOf(containerItems, 'cbm').toFixed(1)}`;
+      }).filter(Boolean);
     }
 
     const html = renderSalesInvoice({

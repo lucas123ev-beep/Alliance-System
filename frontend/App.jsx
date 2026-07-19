@@ -910,17 +910,36 @@ function buildPackingListDraft(order, products) {
     // artifacts from calcWeight (e.g. 26508.300000000003) never leak into
     // the draft's stored numbers.
     const round1 = n => Math.round(n * 10) / 10;
-    const rollCount = item.quantity != null && item.quantity !== "" ? parseFloat(item.quantity) || 0 : 0;
+    const priceBasis = item.price_basis || product?.price_basis || null;
+    const isTonChemical = category === "Chemical" && priceBasis === "ton";
+    // For ton-priced Chemical items, item.quantity is the tons ordered, not
+    // a physical package count (see recalcLiquidItem/ProductItemModal) — the
+    // Packing List's "roll"/"Packages" field needs the real, whole number of
+    // drums that corresponds to, derived from the product's registered
+    // per-drum weight. Every other category still uses quantity directly,
+    // since it already is a real package count there.
+    const perDrumTons = isTonChemical ? tonsOf(product) : null;
+    const rollCount = isTonChemical && perDrumTons > 0
+      ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons)
+      : (item.quantity != null && item.quantity !== "" ? parseFloat(item.quantity) || 0 : 0);
     // item.total_weight (computed in ProductItemModal via calcWeight, from
     // the product's registered net weight per roll) is the goods' Net
-    // Weight. Gross Weight additionally counts the empty cardboard/plastic
-    // tube core inside each Textile/DTF Film roll (product.tube_weight,
-    // kg per roll) — it isn't part of the sellable net goods weight but
-    // does ship and needs to be declared.
+    // Weight — for ton-priced Chemical this is the idealized ordered tonnage
+    // (qty × 1000). Gross Weight is the real physical total instead: for
+    // Textile/DTF Film that's Net Weight plus the empty cardboard/plastic
+    // tube core per roll; for ton-priced Chemical it's the actual (rounded)
+    // drum count × the product's registered per-drum weight, which
+    // naturally differs a little from the idealized Net figure since you
+    // can't ship a fractional drum.
     const netWeightRaw = item.total_weight != null && item.total_weight !== "" ? parseFloat(item.total_weight) : null;
     const netWeight = netWeightRaw != null ? round1(netWeightRaw) : null;
     const tubeWeightPerRoll = isTextile ? tubeWeightKg(product?.tube_weight, product?.tube_weight_unit) : 0;
-    const grossWeight = netWeight != null ? round1(netWeight + tubeWeightPerRoll * rollCount) : null;
+    const perDrumWeightKg = isTonChemical ? weightKgOf(product) : 0;
+    const grossWeight = netWeight != null
+      ? (isTonChemical && perDrumWeightKg > 0
+          ? round1(rollCount * perDrumWeightKg)
+          : round1(netWeight + tubeWeightPerRoll * rollCount))
+      : null;
     // Real per-roll volume from the product's registered Roll Diameter, when
     // available — lets the CBM below be an actual physical measurement
     // instead of just a proportional slice of the container's nominal
@@ -934,7 +953,6 @@ function buildPackingListDraft(order, products) {
     // bold product name above it — any further lines (e.g. a CAS number)
     // stay as a bulleted facts list underneath.
     const descLines = product?.description ? String(product.description).split(/\r?\n/).map(s => s.trim()).filter(Boolean) : [];
-    const priceBasis = item.price_basis || product?.price_basis || null;
     // "Width" only means something for Textile/DTF Film rolls — every other
     // category shows what unit the Quantity is expressed in instead (TON,
     // LITER, or the registered package unit), same as the PDF backend logic.
@@ -946,8 +964,7 @@ function buildPackingListDraft(order, products) {
     // instead of the generic "{quantity} {unit}" — mirrors quantityLabel in
     // server.js's normalizeSalesItem.
     let quantityLabel = null;
-    if (category === "Chemical" && priceBasis === "ton" && item.quantity != null) {
-      const perDrumTons = tonsOf(product);
+    if (isTonChemical && item.quantity != null) {
       const drums = perDrumTons > 0 ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons) : null;
       quantityLabel = `${item.quantity} t${drums ? ` (≈ ${drums} ${item.unit || "packages"})` : ""}`;
     }
@@ -963,13 +980,21 @@ function buildPackingListDraft(order, products) {
       weightSpec: product?.weight ? `${product.weight} ${product.weight_unit || ""}` : "",
       category,
       isTextile,
+      price_basis: priceBasis,
+      // Tons represented by one physical package/drum (Chemical priced by
+      // ton only) — lets downstream summaries (CI's "Packing List
+      // Description" line) re-derive the traded tonnage for whatever slice
+      // of `roll` ends up in each container, without needing to look the
+      // product back up.
+      tons_per_package: isTonChemical ? perDrumTons : null,
       quantity: item.quantity != null ? item.quantity : null,
       quantityLabel,
       unit: item.unit || "",
       totalLength,
-      // Roll count auto-pulled from the order item's quantity — still
-      // editable below in case the actual carton/roll count differs.
-      roll: item.quantity != null && item.quantity !== "" ? item.quantity : "",
+      // Physical package/drum count — for ton-priced Chemical this is
+      // DERIVED from the tons ordered (see rollCount above), not the raw
+      // order quantity, which means tons there rather than a package count.
+      roll: rollCount,
       grossWeight: grossWeight != null ? grossWeight : "",
       netWeight: netWeight != null ? netWeight : "",
       // Auto-filled below from the roll's real volume (when the product has
@@ -3281,21 +3306,27 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
   // read as "we're shipping more than what was ordered." Roll edits now
   // trade directly with the item's Container 01 row (its normal starting
   // point, per buildPackingListDraft's default) so the sum across every
-  // container for that product always stays exactly at item.quantity — the
-  // order's real quantity, which is carried unchanged on every split copy.
-  // Editing Container 01 itself trades with Container 02 instead, since
-  // there's no "container before 01" to draw from. Gross/Net Weight, Total
-  // Length and CBM are then recomputed for both rows from a per-roll rate
-  // derived off however they were already split (works whether that came
-  // from the real roll-volume CBM or the capacity-share fallback).
+  // container for that product always stays exactly at its total package
+  // count. Editing Container 01 itself trades with Container 02 instead,
+  // since there's no "container before 01" to draw from. Gross/Net Weight,
+  // Total Length and CBM are then recomputed for both rows from a per-roll
+  // rate derived off however they were already split (works whether that
+  // came from the real roll-volume CBM or the capacity-share fallback).
   const updateItemRoll = (idx, rawValue) => {
     setF(prev => {
       const items = [...prev._items];
       const item = items[idx];
-      const total = parseFloat(item.quantity) || 0;
-      if (!total) { items[idx] = { ...item, roll: rawValue }; return applyTotals(prev, items); }
 
       const sameProduct = items.map((_, i) => i).filter(i => items[i].product_id === item.product_id);
+      // Total physical package count for this product across every
+      // container — derived from the roll values buildPackingListDraft
+      // already set (real drum count for ton-priced Chemical, order
+      // quantity for everything else), not item.quantity directly, since
+      // for ton-priced Chemical that field holds tons ordered, not a
+      // package count.
+      const total = sameProduct.reduce((s, i) => s + (parseFloat(items[i].roll) || 0), 0);
+      if (!total) { items[idx] = { ...item, roll: rawValue }; return applyTotals(prev, items); }
+
       const thisSeq = item.container_seq || 1;
       const partnerSeq = thisSeq !== 1 ? 1 : 2;
       const partnerIdx = sameProduct.find(i => (items[i].container_seq || 1) === partnerSeq);
@@ -3362,7 +3393,9 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
           {item.color} {item.width} {item.weightSpec}
           {item.isTextile
             ? ` · Length: ${parseFloat(item.totalLength || 0).toFixed(2)} m`
-            : (item.quantity != null ? ` · Qty: ${item.quantity} ${item.unit || ""}` : "")}
+            : (item.quantityLabel
+                ? ` · Qty: ${item.quantityLabel}`
+                : (item.quantity != null ? ` · Qty: ${item.quantity} ${item.unit || ""}` : ""))}
         </span>
       </div>
       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
