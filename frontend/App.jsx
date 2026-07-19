@@ -422,10 +422,28 @@ const weightKgOf = (product) => {
 
 // Tons per package — the Chemical/liquid-goods equivalent of volumeLOf(),
 // used when a product is priced by the ton instead of by the liter (bulk
-// chemicals are commonly quoted by weight, not drum volume). Reuses the
-// same registered Weight field every category already fills in for Total
-// Weight, so no separate "tons per package" field is needed.
+// chemicals are commonly quoted by weight, not drum volume). `weight` is
+// the GROSS weight of one full package (drum + chemical inside) — this is
+// what Gross Weight totals should multiply by, NOT what "how many drums
+// for X tons" should divide by (that overcounts every drum by its own
+// empty weight — see netTonsOf below for that).
 const tonsOf = (product) => weightKgOf(product) / 1000;
+
+// Weight of the chemical alone in one package (excluding the drum's own
+// weight) — same unit conversions as weightKgOf, reading the separate
+// `net_weight` field. Used specifically to derive a physical package/drum
+// count from a tons-ordered figure (ProductItemModal's "≈ Drums" display,
+// buildPackingListDraft's roll count, server.js's quantityLabel).
+const netWeightKgOf = (product) => {
+  if (!product) return 0;
+  const v = parseFloat(product.net_weight) || 0;
+  const wu = product.weight_unit || "kg";
+  if (wu === "g") return v / 1000;
+  if (wu === "lb") return v * 0.453592;
+  if (wu === "oz") return v * 0.0283495;
+  return v; // kg
+};
+const netTonsOf = (product) => netWeightKgOf(product) / 1000;
 
 // The registered per-ton sale price on the product record — the 0%
 // reference point Margin % is measured against for Chemical items priced by
@@ -915,10 +933,12 @@ function buildPackingListDraft(order, products) {
     // For ton-priced Chemical items, item.quantity is the tons ordered, not
     // a physical package count (see recalcLiquidItem/ProductItemModal) — the
     // Packing List's "roll"/"Packages" field needs the real, whole number of
-    // drums that corresponds to, derived from the product's registered
-    // per-drum weight. Every other category still uses quantity directly,
-    // since it already is a real package count there.
-    const perDrumTons = isTonChemical ? tonsOf(product) : null;
+    // drums that corresponds to, derived from the product's registered NET
+    // weight per drum (chemical alone) — dividing by the gross/full-drum
+    // weight instead would undercount, since part of that figure is the
+    // drum itself, not product. Every other category still uses quantity
+    // directly, since it already is a real package count there.
+    const perDrumTons = isTonChemical ? netTonsOf(product) : null;
     const rollCount = isTonChemical && perDrumTons > 0
       ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons)
       : (item.quantity != null && item.quantity !== "" ? parseFloat(item.quantity) || 0 : 0);
@@ -981,12 +1001,19 @@ function buildPackingListDraft(order, products) {
       category,
       isTextile,
       price_basis: priceBasis,
-      // Tons represented by one physical package/drum (Chemical priced by
-      // ton only) — lets downstream summaries (CI's "Packing List
-      // Description" line) re-derive the traded tonnage for whatever slice
-      // of `roll` ends up in each container, without needing to look the
-      // product back up.
+      // NET tons of chemical (not the drum itself) represented by one
+      // physical package/drum — lets downstream summaries (CI's "Packing
+      // List Description" line) re-derive the traded tonnage for whatever
+      // slice of `roll` ends up in each container, without needing to look
+      // the product back up.
       tons_per_package: isTonChemical ? perDrumTons : null,
+      // GROSS kg (full drum, chemical + packaging) of one package — what
+      // PackingListForm's updateItemRoll needs to recompute Gross Weight
+      // directly from Packages, since it doesn't have the products list to
+      // look this back up. Deliberately separate from tons_per_package
+      // above (net) — using the net figure here would undercount Gross
+      // Weight by each drum's own tare.
+      gross_weight_per_package: isTonChemical ? perDrumWeightKg : null,
       quantity: item.quantity != null ? item.quantity : null,
       quantityLabel,
       unit: item.unit || "",
@@ -1384,13 +1411,16 @@ const handleHeightUnitChange = (e) => {
   // Ton-priced Chemical items: Quantity is entered directly in tons, so
   // this box repurposes the (otherwise unused, Textile-only) meterage slot
   // to show the estimated drum/package count that quantity corresponds to
-  // — purely informational, derived from the product's registered weight.
+  // — purely informational. Divides by the product's registered NET weight
+  // per package (chemical only, not the drum itself) — dividing by the
+  // gross/full-drum weight would undercount how many drums are actually
+  // needed, since part of each drum's weight is the drum, not product.
   <Field label={`≈ Drums (${selectedProduct.unit || "package"})`} half>
     <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: "#f59e0b", fontWeight: 700, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
       {(() => {
-        const t = tonsOf(selectedProduct);
+        const t = netTonsOf(selectedProduct);
         const qty = parseFloat(item.quantity) || 0;
-        if (!t || !qty) return "—";
+        if (!t || !qty) return selectedProduct.net_weight ? "—" : "Set Net Weight on product";
         return `≈ ${Math.round(qty / t).toLocaleString("pt-BR")} ${selectedProduct.unit || "packages"}`;
       })()}
     </div>
@@ -1771,7 +1801,10 @@ const handleCostChange = (e) => {
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(f);
-  const tons = tonsOf(f);
+  // Cost/Sale per Ton is a rate for the pure chemical (net weight), so the
+  // per-package reference price below has to multiply by the NET tons in
+  // one package, not the gross (package + drum) tons — see netTonsOf.
+  const tons = netTonsOf(f);
   const cpm = heightM > 0 ? (cost / heightM).toFixed(4) : f.cost_per_meter;
   const cpl = volL > 0 ? (cost / volL).toFixed(4) : f.cost_per_liter;
   const cpt = tons > 0 ? (cost / tons).toFixed(4) : f.cost_per_ton;
@@ -1799,7 +1832,10 @@ const handleCostChange = (e) => {
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(f);
-  const tons = tonsOf(f);
+  // Cost/Sale per Ton is a rate for the pure chemical (net weight), so the
+  // per-package reference price below has to multiply by the NET tons in
+  // one package, not the gross (package + drum) tons — see netTonsOf.
+  const tons = netTonsOf(f);
   const spm = heightM > 0 ? (sale / heightM).toFixed(4) : f.sale_per_meter;
   const spl = volL > 0 ? (sale / volL).toFixed(4) : f.sale_per_liter;
   const spt = tons > 0 ? (sale / tons).toFixed(4) : f.sale_per_ton;
@@ -1824,7 +1860,10 @@ const handleSalePctChange = (e) => {
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(f);
-  const tons = tonsOf(f);
+  // Cost/Sale per Ton is a rate for the pure chemical (net weight), so the
+  // per-package reference price below has to multiply by the NET tons in
+  // one package, not the gross (package + drum) tons — see netTonsOf.
+  const tons = netTonsOf(f);
   setF((p) => ({
     ...p, sale_pct: pctStr,
     sale_price: canCalc ? maskMoney(sale.toFixed(2)) : p.sale_price,
@@ -1862,14 +1901,20 @@ const handleCostPerLiterChange = (e) => {
 
 const handleCostPerTonChange = (e) => {
   const cpt = parseFloat(e.target.value) || 0;
-  const tons = tonsOf(f);
+  // Cost/Sale per Ton is a rate for the pure chemical (net weight), so the
+  // per-package reference price below has to multiply by the NET tons in
+  // one package, not the gross (package + drum) tons — see netTonsOf.
+  const tons = netTonsOf(f);
   const unit_cost = maskMoney((cpt * tons).toFixed(2));
   setF((p) => ({ ...p, cost_per_ton: e.target.value, unit_cost: tons > 0 ? unit_cost : p.unit_cost }));
 };
 
 const handleSalePerTonChange = (e) => {
   const spt = parseFloat(e.target.value) || 0;
-  const tons = tonsOf(f);
+  // Cost/Sale per Ton is a rate for the pure chemical (net weight), so the
+  // per-package reference price below has to multiply by the NET tons in
+  // one package, not the gross (package + drum) tons — see netTonsOf.
+  const tons = netTonsOf(f);
   const sale_price = maskMoney((spt * tons).toFixed(2));
   setF((p) => ({
     ...p, sale_per_ton: e.target.value,
@@ -1968,7 +2013,7 @@ const handleSalePerLiterChange = (e) => {
     </Select>
   </div>
 </Field>
-<Field label="Weight" half>
+<Field label={f.category === "Chemical" ? "Weight (gross, full package)" : "Weight"} half>
   <div style={{ display: "flex", gap: "6px" }}>
     <Input value={f.weight || ""} onChange={set("weight")} placeholder="0" style={{ ...inputStyle, flex: 1 }} />
     <Select value={f.weight_unit || "kg"} onChange={set("weight_unit")} style={{ ...inputStyle, width: "90px", cursor: "pointer" }}>
@@ -1976,6 +2021,19 @@ const handleSalePerLiterChange = (e) => {
     </Select>
   </div>
 </Field>
+
+{f.category === "Chemical" && f.price_basis === "ton" && (
+  // Full-width, same reasoning as Volume below — a conditional `half`
+  // field here would throw off the Cost/Sale grid alternation that
+  // follows. `weight` above is the GROSS weight of one full drum (drum +
+  // chemical) — used for Gross Weight totals. This is the chemical ALONE,
+  // same unit as Weight's dropdown, used only to work out how many drums a
+  // given tonnage needs (dividing by the gross figure would undercount,
+  // since part of it is the drum itself, not product).
+  <Field label={`Net Weight (chemical only, per package, ${f.weight_unit || "kg"})`}>
+    <Input value={f.net_weight || ""} onChange={set("net_weight")} placeholder="e.g. 200 (vs. 264.85 gross above)" style={{ ...inputStyle }} />
+  </Field>
+)}
 
 {(f.category === "Textile" || f.category === "DTF Film") && (
   // Paired as two `half` fields (same row) instead of each taking the full
@@ -2063,7 +2121,7 @@ const handleSalePerLiterChange = (e) => {
       <Field label="Cost per Ton">
         <Input type="number" value={f.cost_per_ton || ""} onChange={handleCostPerTonChange} placeholder="0.00" />
         <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
-          1 package ≈ {tonsOf(f).toFixed(3)} t (from Weight above) — Cost/Sale Price below = this rate × that weight.
+          1 package ≈ {netTonsOf(f).toFixed(3)} t net (from Net Weight above) — Cost/Sale Price below = this rate × that weight.
         </div>
       </Field>
     )}
@@ -2157,10 +2215,30 @@ const handleSalePerLiterChange = (e) => {
           // formatting (see maskMoney) while editing — convert back to
           // plain numbers here so the backend's REAL columns get an actual
           // number, not a "1.225,60"-style formatted string.
+          //
+          // width/height/thickness/weight/tube_weight/roll_diameter/volume
+          // are plain free-text fields (no mask) — a Brazilian user typing
+          // "264,85" would otherwise get saved as the literal string
+          // "264,85", and every downstream calculation (Total Weight, drum
+          // count for ton-priced Chemical, CBM...) uses parseFloat(), which
+          // stops at the first comma and silently reads it as just "264",
+          // quietly dropping the decimal part. Routing these through the
+          // same BR/US-aware parser used for money fields fixes that at
+          // the source instead of leaving every downstream parseFloat() to
+          // get it wrong the same way.
+          const normNum = (v) => (v === "" || v == null ? v : (parseLocaleNumber(v) ?? v));
           await onSave({
             ...f,
             unit_cost: parseLocaleNumber(f.unit_cost) ?? 0,
             sale_price: parseLocaleNumber(f.sale_price) ?? 0,
+            width: normNum(f.width),
+            height: normNum(f.height),
+            thickness: normNum(f.thickness),
+            weight: normNum(f.weight),
+            net_weight: normNum(f.net_weight),
+            tube_weight: normNum(f.tube_weight),
+            roll_diameter: normNum(f.roll_diameter),
+            volume: normNum(f.volume),
             media: JSON.stringify(media),
           });
           onClose();
@@ -3273,15 +3351,17 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
   const [f, setF] = useState(() => {
     const rawItems = initial._items || (initial.items_json ? (() => { try { return JSON.parse(initial.items_json); } catch { return []; } })() : []);
     // Ton-priced Chemical items: Gross Weight must always equal Packages ×
-    // the product's registered per-drum weight (tons_per_package × 1000).
-    // Re-derive it here on every load — not just when Packages is actively
-    // being edited — so a Packing List saved before this rule existed (or
-    // saved mid-edit under an earlier, rate-preserving version of it) always
-    // self-corrects the moment it's reopened, instead of keeping whatever
-    // figure happened to be stored.
+    // the product's registered GROSS per-drum weight (gross_weight_per_package
+    // — full drum, chemical + packaging; not tons_per_package, which is net
+    // chemical only). Re-derive it here on every load — not just when
+    // Packages is actively being edited — so a Packing List saved before
+    // this rule existed (or saved mid-edit under an earlier, rate-preserving
+    // or net/gross-confused version of it) always self-corrects the moment
+    // it's reopened, instead of keeping whatever figure happened to be
+    // stored.
     const items = rawItems.map(it => {
-      if (!it.tons_per_package) return it;
-      const grossWeight = Math.round((parseFloat(it.roll) || 0) * it.tons_per_package * 1000 * 10) / 10;
+      if (!it.gross_weight_per_package) return it;
+      const grossWeight = Math.round((parseFloat(it.roll) || 0) * it.gross_weight_per_package * 10) / 10;
       return { ...it, grossWeight };
     });
     const totalGrossWeight = items.reduce((s, i) => s + (parseFloat(i.grossWeight) || 0), 0);
@@ -3358,13 +3438,14 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
       const cbmPerRoll = sumField("cbm") / total;
       const lengthPerRoll = item.isTextile ? sumField("totalLength") / total : null;
       // Ton-priced Chemical: Gross Weight per container is recomputed
-      // directly from Packages × the product's registered per-drum weight
-      // (tons_per_package × 1000) every time, instead of carrying forward a
-      // "per-roll rate" — that rate can only stay exactly right if it's
-      // never touched by an edit made under different numbers, and any
-      // drift there would silently break "Packages × weight = Gross
+      // directly from Packages × the product's registered GROSS per-drum
+      // weight (gross_weight_per_package — full drum, not tons_per_package,
+      // which is the chemical alone) every time, instead of carrying
+      // forward a "per-roll rate" — that rate can only stay exactly right
+      // if it's never touched by an edit made under different numbers, and
+      // any drift there would silently break "Packages × weight = Gross
       // Weight" (which is what should always be checkable at a glance).
-      const perDrumWeightKg = item.tons_per_package ? item.tons_per_package * 1000 : null;
+      const perDrumWeightKg = item.gross_weight_per_package || null;
 
       const otherSum = sameProduct
         .filter(i => i !== idx && i !== partnerIdx)

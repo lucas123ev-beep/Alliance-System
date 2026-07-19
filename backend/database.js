@@ -506,6 +506,14 @@ const migrations = [
   // deploy, before these two columns existed.
   ['users', 'failed_attempts', 'INTEGER DEFAULT 0'],
   ['users', 'locked_until', 'TEXT'],
+  // `weight` on a Chemical product registered in a drum/barrel is the
+  // GROSS weight of one full package (drum + chemical inside) — what you'd
+  // read off a scale. It's what Gross Weight totals and Total Weight
+  // display (weightSpec) use. Deriving "how many drums for X tons ordered"
+  // from that gross figure overcounts every drum by its own tare weight —
+  // `net_weight` is the weight of the chemical alone in one package (same
+  // unit as `weight_unit`), used only for that derivation.
+  ['products', 'net_weight', 'TEXT'],
 ];
 
 for (const [table, column, definition] of migrations) {
