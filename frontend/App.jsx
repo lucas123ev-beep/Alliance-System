@@ -433,14 +433,15 @@ const registeredPerTon = (product) => {
 
 // Liquid-goods (Chemical category — sold in drums/barrels) equivalent of
 // recalcTextileItem: two-way Margin % / Value-per-X / Total, converting
-// through the product's registered drum volume (or, when this item is
-// priced by the ton instead, its registered weight per package — see
-// item.price_basis). rateKey switches between sale_per_liter and
-// sale_per_ton so the two bases never collide in the same item.
+// through the product's registered drum volume. Ton-priced items work
+// differently: Quantity there IS the ton figure directly (not a drum
+// count — see item.price_basis and ProductItemModal's calcWeight), so the
+// registered per-ton rate is already the unit price with no per-package
+// conversion needed (perPackage = 1), same as a flat unit-price category.
 function recalcLiquidItem(item, product, field, rawValue) {
   const isTon = item.price_basis === "ton";
   const rateKey = isTon ? "sale_per_ton" : "sale_per_liter";
-  const perPackage = isTon ? tonsOf(product) : volumeLOf(product);
+  const perPackage = isTon ? 1 : volumeLOf(product);
   const qty = parseFloat(item.quantity) || 0;
   const base = isTon ? registeredPerTon(product) : registeredPerLiter(product);
 
@@ -1109,11 +1110,21 @@ const [selectedProduct, setSelectedProduct] = useState(null); // ← adicionar e
   const calcWeight = (product, quantity, heightOverride, heightUnitOverride) => {
   if (!product || !quantity) return null;
   const qty = parseFloat(quantity) || 0;
-  const w = parseFloat(product.weight) || 0;
-  if (!w || !qty) return null;
+  if (!qty) return null;
 
   const category = product.category || "";
   const wu = product.weight_unit || "kg";
+
+  // Chemical items priced by the ton are entered directly in tons (not
+  // number of drums — see price_basis) — Quantity IS the weight, so Total
+  // Weight is just that converted to kg, not quantity × registered
+  // per-drum weight (which would treat the tons figure as a drum count).
+  if (category === "Chemical" && product.price_basis === "ton") {
+    return qty * 1000;
+  }
+
+  const w = parseFloat(product.weight) || 0;
+  if (!w) return null;
 
   // Cálculo complexo apenas para Textile e DTF Film
   if (category === "Textile" || category === "DTF Film") {
@@ -1156,20 +1167,25 @@ const selectProduct = (p) => {
   const h = parseFloat(p.height) || 0;
   const heightM = p.height_unit === "cm" ? h * 0.01 : p.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(p);
-  const tons = tonsOf(p);
 
+  // Ton-priced Chemical items are quoted/ordered directly in tons (the
+  // Quantity field IS the ton figure, not a drum count — see calcWeight
+  // above and the Quantity field's dynamic label below), so the per-ton
+  // rate registered on the product IS the unit price already. No
+  // per-package conversion here, unlike per-liter (where Quantity really
+  // is a drum count and the rate has to be multiplied by liters/drum first).
   const salePrice = isTextile && p.sale_per_meter && heightM
     ? (parseFloat(p.sale_per_meter) * heightM).toFixed(2)
-    : isTon && p.sale_per_ton && tons
-    ? (parseFloat(p.sale_per_ton) * tons).toFixed(2)
+    : isTon && p.sale_per_ton
+    ? parseFloat(p.sale_per_ton).toFixed(2)
     : isLiquid && p.sale_per_liter && volL
     ? (parseFloat(p.sale_per_liter) * volL).toFixed(2)
     : p.sale_price || p.unit_cost || "";
 
   const costPrice = isTextile && p.cost_per_meter && heightM
     ? (parseFloat(p.cost_per_meter) * heightM).toFixed(2)
-    : isTon && p.cost_per_ton && tons
-    ? (parseFloat(p.cost_per_ton) * tons).toFixed(2)
+    : isTon && p.cost_per_ton
+    ? parseFloat(p.cost_per_ton).toFixed(2)
     : isLiquid && p.cost_per_liter && volL
     ? (parseFloat(p.cost_per_liter) * volL).toFixed(2)
     : p.unit_cost || "";
@@ -1285,7 +1301,7 @@ const handleHeightUnitChange = (e) => {
     {PACKAGE_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
   </Select>
 </Field>
-        <Field label="Quantity" half>
+        <Field label={selectedProduct && selectedProduct.category === "Chemical" && selectedProduct.price_basis === "ton" ? "Quantity (Tons)" : "Quantity"} half>
           <Input type="number" value={item.quantity} onChange={handleQtyChange} placeholder="0" />
         </Field>
         {(item.category === "Textile" || item.category === "DTF Film") && (
@@ -1309,11 +1325,28 @@ const handleHeightUnitChange = (e) => {
     {item.total_weight ? `${item.total_weight.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg` : "—"}
   </div>
 </Field>
-<Field label="Total Meterage" half>
-  <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: item.total_meterage ? "#60a5fa" : "#475569", fontWeight: item.total_meterage ? 700 : 400, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
-    {item.total_meterage ? `${item.total_meterage.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m` : "—"}
-  </div>
-</Field>
+{selectedProduct && selectedProduct.category === "Chemical" && selectedProduct.price_basis === "ton" ? (
+  // Ton-priced Chemical items: Quantity is entered directly in tons, so
+  // this box repurposes the (otherwise unused, Textile-only) meterage slot
+  // to show the estimated drum/package count that quantity corresponds to
+  // — purely informational, derived from the product's registered weight.
+  <Field label={`≈ Drums (${selectedProduct.unit || "package"})`} half>
+    <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: "#f59e0b", fontWeight: 700, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
+      {(() => {
+        const t = tonsOf(selectedProduct);
+        const qty = parseFloat(item.quantity) || 0;
+        if (!t || !qty) return "—";
+        return `≈ ${Math.round(qty / t).toLocaleString("pt-BR")} ${selectedProduct.unit || "packages"}`;
+      })()}
+    </div>
+  </Field>
+) : (
+  <Field label="Total Meterage" half>
+    <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: item.total_meterage ? "#60a5fa" : "#475569", fontWeight: item.total_meterage ? 700 : 400, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
+      {item.total_meterage ? `${item.total_meterage.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m` : "—"}
+    </div>
+  </Field>
+)}
         <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
           <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
           <Btn onClick={() => {

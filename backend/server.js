@@ -904,10 +904,37 @@ function tubeWeightKg(value, unit) {
   return v; // kg
 }
 
+// Converts a product's registered weight (per package/drum) to kg, same
+// conversions used by tubeWeightKg above — used to derive an estimated
+// drum count for ton-priced Chemical items (see normalizeSalesItem below).
+function productWeightKg(product) {
+  const v = parseFloat(product?.weight);
+  if (!v) return 0;
+  const unit = product?.weight_unit;
+  if (unit === 'g') return v / 1000;
+  if (unit === 'lb') return v * 0.453592;
+  if (unit === 'oz') return v * 0.0283495;
+  return v; // kg
+}
+
 function normalizeSalesItem(item, fallbackCurrency) {
   const product = getProduct(item.product_id);
   const category = item.category || product?.category || '';
   const isTextile = category === 'Textile' || category === 'DTF Film';
+  const priceBasis = item.price_basis || product?.price_basis || null;
+  // Ton-priced Chemical items: Quantity is entered/stored directly in tons
+  // (see recalcLiquidItem/ProductItemModal on the frontend), so the PDF's
+  // Quantity column needs its own label instead of the generic
+  // "{quantity} {unit}" (which would misleadingly read e.g. "48 Plastic
+  // Drums / Barrels" when 48 actually means 48 tons). Show the tons figure
+  // plus, when the product's per-drum weight is known, the estimated
+  // number of drums that corresponds to.
+  let quantityLabel = null;
+  if (category === 'Chemical' && priceBasis === 'ton' && item.quantity != null) {
+    const perDrumTons = productWeightKg(product) / 1000;
+    const drums = perDrumTons > 0 ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons) : null;
+    quantityLabel = `${item.quantity} t${drums ? ` (≈ ${drums} ${item.unit || 'packages'})` : ''}`;
+  }
   // Meters per roll — the roll length used for this specific item (may
   // differ from the product's registered default when a custom length was
   // requested), shown as its own column for Textile/DTF Film.
@@ -925,12 +952,16 @@ function normalizeSalesItem(item, fallbackCurrency) {
     isTextile,
     quantity: item.quantity ?? null,
     unit: item.unit || '',
+    // Pre-formatted Quantity column override for ton-priced Chemical items
+    // (see above) — salesInvoice.js uses this instead of "{quantity} {unit}"
+    // when present, null for every other item (unchanged behavior).
+    quantityLabel,
     metersPerRoll,
     // Chemical items priced by the ton (see item.price_basis) show their
     // weight column in tons instead of kg on client-facing docs, matching
     // whatever unit the deal was actually struck in — falls back to the
     // registered product's basis for older items saved before this existed.
-    priceBasis: item.price_basis || product?.price_basis || null,
+    priceBasis,
     // "Total Length" (in meters) only means something for Textile/DTF Film
     // rolls — for other categories (machines, chemicals...) leave it blank
     // on the PDF instead of showing the raw quantity, which isn't a length.

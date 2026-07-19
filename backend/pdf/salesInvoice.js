@@ -63,7 +63,9 @@ function renderSalesInvoice(params) {
       ${descCell(item)}
       <td>${escapeHtml(item.color || "—")}</td>
       <td>${escapeHtml(item.width || "—")}</td>
-      <td>${item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
+      <td>${item.quantityLabel
+        ? escapeHtml(item.quantityLabel)
+        : item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
       <td class="num">${item.totalWeight
         ? (item.priceBasis === "ton" ? `${fmtNumber(item.totalWeight / 1000, 3)} t` : `${fmtNumber(item.totalWeight, 1)} kg`)
         : "—"}</td>
