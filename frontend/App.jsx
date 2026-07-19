@@ -3270,11 +3270,28 @@ function Dashboard() {
 }
       
 function PackingListForm({ initial, onSave, onClose, onDelete }) {
-  const [f, setF] = useState(() => ({
-    ...initial,
-    _items: initial._items || (initial.items_json ? (() => { try { return JSON.parse(initial.items_json); } catch { return []; } })() : []),
-    _containers: initial._containers || (initial.containers_json ? (() => { try { return JSON.parse(initial.containers_json); } catch { return []; } })() : []),
-  }));
+  const [f, setF] = useState(() => {
+    const rawItems = initial._items || (initial.items_json ? (() => { try { return JSON.parse(initial.items_json); } catch { return []; } })() : []);
+    // Ton-priced Chemical items: Gross Weight must always equal Packages ×
+    // the product's registered per-drum weight (tons_per_package × 1000).
+    // Re-derive it here on every load — not just when Packages is actively
+    // being edited — so a Packing List saved before this rule existed (or
+    // saved mid-edit under an earlier, rate-preserving version of it) always
+    // self-corrects the moment it's reopened, instead of keeping whatever
+    // figure happened to be stored.
+    const items = rawItems.map(it => {
+      if (!it.tons_per_package) return it;
+      const grossWeight = Math.round((parseFloat(it.roll) || 0) * it.tons_per_package * 1000 * 10) / 10;
+      return { ...it, grossWeight };
+    });
+    const totalGrossWeight = items.reduce((s, i) => s + (parseFloat(i.grossWeight) || 0), 0);
+    return {
+      ...initial,
+      _items: items,
+      _containers: initial._containers || (initial.containers_json ? (() => { try { return JSON.parse(initial.containers_json); } catch { return []; } })() : []),
+      total_gross_weight: Math.round(totalGrossWeight * 10) / 10,
+    };
+  });
   const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }));
 
   const applyTotals = (prev, items) => {
