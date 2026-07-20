@@ -10,6 +10,7 @@ const { renderPaymentNotice } = require('./pdf/paymentNotice');
 const ACQUISITION_COMPANIES = require('./pdf/acquisitionCompanies');
 const { parseJsonSafe, contentDisposition } = require('./pdf/helpers');
 const { buildFullReportWorkbook, CATEGORIES: REPORT_CATEGORIES } = require('./xlsx/reportBuilder');
+const { buildProductSupplierReportWorkbook } = require('./xlsx/productSupplierReport');
 const {
   hashPassword, verifyPassword, generateToken, requireAuth, actorName,
   isLockedOut, lockoutMinutesRemaining, recordFailedLogin, resetFailedLogins,
@@ -694,6 +695,26 @@ app.get('/api/reports/full', async (req, res) => {
     res.send(Buffer.from(buffer));
   } catch (err) {
     console.error('Full report error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Products-by-Supplier — one sheet per supplier (see xlsx/productSupplierReport.js)
+// with each item's registered specs plus how often/heavily it's actually
+// been ordered, for spotting problematic suppliers (price creep, items that
+// never get reordered...) from the Products screen.
+app.get('/api/reports/products-by-supplier', async (req, res) => {
+  try {
+    const workbook = buildProductSupplierReportWorkbook(db);
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `AllianceFlow-ProductsBySupplier-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': contentDisposition(filename),
+    });
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('Products by supplier report error:', err);
     res.status(500).json({ error: err.message });
   }
 });

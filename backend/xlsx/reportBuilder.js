@@ -473,4 +473,7 @@ const CATEGORIES = [
   { key: "shipment", label: "Shipment" },
 ];
 
-module.exports = { buildFullReportWorkbook, CATEGORIES };
+// addReportSheet/toNumber/toExcelDate are also reused by
+// productSupplierReport.js, which mirrors this same letterhead/column
+// styling for its own (differently-shaped) Products-by-Supplier workbook.
+module.exports = { buildFullReportWorkbook, CATEGORIES, addReportSheet, toNumber, toExcelDate };

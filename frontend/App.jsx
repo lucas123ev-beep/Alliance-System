@@ -3693,7 +3693,12 @@ const generateContract = (order) => {
   // Commercial Invoice number fix, so it reads e.g. "PO-AGNB26.044".
   const baseNumber = String(order.order_number || "").replace(/^ORD-/, "");
   const suppliers = [...new Set((order.items || []).map(i => i.supplier).filter(Boolean))];
-  if (suppliers.length === 0) {
+  // The supplier tag (e.g. "-SHAN") only exists to tell apart multiple
+  // contracts generated from the SAME order — it has no reason to show up
+  // for the common case of a single supplier, which used to fall into this
+  // branch too (suppliers.length was only checked against 0, not 1),
+  // tacking an unwanted tag onto every contract number/PDF filename.
+  if (suppliers.length <= 1) {
     const number = `PO-${baseNumber}`;
    setContractModal([{
   order_id: order.id,
@@ -3703,7 +3708,10 @@ const generateContract = (order) => {
   // contract_number, which for multi-supplier orders has a supplier tag
   // appended that would otherwise leak into the description.
   _order_ref: baseNumber,
-  supplier: "",
+  // A single known supplier gets used directly (so the PDF's Seller block —
+  // name, bank details — is filled in); genuinely supplier-less orders
+  // (suppliers.length === 0) still leave it blank, same as before.
+  supplier: suppliers[0] || "",
   sign_date: new Date().toISOString().slice(0, 10),
   delivery_date: order.shipment_date || "",
   total: order.value || "",
@@ -4000,7 +4008,10 @@ function Products() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Product Registry</h2>
-        <Btn onClick={() => setModal("new")}>+ New Product</Btn>
+        <div style={{ display: "flex", gap: "10px" }}>
+          <Btn outline color="#10b981" onClick={() => window.open(authUrl(`${API}/reports/products-by-supplier`), "_blank")}>📊 Supplier Report</Btn>
+          <Btn onClick={() => setModal("new")}>+ New Product</Btn>
+        </div>
       </div>
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by name, code or category…" style={{ ...inputStyle, marginBottom: "16px" }} />
