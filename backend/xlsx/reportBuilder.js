@@ -57,7 +57,11 @@ function addDaysToDate(baseDateStr, days) {
 // bold column-header row (row 3, no fill either) with the Excel autofilter,
 // then the data rows — first column bold, same as the reference report's
 // Order No. column.
-function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows }) {
+// `totals`: optional array of column keys to sum into a bold "TOTAL:" row
+// under the data — opt-in per category (e.g. Supplier Flow's Amount/Paid
+// Amount) rather than automatic everywhere, since summing a column like
+// "Production Lead Time (days)" wouldn't mean anything.
+function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows, totals }) {
   const sheet = workbook.addWorksheet(sheetName, {
     // No frozen panes: freezing draws Excel's own black divider line at the
     // split row, and that line always spans the full window width — past
@@ -124,6 +128,27 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows })
     });
   });
 
+  // Bold "TOTAL:" row right under the data, summing just the requested
+  // columns — added before autoFilter is set so it doesn't fall inside the
+  // filterable data range (Excel would offer to filter by "TOTAL:" itself
+  // as if it were a real row otherwise).
+  if (totals && totals.length && rows.length) {
+    const totalRow = sheet.addRow({});
+    columns.forEach((c, i) => {
+      const cell = totalRow.getCell(i + 1);
+      cell.border = { top: HEADER_RULE };
+      cell.font = { bold: true };
+      if (i === 0) {
+        cell.value = "TOTAL:";
+      } else if (totals.includes(c.key)) {
+        cell.value = rows.reduce((s, r) => s + (parseFloat(r[c.key]) || 0), 0);
+        if (c.type === "money") cell.numFmt = "#,##0.00";
+        if (c.type === "number") cell.numFmt = "#,##0";
+        if (c.type === "decimal") cell.numFmt = "#,##0.00";
+      }
+    });
+  }
+
   sheet.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: columns.length } };
   return sheet;
 }
@@ -133,7 +158,7 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows })
 // `plainTitle` drops the "— OPEN / NOT COMPLETED" / "— COMPLETED" suffix
 // from the on-sheet title (the two tabs already say Open/Done in their own
 // names, so for Shipment specifically that suffix just read as clutter).
-function addCategorySheets(workbook, { key, label, columns, rawRows, mapRow, isDone, since, plainTitle }) {
+function addCategorySheets(workbook, { key, label, columns, rawRows, mapRow, isDone, since, plainTitle, totals }) {
   const mapped = rawRows.map(mapRow);
   const open = mapped.filter(r => !isDone(r._raw));
   const done = mapped.filter(r => isDone(r._raw));
@@ -143,12 +168,12 @@ function addCategorySheets(workbook, { key, label, columns, rawRows, mapRow, isD
   addReportSheet(workbook, {
     sheetName: `${label} (Open)`.slice(0, 31),
     title: plainTitle ? label.toUpperCase() : `${label.toUpperCase()} — OPEN / NOT COMPLETED`,
-    subtitle, columns, rows: strip(open),
+    subtitle, columns, rows: strip(open), totals,
   });
   addReportSheet(workbook, {
     sheetName: `${label} (Done)`.slice(0, 31),
     title: plainTitle ? label.toUpperCase() : `${label.toUpperCase()} — COMPLETED`,
-    subtitle, columns, rows: strip(done),
+    subtitle, columns, rows: strip(done), totals,
   });
 }
 
@@ -351,16 +376,24 @@ function buildFullReportWorkbook(db, since, selectedCategories) {
   });
 
   // ─── Supplier Flow ─────────────────────────────────────────────────────
+  // Due Date leads the row (and picks up the standard bold-first-column
+  // styling), and the sheet is sorted by it, earliest-first — this tab
+  // tracks a payment timeline, so "what's due soonest" reads top to bottom
+  // instead of "newest record first" like the other tabs. The `since`
+  // filter itself still goes by created_at (when the record was entered
+  // into the system), unrelated to when its payment is actually due.
   if (include("supplier-flow")) addCategorySheets(workbook, {
     label: "Supplier Flow",
     since,
     rawRows: db.prepare(`
       SELECT f.*, o.order_number AS order_number
       FROM financial_suppliers f LEFT JOIN orders o ON o.id = f.order_id
-      WHERE f.created_at >= ? ORDER BY f.created_at DESC
+      WHERE f.created_at >= ? ORDER BY f.due_date ASC
     `).all(sinceValue),
     isDone: r => r.status === "Paid",
+    totals: ["amount", "paid_amount"],
     columns: [
+      { key: "due_date", header: "Due Date", width: 14, type: "date" },
       { key: "supplier", header: "Supplier", width: 26 },
       { key: "order_number", header: "Order Number", width: 18 },
       { key: "type", header: "Type", width: 16 },
@@ -368,7 +401,6 @@ function buildFullReportWorkbook(db, since, selectedCategories) {
       { key: "amount", header: "Amount", width: 14, type: "money" },
       { key: "currency", header: "Currency", width: 10 },
       { key: "status", header: "Status", width: 12 },
-      { key: "due_date", header: "Due Date", width: 14, type: "date" },
       { key: "paid_date", header: "Paid Date", width: 14, type: "date" },
       { key: "paid_amount", header: "Paid Amount", width: 14, type: "money" },
       { key: "payment_schedule", header: "Payment Schedule", width: 16 },
@@ -376,9 +408,10 @@ function buildFullReportWorkbook(db, since, selectedCategories) {
     ],
     mapRow: r => ({
       _raw: r,
+      due_date: toExcelDate(r.due_date),
       supplier: r.supplier, order_number: r.order_number, type: r.type, description: r.description,
       amount: toNumber(r.amount), currency: currencyLabel(r.currency), status: r.status,
-      due_date: toExcelDate(r.due_date), paid_date: toExcelDate(r.paid_date),
+      paid_date: toExcelDate(r.paid_date),
       paid_amount: toNumber(r.paid_amount), payment_schedule: r.payment_schedule,
       created_at: toExcelDate(r.created_at),
     }),
