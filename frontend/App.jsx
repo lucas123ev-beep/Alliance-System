@@ -445,6 +445,22 @@ const netWeightKgOf = (product) => {
 };
 const netTonsOf = (product) => netWeightKgOf(product) / 1000;
 
+// GROSS weight of one full physical package (box + contents), for products
+// sold in a unit that differs from how they're packed (see units_per_package
+// below) — same conversions as weightKgOf, reading the separate
+// `package_weight` field. Generalizes the Chemical drum pattern above
+// (weightKgOf/netWeightKgOf) to any category: e.g. LED lights sold per PAIR,
+// packed 500 pairs to a cardboard box.
+const packageWeightKgOf = (product) => {
+  if (!product) return 0;
+  const v = parseFloat(product.package_weight) || 0;
+  const wu = product.weight_unit || "kg";
+  if (wu === "g") return v / 1000;
+  if (wu === "lb") return v * 0.453592;
+  if (wu === "oz") return v * 0.0283495;
+  return v; // kg
+};
+
 // The registered per-ton sale price on the product record — the 0%
 // reference point Margin % is measured against for Chemical items priced by
 // the ton (see registeredPerLiter for the per-liter equivalent).
@@ -930,34 +946,46 @@ function buildPackingListDraft(order, products) {
     const round1 = n => Math.round(n * 10) / 10;
     const priceBasis = item.price_basis || product?.price_basis || null;
     const isTonChemical = category === "Chemical" && priceBasis === "ton";
+    // Generalized version of the ton-priced Chemical case below, for any
+    // OTHER category where the sold unit isn't the packed unit — e.g. LED
+    // lights sold per PAIR, packed 500 pairs to a cardboard box
+    // (units_per_package). Chemical keeps its own dedicated net_weight-based
+    // path since that's a weight-based ratio, not a unit count.
+    const perPackageUnits = (!isTonChemical && product?.units_per_package)
+      ? parseFloat(product.units_per_package) || null : null;
+    const perDrumTons = isTonChemical ? netTonsOf(product) : null;
     // For ton-priced Chemical items, item.quantity is the tons ordered, not
     // a physical package count (see recalcLiquidItem/ProductItemModal) — the
     // Packing List's "roll"/"Packages" field needs the real, whole number of
     // drums that corresponds to, derived from the product's registered NET
     // weight per drum (chemical alone) — dividing by the gross/full-drum
     // weight instead would undercount, since part of that figure is the
-    // drum itself, not product. Every other category still uses quantity
-    // directly, since it already is a real package count there.
-    const perDrumTons = isTonChemical ? netTonsOf(product) : null;
+    // drum itself, not product. Products with units_per_package registered
+    // (sold per pair/piece, packed N-to-a-box) get the same treatment, just
+    // dividing by a unit count instead of a weight. Every other category
+    // still uses quantity directly, since it already is a real package
+    // count there.
     const rollCount = isTonChemical && perDrumTons > 0
       ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons)
+      : perPackageUnits > 0
+      ? Math.round((parseFloat(item.quantity) || 0) / perPackageUnits)
       : (item.quantity != null && item.quantity !== "" ? parseFloat(item.quantity) || 0 : 0);
     // item.total_weight (computed in ProductItemModal via calcWeight, from
     // the product's registered net weight per roll) is the goods' Net
     // Weight — for ton-priced Chemical this is the idealized ordered tonnage
     // (qty × 1000). Gross Weight is the real physical total instead: for
     // Textile/DTF Film that's Net Weight plus the empty cardboard/plastic
-    // tube core per roll; for ton-priced Chemical it's the actual (rounded)
-    // drum count × the product's registered per-drum weight, which
-    // naturally differs a little from the idealized Net figure since you
-    // can't ship a fractional drum.
+    // tube core per roll; for ton-priced Chemical (or units_per_package
+    // items) it's the actual (rounded) package count × the product's
+    // registered per-package weight, which naturally differs a little from
+    // the idealized Net figure since you can't ship a fractional package.
     const netWeightRaw = item.total_weight != null && item.total_weight !== "" ? parseFloat(item.total_weight) : null;
     const netWeight = netWeightRaw != null ? round1(netWeightRaw) : null;
     const tubeWeightPerRoll = isTextile ? tubeWeightKg(product?.tube_weight, product?.tube_weight_unit) : 0;
-    const perDrumWeightKg = isTonChemical ? weightKgOf(product) : 0;
+    const perPackageWeightKg = isTonChemical ? weightKgOf(product) : (perPackageUnits > 0 ? packageWeightKgOf(product) : 0);
     const grossWeight = netWeight != null
-      ? (isTonChemical && perDrumWeightKg > 0
-          ? round1(rollCount * perDrumWeightKg)
+      ? ((isTonChemical || perPackageUnits > 0) && perPackageWeightKg > 0
+          ? round1(rollCount * perPackageWeightKg)
           : round1(netWeight + tubeWeightPerRoll * rollCount))
       : null;
     // Real per-roll volume from the product's registered Roll Diameter, when
@@ -982,11 +1010,15 @@ function buildPackingListDraft(order, products) {
     // Ton-priced Chemical items: Quantity is stored directly in tons, so the
     // Quantity column needs its own label (tons + estimated drum count)
     // instead of the generic "{quantity} {unit}" — mirrors quantityLabel in
-    // server.js's normalizeSalesItem.
+    // server.js's normalizeSalesItem. units_per_package products (sold per
+    // pair/piece, packed N-to-a-box) get the same treatment, generalized.
     let quantityLabel = null;
     if (isTonChemical && item.quantity != null) {
       const drums = perDrumTons > 0 ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons) : null;
       quantityLabel = `${item.quantity} t${drums ? ` (≈ ${drums} ${item.unit || "packages"})` : ""}`;
+    } else if (perPackageUnits > 0 && item.quantity != null) {
+      const packages = Math.round((parseFloat(item.quantity) || 0) / perPackageUnits);
+      quantityLabel = `${item.quantity} ${item.unit || ""}${packages ? ` (≈ ${packages} packages)` : ""}`.trim();
     }
     return {
       product_id: item.product_id,
@@ -1007,13 +1039,14 @@ function buildPackingListDraft(order, products) {
       // slice of `roll` ends up in each container, without needing to look
       // the product back up.
       tons_per_package: isTonChemical ? perDrumTons : null,
-      // GROSS kg (full drum, chemical + packaging) of one package — what
+      // GROSS kg (full package, contents + packaging) of one package — what
       // PackingListForm's updateItemRoll needs to recompute Gross Weight
       // directly from Packages, since it doesn't have the products list to
       // look this back up. Deliberately separate from tons_per_package
       // above (net) — using the net figure here would undercount Gross
-      // Weight by each drum's own tare.
-      gross_weight_per_package: isTonChemical ? perDrumWeightKg : null,
+      // Weight by each drum/box's own tare. Covers both ton-priced Chemical
+      // drums and any other units_per_package product (e.g. boxed pairs).
+      gross_weight_per_package: (isTonChemical || perPackageUnits > 0) ? perPackageWeightKg : null,
       quantity: item.quantity != null ? item.quantity : null,
       quantityLabel,
       unit: item.unit || "",
@@ -1422,6 +1455,20 @@ const handleHeightUnitChange = (e) => {
         const qty = parseFloat(item.quantity) || 0;
         if (!t || !qty) return selectedProduct.net_weight ? "—" : "Set Net Weight on product";
         return `≈ ${Math.round(qty / t).toLocaleString("pt-BR")} ${selectedProduct.unit || "packages"}`;
+      })()}
+    </div>
+  </Field>
+) : selectedProduct && parseFloat(selectedProduct.units_per_package) > 0 ? (
+  // Generalized version of the "≈ Drums" box above, for any OTHER category
+  // sold in a unit that isn't the packed unit — e.g. LED lights sold per
+  // PAIR, packed 500 pairs to a box. Same purely-informational role.
+  <Field label="≈ Packages" half>
+    <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: "#f59e0b", fontWeight: 700, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
+      {(() => {
+        const perPackage = parseFloat(selectedProduct.units_per_package) || 0;
+        const qty = parseFloat(item.quantity) || 0;
+        if (!perPackage || !qty) return "—";
+        return `≈ ${Math.round(qty / perPackage).toLocaleString("pt-BR")} packages`;
       })()}
     </div>
   </Field>
@@ -2035,6 +2082,24 @@ const handleSalePerLiterChange = (e) => {
   </Field>
 )}
 
+{f.category !== "Chemical" && (
+  // For any OTHER category sold in a different unit than it's physically
+  // packed in — e.g. LED lights sold per PAIR, packed 500 pairs to a
+  // cardboard box. Both optional/blank by default (no effect on anything
+  // unless filled in): leave them empty and Packages on the Packing List
+  // just defaults to the raw quantity ordered, same as always. Fill them in
+  // and Packages/Gross Weight get derived automatically instead of needing
+  // to be typed in by hand on every shipment.
+  <>
+    <Field label="Units per Package (optional)" half>
+      <Input value={f.units_per_package || ""} onChange={set("units_per_package")} placeholder="e.g. 500 (pairs per box)" style={{ ...inputStyle }} />
+    </Field>
+    <Field label={`Package Weight (gross, per package, ${f.weight_unit || "kg"})`} half>
+      <Input value={f.package_weight || ""} onChange={set("package_weight")} placeholder="e.g. 16 (kg per box)" style={{ ...inputStyle }} />
+    </Field>
+  </>
+)}
+
 {(f.category === "Textile" || f.category === "DTF Film") && (
   // Paired as two `half` fields (same row) instead of each taking the full
   // width — together they still add up to one full row, so the Cost/Sale
@@ -2239,6 +2304,8 @@ const handleSalePerLiterChange = (e) => {
             tube_weight: normNum(f.tube_weight),
             roll_diameter: normNum(f.roll_diameter),
             volume: normNum(f.volume),
+            units_per_package: normNum(f.units_per_package),
+            package_weight: normNum(f.package_weight),
             media: JSON.stringify(media),
           });
           onClose();
@@ -3725,13 +3792,16 @@ const generateContract = (order) => {
   items_json: JSON.stringify(order.items || []),
 }]);
   } else {
-    setContractModal(suppliers.map(supplier => {
+    setContractModal(suppliers.map((supplier, supplierIdx) => {
 const supplierItems = (order.items || []).filter(i => i.supplier === supplier);
 const total = supplierItems.reduce((sum, i) => sum + ((parseFloat(i.cost_price) || parseFloat(i.unit_price) || 0) * (parseFloat(i.quantity) || 0)), 0);
 const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency || order.currency || "USD";
       // Multiple suppliers on the same order need distinct contract numbers —
-      // keep a short supplier tag to tell them apart, but no random suffix.
-      const number = `PO-${baseNumber}-${supplier.slice(0,4).toUpperCase()}`;
+      // a plain running index ("-1", "-2"...) tells them apart without
+      // spelling any part of the supplier's name into the number, which
+      // used to make it (and anywhere it's quoted, like Supplier Flow) read
+      // longer/heavier than it needs to.
+      const number = `PO-${baseNumber}-${supplierIdx + 1}`;
       return {
   order_id: order.id,
   contract_number: number,

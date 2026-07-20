@@ -514,6 +514,16 @@ const migrations = [
   // `net_weight` is the weight of the chemical alone in one package (same
   // unit as `weight_unit`), used only for that derivation.
   ['products', 'net_weight', 'TEXT'],
+  // For products sold in a different unit than they're physically packed in
+  // (e.g. LED lights sold per PAIR, packed 500 pairs to a cardboard BOX) —
+  // `units_per_package` is how many sold-units make up one physical package,
+  // and `package_weight` is that package's GROSS weight (box + contents,
+  // same unit as weight_unit). Together they let Packing Lists derive real
+  // box counts and Gross Weight from the ordered quantity, the same way
+  // net_weight/weight already do for ton-priced Chemical drums — just
+  // generalized to any category instead of being Chemical-only.
+  ['products', 'units_per_package', 'REAL'],
+  ['products', 'package_weight', 'TEXT'],
 ];
 
 for (const [table, column, definition] of migrations) {
