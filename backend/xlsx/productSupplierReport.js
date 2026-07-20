@@ -141,8 +141,12 @@ function buildProductSupplierReportWorkbook(db) {
   // One row per supplier, sorted by total spend (biggest relationships
   // first) — the fastest way to see who's worth scrutinizing before diving
   // into any one supplier's own item-level sheet.
+  // Aliased as `supplier_name` (not `supplier`) because order_items and
+  // orders each have their own real `supplier` column once joined in —
+  // GROUP BY/ORDER BY `supplier` was ambiguous between those and this
+  // computed column, even though the SELECT list itself resolved fine.
   const summaryRows = db.prepare(`
-    SELECT COALESCE(NULLIF(TRIM(p.supplier), ''), 'No Supplier') AS supplier,
+    SELECT COALESCE(NULLIF(TRIM(p.supplier), ''), 'No Supplier') AS supplier_name,
       COUNT(DISTINCT p.id) AS product_count,
       COUNT(DISTINCT oi.order_id) AS orders_count,
       SUM(oi.quantity) AS total_qty,
@@ -152,8 +156,8 @@ function buildProductSupplierReportWorkbook(db) {
     FROM products p
     LEFT JOIN order_items oi ON oi.product_id = p.id
     LEFT JOIN orders o ON o.id = oi.order_id
-    GROUP BY supplier
-    ORDER BY total_spend DESC, supplier COLLATE NOCASE
+    GROUP BY supplier_name
+    ORDER BY total_spend DESC, supplier_name COLLATE NOCASE
   `).all();
 
   addReportSheet(workbook, {
@@ -161,7 +165,7 @@ function buildProductSupplierReportWorkbook(db) {
     title: "SUPPLIER SUMMARY",
     columns: SUMMARY_COLUMNS,
     rows: summaryRows.map(r => ({
-      supplier: r.supplier,
+      supplier: r.supplier_name,
       product_count: toNumber(r.product_count) || 0,
       orders_count: toNumber(r.orders_count) || 0,
       total_qty: toNumber(r.total_qty),
@@ -183,7 +187,7 @@ function buildProductSupplierReportWorkbook(db) {
   // Same order as the summary sheet (biggest spend first) so the tab order
   // reads as a priority list too, not just alphabetical noise. Suppliers
   // with products but zero order history yet fall back to name order.
-  const spendBySupplier = new Map(summaryRows.map(r => [r.supplier, toNumber(r.total_spend) || 0]));
+  const spendBySupplier = new Map(summaryRows.map(r => [r.supplier_name, toNumber(r.total_spend) || 0]));
   const supplierNames = [...grouped.keys()].sort((a, b) => {
     const diff = (spendBySupplier.get(b) || 0) - (spendBySupplier.get(a) || 0);
     return diff !== 0 ? diff : a.localeCompare(b);
