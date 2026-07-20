@@ -128,23 +128,32 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows, t
     });
   });
 
-  // Bold "TOTAL:" row right under the data, summing just the requested
-  // columns — added before autoFilter is set so it doesn't fall inside the
-  // filterable data range (Excel would offer to filter by "TOTAL:" itself
-  // as if it were a real row otherwise).
+  // Bold totals row right under the data — each summed column gets its own
+  // "Total <Header>:" label in the cell immediately to its left (right-
+  // aligned, so label and number sit next to each other) instead of one
+  // generic "TOTAL:" way over in column A, which reads fine with a single
+  // summed column but gets ambiguous with two (which number is which?).
+  // Added before autoFilter is set so this row doesn't fall inside the
+  // filterable data range (Excel would offer to filter by these labels as
+  // if they were a real row otherwise).
   if (totals && totals.length && rows.length) {
     const totalRow = sheet.addRow({});
-    columns.forEach((c, i) => {
-      const cell = totalRow.getCell(i + 1);
-      cell.border = { top: HEADER_RULE };
-      cell.font = { bold: true };
-      if (i === 0) {
-        cell.value = "TOTAL:";
-      } else if (totals.includes(c.key)) {
-        cell.value = rows.reduce((s, r) => s + (parseFloat(r[c.key]) || 0), 0);
-        if (c.type === "money") cell.numFmt = "#,##0.00";
-        if (c.type === "number") cell.numFmt = "#,##0";
-        if (c.type === "decimal") cell.numFmt = "#,##0.00";
+    columns.forEach((c, i) => { totalRow.getCell(i + 1).border = { top: HEADER_RULE }; });
+    totals.forEach(key => {
+      const colIndex = columns.findIndex(c => c.key === key);
+      if (colIndex === -1) return;
+      const col = columns[colIndex];
+      const sumCell = totalRow.getCell(colIndex + 1);
+      sumCell.value = rows.reduce((s, r) => s + (parseFloat(r[key]) || 0), 0);
+      sumCell.font = { bold: true };
+      if (col.type === "money") sumCell.numFmt = "#,##0.00";
+      if (col.type === "number") sumCell.numFmt = "#,##0";
+      if (col.type === "decimal") sumCell.numFmt = "#,##0.00";
+      if (colIndex > 0) {
+        const labelCell = totalRow.getCell(colIndex);
+        labelCell.value = `Total ${col.header}:`;
+        labelCell.font = { bold: true };
+        labelCell.alignment = { horizontal: "right" };
       }
     });
   }

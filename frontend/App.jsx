@@ -2737,7 +2737,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
         </Field>
       )}
       <Field label="Description">
-        <Input value={f.description} onChange={set("description")} placeholder={!isClient ? "Contract-AGNB26.044 -Supplier Name" : ""} />
+        <Input value={f.description} onChange={set("description")} placeholder={!isClient ? "Contract-AGNB26.044" : ""} />
       </Field>
       {!isClient && (
         <>
@@ -3859,14 +3859,14 @@ onSave={async b => {
   await api("/financial/suppliers", "POST", {
     order_id: b.order_id,
     supplier: b.supplier,
-    // "Contract-<order ref> -<supplier>" — matches the standard format used
-    // for Supplier Payment descriptions (e.g. "Contract-AGNB26.044 -浙江泓博").
-    // Built from the plain order reference (_order_ref), not by stripping
-    // "PO-" off contract_number — for multi-supplier orders contract_number
-    // also carries a short supplier tag suffix (e.g. "PO-AGNB26.044-浙江"),
-    // which would otherwise leak into the description as a duplicated
-    // fragment of the supplier name right before the real supplier name.
-    description: `Contract-${b._order_ref || String(b.contract_number || "").replace(/^PO-/, "").replace(/-[^-]*$/, "")} -${b.supplier || ""}`,
+    // "Contract-<order ref>" — the Supplier column right next to this in
+    // Supplier Flow already shows the supplier name, so appending it here
+    // too just repeated it. Built from the plain order reference
+    // (_order_ref), not by stripping "PO-" off contract_number — for
+    // multi-supplier orders contract_number also carries a short supplier
+    // tag suffix (e.g. "PO-AGNB26.044-浙江"), which would otherwise leak
+    // into the description as a stray fragment.
+    description: `Contract-${b._order_ref || String(b.contract_number || "").replace(/^PO-/, "").replace(/-[^-]*$/, "")}`,
     type: "Purchase Order",
     amount: b.total,
     currency: b.currency || "USD",
@@ -4429,7 +4429,12 @@ cols={[
         }
         await api(`${endpoint}/${r.id}/status`, "PATCH", {
           status,
-          paid_date: status === "Paid" ? new Date().toISOString().slice(0, 10) : null,
+          // A "Partial" row means money actually landed too (the deposit/
+          // first installment) — it was only ever recording this for "Paid"
+          // before, leaving Paid Date blank for every partial payment even
+          // though a real payment date exists for it. Only Pending/Overdue
+          // (nothing paid yet) have no date to record.
+          paid_date: (status === "Paid" || status === "Partial") ? new Date().toISOString().slice(0, 10) : null,
           paid_amount,
         });
         load();
