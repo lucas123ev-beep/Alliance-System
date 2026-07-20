@@ -106,7 +106,14 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows })
       const cell = excelRow.getCell(i + 1);
       if (c.type === "date") cell.numFmt = "dd/mm/yyyy";
       if (c.type === "money") cell.numFmt = "#,##0.00";
-      if (c.type === "number") cell.numFmt = "#,##0.##";
+      // "#,##0.##" (optional decimal placeholders) reads fine in Excel but
+      // some spreadsheet apps (e.g. Apple Numbers) render a bare trailing
+      // decimal separator when the value happens to have no fractional part
+      // ("1.571,") instead of omitting it — "number" is now always a clean
+      // integer format, and "decimal" (fixed 2 places, always shown) covers
+      // anything that can legitimately be fractional (percentages, tonnage).
+      if (c.type === "number") cell.numFmt = "#,##0";
+      if (c.type === "decimal") cell.numFmt = "#,##0.00";
       cell.alignment = { vertical: "top", wrapText: true };
       // Every item gets the exact same rule as the header row above it —
       // no lighter/fainter line further down the table.

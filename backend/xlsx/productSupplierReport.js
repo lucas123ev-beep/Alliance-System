@@ -53,13 +53,16 @@ const PRODUCT_COLUMNS = [
   { key: "cost_currency", header: "Cost Currency", width: 12 },
   { key: "sale_price", header: "Sale Price", width: 14, type: "money" },
   { key: "sale_currency", header: "Sale Currency", width: 12 },
-  { key: "margin_pct", header: "Margin %", width: 10, type: "number" },
+  { key: "margin_pct", header: "Margin %", width: 10, type: "decimal" },
   { key: "ncm", header: "NCM", width: 12 },
-  { key: "vat_pct", header: "VAT %", width: 10, type: "number" },
+  { key: "vat_pct", header: "VAT %", width: 10, type: "decimal" },
   // Usage stats — the actual point of the report: how much this item has
   // really moved, and whether its cost has been creeping up order to order.
+  // total_qty is unambiguous here (one product = one Unit, shown a few
+  // columns back) — it's only the Supplier Summary's cross-product total
+  // that needs an extra Units column to stay meaningful.
   { key: "times_ordered", header: "Times Ordered", width: 13, type: "number" },
-  { key: "total_qty", header: "Total Qty Ordered", width: 16, type: "number" },
+  { key: "total_qty", header: "Total Qty Ordered", width: 16, type: "decimal" },
   { key: "total_spend", header: "Total Spend", width: 16, type: "money" },
   { key: "min_unit_cost", header: "Min Cost Paid", width: 14, type: "money" },
   { key: "max_unit_cost", header: "Max Cost Paid", width: 14, type: "money" },
@@ -71,7 +74,13 @@ const SUMMARY_COLUMNS = [
   { key: "supplier", header: "Supplier", width: 28 },
   { key: "product_count", header: "Products Registered", width: 16, type: "number" },
   { key: "orders_count", header: "Orders (Distinct)", width: 14, type: "number" },
-  { key: "total_qty", header: "Total Qty Ordered", width: 16, type: "number" },
+  { key: "total_qty", header: "Total Qty Ordered", width: 16, type: "decimal" },
+  // This total adds up quantities across every item bought from the
+  // supplier — meaningless on its own if one item is sold by the kg and
+  // another by the meter. Units lists every distinct unit that went into
+  // it, right next to the number, so it's never read as one clean figure
+  // when it's actually mixed (e.g. "kg, m").
+  { key: "units", header: "Units", width: 14 },
   { key: "total_spend", header: "Total Spend", width: 16, type: "money" },
   { key: "first_order_date", header: "First Order", width: 13, type: "date" },
   { key: "last_order_date", header: "Last Order", width: 13, type: "date" },
@@ -119,7 +128,12 @@ function buildProductSupplierReportWorkbook(db) {
       weight: dimStr(p.weight, p.weight_unit) || "—",
       net_weight: dimStr(p.net_weight, p.weight_unit),
       unit: p.unit || "",
-      price_basis: p.price_basis || "",
+      // price_basis (liter vs. ton) only means anything for Chemical
+      // products — every other category's price_basis column just carries
+      // the 'liter' default the column was backfilled with when it was
+      // added to the schema, not a real setting, so showing it here for a
+      // textile/machine/etc. row would read as a made-up fact about it.
+      price_basis: p.category === "Chemical" ? (p.price_basis || "") : "",
       cost_price: toNumber(p.unit_cost),
       cost_currency: currencyLabel(p.cost_currency || "USD"),
       sale_price: toNumber(p.sale_price),
@@ -150,6 +164,7 @@ function buildProductSupplierReportWorkbook(db) {
       COUNT(DISTINCT p.id) AS product_count,
       COUNT(DISTINCT oi.order_id) AS orders_count,
       SUM(oi.quantity) AS total_qty,
+      GROUP_CONCAT(DISTINCT oi.unit) AS units,
       SUM(COALESCE(oi.cost_price, oi.unit_price, 0) * oi.quantity) AS total_spend,
       MIN(o.created_at) AS first_order_date,
       MAX(o.created_at) AS last_order_date
@@ -169,6 +184,7 @@ function buildProductSupplierReportWorkbook(db) {
       product_count: toNumber(r.product_count) || 0,
       orders_count: toNumber(r.orders_count) || 0,
       total_qty: toNumber(r.total_qty),
+      units: r.units ? r.units.split(",").filter(Boolean).join(", ") : "",
       total_spend: toNumber(r.total_spend),
       first_order_date: toExcelDate(r.first_order_date),
       last_order_date: toExcelDate(r.last_order_date),
