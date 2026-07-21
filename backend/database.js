@@ -524,6 +524,14 @@ const migrations = [
   // generalized to any category instead of being Chemical-only.
   ['products', 'units_per_package', 'REAL'],
   ['products', 'package_weight', 'TEXT'],
+  // What's actually being counted/sold (Unit or Pair) — separate from
+  // `unit` above, which for non-Chemical/Textile/DTF products is the
+  // physical Package type (Boxes, Crates...), not the counting unit. Set on
+  // the product so every order item for it defaults correctly instead of
+  // relying on whoever's placing that specific order to remember to set it
+  // right (the mistake that started this — an item shipped in boxes was
+  // getting the box type printed as its Unit column instead of "Pair").
+  ['products', 'selling_unit', 'TEXT'],
 ];
 
 for (const [table, column, definition] of migrations) {

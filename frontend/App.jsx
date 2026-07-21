@@ -620,11 +620,10 @@ function PricingRow({ item, product, currency, onChange }) {
 // field, so an ad-hoc item (not tied to a registered product) can still
 // pick a real package type instead of being stuck with whatever the last
 // selected product had.
-// Suggestions only — both places this feeds (ProductForm's Package field,
-// ProductItemModal's order-item Unit field) are free-text inputs backed by
-// a <datalist>, not a locked dropdown, so a peculiar unit that isn't on
-// this list (a new tank type, "Sets", whatever comes up next) can just be
-// typed in directly instead of being stuck without a matching option.
+// Physical packaging/container types only (what the goods are actually
+// packed in) — NOT what's being counted/sold (see SELLING_UNIT_OPTIONS
+// below for that). Mixing the two into one list is what put "Pairs" here
+// before, which then printed as if it were a package type.
 const PACKAGE_UNIT_OPTIONS = [
   "Bags / Sacks - 25kg",
   "Bags / Sacks - 50kg",
@@ -642,10 +641,14 @@ const PACKAGE_UNIT_OPTIONS = [
   "Steel Drums / Barrels",
   "IBC Tank",
   "Flex Tank",
-  "Pairs",
-  "Sets",
-  "Pieces",
 ];
+
+// What's actually being counted/sold — separate concept from the physical
+// package it ships in (a Unit or a Pair can just as easily go in a Box, a
+// Crate, or a Bag). Only offered for categories that don't already have
+// their own dedicated pricing unit (Chemical prices by liter/ton, Textile/
+// DTF Film by the meter/roll — see the category check where this is used).
+const SELLING_UNIT_OPTIONS = ["Unit", "Pair"];
 
 // Shared list of product categories — used by Product registration, Sample
 // registration, and the Supplier's Product Types field (so a supplier's
@@ -1322,7 +1325,12 @@ const selectProduct = (p) => {
     product_name: p.name,
     product_code: p.code,
     supplier: p.supplier || "",
-    unit: p.unit || "unit",
+    // Chemical/Textile/DTF Film default to the product's registered package
+    // type (drum size, "Rolls"...) — every other category defaults to the
+    // product's own registered Sold By setting (Unit/Pair), not the
+    // Package field, since that's a physical container type, not what's
+    // being counted/sold.
+    unit: (p.category === "Chemical" || p.category === "Textile" || p.category === "DTF Film") ? (p.unit || "unit") : (p.selling_unit || "Unit"),
     currency: p.sale_currency || p.cost_currency || "USD",
     unit_price: salePrice,
     cost_price: costPrice,
@@ -1421,14 +1429,25 @@ const handleHeightUnitChange = (e) => {
             )}
           </div>
         </Field>
-        <Field label="Unit" half>
-  {/* Free-text with suggestions (not a locked dropdown) — items sold in a
-      unit that isn't a physical package type at all (Pairs, Sets...) need
-      to be typeable here, not just picked from a packaging-container list. */}
-  <Input list="package-unit-options-item" value={item.unit || ""} onChange={e => setItem(p => ({ ...p, unit: e.target.value }))} placeholder="e.g. Pairs, IBC Tank, Boxes / Cartons - Medium…" />
-  <datalist id="package-unit-options-item">
-    {PACKAGE_UNIT_OPTIONS.map(u => <option key={u} value={u} />)}
-  </datalist>
+        <Field label={(item.category === "Chemical" || item.category === "Textile" || item.category === "DTF Film") ? "Unit" : "Sold By"} half>
+  {(item.category === "Chemical" || item.category === "Textile" || item.category === "DTF Film") ? (
+    // Chemical (drums/tanks) and Textile/DTF Film (rolls) are already
+    // counted in a physical package unit, so the package-type list applies
+    // directly here.
+    <Select value={item.unit || ""} onChange={e => setItem(p => ({ ...p, unit: e.target.value }))}>
+      <option value="">Select...</option>
+      {PACKAGE_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
+    </Select>
+  ) : (
+    // Every other category: what's being counted/sold (Unit or Pair) is a
+    // separate concept from what it's physically packed in — a pair of LED
+    // lights still ships in a Box, it just isn't priced or counted as one.
+    // This is what actually prints as the Unit column on client documents.
+    <Select value={item.unit || ""} onChange={e => setItem(p => ({ ...p, unit: e.target.value }))}>
+      <option value="">Select...</option>
+      {SELLING_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
+    </Select>
+  )}
 </Field>
         <Field label={selectedProduct && selectedProduct.category === "Chemical" && selectedProduct.price_basis === "ton" ? "Quantity (Tons)" : "Quantity"} half>
           <Input type="number" value={item.quantity} onChange={handleQtyChange} placeholder="0" />
@@ -1809,6 +1828,10 @@ const [f, setF] = useState(initial || {
   // Informational only — not used in any pricing calculation, just a
   // reference note shown next to Margin % for whoever's pricing the item.
   vat_pct: "",
+  // What's counted/sold (Unit or Pair) for categories that don't already
+  // have their own pricing unit (Chemical=liter/ton, Textile/DTF=meter) —
+  // see the Sold By field below.
+  selling_unit: "Unit",
   category: "", supplier: "",
 });
   const [suppliers, setSuppliers] = useState([]);
@@ -2048,15 +2071,23 @@ const handleSalePerLiterChange = (e) => {
       </Field>
 
       <Field label="Package" half>
-  {/* Free-text with suggestions (not a locked dropdown) — same reasoning as
-      ProductItemModal's Unit field: a peculiar packaging type (IBC Tank,
-      Flex Tank, Pairs...) needs to be typeable, not just pickable from a
-      fixed container list. */}
-  <Input list="package-unit-options-form" value={f.unit || ""} onChange={set("unit")} placeholder="e.g. IBC Tank, Boxes / Cartons - Medium…" />
-  <datalist id="package-unit-options-form">
-    {PACKAGE_UNIT_OPTIONS.map(u => <option key={u} value={u} />)}
-  </datalist>
+  <Select value={f.unit} onChange={set("unit")}>
+    <option value="">Select...</option>
+    {PACKAGE_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
+  </Select>
 </Field>
+
+{f.category !== "Chemical" && f.category !== "Textile" && f.category !== "DTF Film" && (
+  // What's actually being counted/sold — separate from Package above (the
+  // physical container). Registered here so every order item for this
+  // product defaults correctly instead of relying on whoever places a
+  // given order to remember to switch it from the default.
+  <Field label="Sold By" half>
+    <Select value={f.selling_unit || "Unit"} onChange={set("selling_unit")}>
+      {SELLING_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
+    </Select>
+  </Field>
+)}
 
 <Field label="Width" half>
   <div style={{ display: "flex", gap: "6px" }}>
