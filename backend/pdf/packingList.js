@@ -164,13 +164,13 @@ function renderPackingList(params) {
     incoterm, acq, manufacturer, items, totals, importer, containers,
   } = params;
 
-  // Multi-container shipments: split the items into one section per
-  // container, each headed by "Container 0N: <code>" and closed with its own
-  // combined TOTAL row (Length/Roll/Gross/Net/CBM for just that container) —
-  // matching the reference layout. Falls back to the old single-table
-  // rendering when there's one container or none was ever set up (older
-  // Packing Lists saved before this existed), so nothing changes for them.
-  const hasContainerSplit = Array.isArray(containers) && containers.length > 1;
+  // Every registered container — even just one — gets its own "Container
+  // 0N: <code>" header and TOTAL row; this used to only kick in above 1
+  // container, which silently dropped the container code from single-
+  // container Packing Lists (the common case). Only falls back to the old
+  // plain single-table rendering when there's truly no container registered
+  // at all (older Packing Lists saved before this existed).
+  const hasContainerSplit = Array.isArray(containers) && containers.length >= 1;
 
   let sectionsHtml = "";
 
