@@ -24,16 +24,15 @@ function isTextileItem(item) {
 
 // Product name and description are two separate columns (matching the
 // client's own reference documents), not name-plus-paragraph stacked in one
-// cell — NCM and any extra facts (CAS number, etc.) sit under the
-// description as a small bulleted list.
+// cell — NCM and any extra facts (CAS number, etc.) print as their own
+// plain lines under the description, same as the reference documents
+// (flush-left, no bullet marker/indent — see .desc-line in layout.js).
 const nameCell = item => `<td class="center"><strong>${escapeHtml(item.description)}</strong></td>`;
 const descCell = item => `
   <td>
     ${item.descriptionText ? `<p class="desc-text">${escapeHtml(item.descriptionText)}</p>` : ""}
-    ${(item.bullets && item.bullets.length) || item.ncm ? `<ul class="desc-bullets">
-      ${(item.bullets || []).map(b => `<li>${escapeHtml(b)}</li>`).join("")}
-      ${item.ncm ? `<li>NCM: ${escapeHtml(item.ncm)}</li>` : ""}
-    </ul>` : ""}
+    ${(item.bullets || []).map(b => `<p class="desc-line">${escapeHtml(b)}</p>`).join("")}
+    ${item.ncm ? `<p class="desc-line"><strong>NCM: ${escapeHtml(item.ncm)}</strong></p>` : ""}
   </td>
 `;
 

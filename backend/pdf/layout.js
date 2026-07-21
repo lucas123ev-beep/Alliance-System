@@ -53,14 +53,14 @@ function baseCss() {
        Description, which stay left-aligned since they hold running text. */
     .items-table .center { text-align: center; }
     /* Product description is its own paragraph, set apart from the bold
-       product name above it — not folded into the bulleted facts list
-       (CAS number, NCM, etc.) below it. Condensed (smaller font, tighter
-       line-height/margins) — a long description with several bullet facts
-       was pushing each item close to a full page on its own, which doesn't
-       scale past 2-3 items per order. */
-    .items-table .desc-text { margin: 2px 0 2px; font-size: 8px; line-height: 1.25; color: #222; }
-    .items-table .desc-bullets { margin: 2px 0 0 12px; padding: 0; font-size: 8px; line-height: 1.25; }
-    .items-table .desc-bullets li { margin-bottom: 0.5px; }
+       product name above it. Every extra fact (CAS number, NCM, etc.)
+       prints as its own plain line underneath — NOT a bulleted/indented
+       list. Bullet markers plus a 12px indent were adding real vertical
+       weight per line on top of an already-long description; the client's
+       own reference documents just run each fact as a flush-left line, no
+       marker, no indent, which is both what they want and meaningfully
+       shorter per item (matters once an order has several items). */
+    .items-table .desc-text, .items-table .desc-line { margin: 1px 0; font-size: 8px; line-height: 1.25; color: #222; }
     .totals-row td { font-weight: bold; border-top: 1.5px solid #333; border-bottom: none; }
     .two-col { display: flex; gap: 0; margin-top: 10px; border-top: 1px solid #333; }
     .two-col .col { flex: 1; padding: 8px 14px; font-size: 9.5px; }

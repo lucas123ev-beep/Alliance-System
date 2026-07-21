@@ -48,16 +48,15 @@ function renderSalesInvoice(params) {
 
   // Product name and description are two separate columns (matching the
   // client's own reference documents), not name-plus-paragraph stacked in
-  // one cell — NCM and any extra facts (CAS number, etc.) sit under the
-  // description as a small bulleted list.
+  // one cell — NCM and any extra facts (CAS number, etc.) print as their
+  // own plain lines under the description, same as the reference documents
+  // (flush-left, no bullet marker/indent — see .desc-line in layout.js).
   const nameCell = item => `<td class="center"><strong>${escapeHtml(item.description)}</strong></td>`;
   const descCell = item => `
     <td>
       ${item.descriptionText ? `<p class="desc-text">${escapeHtml(item.descriptionText)}</p>` : ""}
-      ${(item.bullets && item.bullets.length) || item.ncm ? `<ul class="desc-bullets">
-        ${(item.bullets || []).map(b => `<li>${escapeHtml(b)}</li>`).join("")}
-        ${item.ncm ? `<li>NCM: ${escapeHtml(item.ncm)}</li>` : ""}
-      </ul>` : ""}
+      ${(item.bullets || []).map(b => `<p class="desc-line">${escapeHtml(b)}</p>`).join("")}
+      ${item.ncm ? `<p class="desc-line"><strong>NCM: ${escapeHtml(item.ncm)}</strong></p>` : ""}
     </td>
   `;
 
@@ -75,11 +74,12 @@ function renderSalesInvoice(params) {
     </tr>
   `).join("");
 
-  // Ton-priced Chemical items already show their weight as the Quantity
-  // itself ("48 t (≈ 240 Drums)") — repeating it in Total Weight is
-  // redundant, so that column is left fully empty (not even a "—") for
-  // those rows. Every other category still shows its registered weight in
-  // kg here, since nothing else on the row carries that information.
+  // Total Weight only means something for Chemical (liter-priced — ton-
+  // priced items already show their weight as the Quantity itself, "48 t
+  // (≈ 240 Drums)", so repeating it here would be redundant). Every OTHER
+  // category — Machine, Accessory, anything counted in Units/Pairs rather
+  // than priced by weight — leaves this column fully empty instead of
+  // printing a weight nobody quoted or cares about on this document.
   const otherRows = otherItems.map(item => `
     <tr>
       ${nameCell(item)}
@@ -89,9 +89,9 @@ function renderSalesInvoice(params) {
       <td class="center">${item.quantityLabel
         ? escapeHtml(item.quantityLabel)
         : item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
-      <td class="num">${item.priceBasis === "ton"
-        ? ""
-        : (item.totalWeight ? `${fmtNumber(item.totalWeight, 1)} kg` : "—")}</td>
+      <td class="num">${(item.category === "Chemical" && item.priceBasis !== "ton")
+        ? (item.totalWeight ? `${fmtNumber(item.totalWeight, 1)} kg` : "—")
+        : ""}</td>
       <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
       <td class="num">${fmtMoney(item.total, currency)}</td>
     </tr>

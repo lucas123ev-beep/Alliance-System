@@ -1465,16 +1465,22 @@ const handleHeightUnitChange = (e) => {
         <Field label="Supplier">
           <Input value={item.supplier || ""} onChange={e => setItem(p => ({ ...p, supplier: e.target.value }))} placeholder="Auto-filled from product" />
         </Field>
-<Field label={`Cost Price (${currencyLabel(item.cost_currency || "USD")})`}>
+<Field label={`Cost Price (${currencyLabel(item.cost_currency || "USD")})`} half>
   <Input type="text" inputMode="decimal" value={item.cost_price || ""} onChange={e => setItem(prev => ({ ...prev, cost_price: maskMoney(e.target.value) }))} placeholder="0.00" />
-  {/* Registered Sale Price shown right below Cost Price, for reference
-      while pricing this specific item — no need to flip back to the
-      Products screen just to check what it's normally sold for. */}
-  {selectedProduct && selectedProduct.sale_price ? (
-    <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
-      Registered Sale Price: {currencyLabel(selectedProduct.sale_currency || "USD")} {parseFloat(selectedProduct.sale_price).toFixed(2)}
-    </div>
-  ) : null}
+</Field>
+{/* Real editable field (defaults from the product's registered Sale Price
+    via selectProduct, same as Cost Price already did) instead of a
+    read-only caption — needs to be overridable per item just like Cost
+    Price is, not just visible for reference. Recomputes Total the same way
+    handleQtyChange already does, so changing it here doesn't leave Total
+    out of sync with the new price. */}
+<Field label={`Sale Price (${currencyLabel(item.currency || "USD")})`} half>
+  <Input type="text" inputMode="decimal" value={item.unit_price || ""} onChange={e => {
+    const masked = maskMoney(e.target.value);
+    const qty = parseFloat(item.quantity) || 0;
+    const priceNum = parseLocaleNumber(masked) ?? parseFloat(masked) ?? 0;
+    setItem(prev => ({ ...prev, unit_price: masked, total: qty && priceNum ? (qty * priceNum).toFixed(2) : prev.total }));
+  }} placeholder="0.00" />
 </Field>
 {/* Total Weight only means something for goods actually priced/tracked by
     weight or volume (Chemical) or where the registered weight spec is part
