@@ -114,7 +114,11 @@ app.get('/api/orders', (req, res) => {
 app.get('/api/orders/:id', (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Order not found' });
-  const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id);
+  // ORDER BY id (not left to SQLite's default, which isn't guaranteed to be
+  // insertion order) so items always list in the order they were actually
+  // added to the order — everywhere this order's items show up (Order
+  // screen, Proformas, Packing Lists...) reads the same sequence.
+  const items = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC').all(req.params.id);
   res.json({ ...order, items });
 });
 
@@ -184,7 +188,7 @@ insertItem.run(req.params.id, item.product_id || null, item.product_name,
 }
 
   const order = db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id);
-  const savedItems = db.prepare('SELECT * FROM order_items WHERE order_id=?').all(req.params.id);
+  const savedItems = db.prepare('SELECT * FROM order_items WHERE order_id=? ORDER BY id ASC').all(req.params.id);
   res.json({ ...order, items: savedItems });
 });
 
@@ -226,7 +230,12 @@ app.delete('/api/contracts/:id', (req, res) => {
 
 // ─── PRODUCTS ─────────────────────────────────────────────────────────────────
 app.get('/api/products', (req, res) => {
-  res.json(db.prepare('SELECT * FROM products ORDER BY name').all());
+  // Addition order (registration order), not alphabetical — same reasoning
+  // as order_items: the list should read in the order things were actually
+  // added. The Products screen's own column headers are click-to-sort, so
+  // anyone who wants it alphabetical (or by any other column) can still get
+  // that with one click — this is just the starting default.
+  res.json(db.prepare('SELECT * FROM products ORDER BY id ASC').all());
 });
 
 app.post('/api/products', (req, res) => {
@@ -788,7 +797,10 @@ const supplierPaid = db.prepare(`
 // ─── CLIENTS ─────────────────────────────────────────────────────────────────
 
 app.get('/api/clients', (req, res) => {
-  res.json(db.prepare('SELECT * FROM clients ORDER BY company_name').all());
+  // Addition order, not alphabetical — see the matching comment on
+  // GET /api/products. Click any column header on the Clients screen to
+  // sort by that instead.
+  res.json(db.prepare('SELECT * FROM clients ORDER BY id ASC').all());
 });
 
 app.post('/api/clients', (req, res) => {
@@ -825,7 +837,10 @@ app.delete('/api/clients/:id', (req, res) => {
 // ─── SUPPLIERS ────────────────────────────────────────────────────────────────
 
 app.get('/api/suppliers', (req, res) => {
-  res.json(db.prepare('SELECT * FROM suppliers ORDER BY company_name').all());
+  // Addition order, not alphabetical — see the matching comment on
+  // GET /api/products. Click any column header on the Suppliers screen to
+  // sort by that instead.
+  res.json(db.prepare('SELECT * FROM suppliers ORDER BY id ASC').all());
 });
 
 app.post('/api/suppliers', (req, res) => {
@@ -1066,7 +1081,10 @@ function normalizeSalesItem(item, fallbackCurrency) {
 }
 
 function orderItemsFor(orderId) {
-  return db.prepare('SELECT * FROM order_items WHERE order_id=?').all(orderId);
+  // ORDER BY id — feeds every client-facing document (Proforma, Commercial
+  // Invoice...), which all need items to print in the order they were
+  // actually added, not whatever order SQLite happens to return them in.
+  return db.prepare('SELECT * FROM order_items WHERE order_id=? ORDER BY id ASC').all(orderId);
 }
 
 app.get('/api/proformas/:id/pdf', async (req, res) => {

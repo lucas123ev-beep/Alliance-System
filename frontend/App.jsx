@@ -876,27 +876,68 @@ function Badge({ status }) {
   );
 }
 
+// Click a column header to sort by it; click again to flip direction —
+// works on every screen that uses this shared Table (Products, Orders,
+// Samples...) without each one having to wire up its own sorting. Only
+// columns with a `key` (or an explicit `sortValue(row)` for computed
+// columns) are sortable — a pure `render`-only column like "Actions" has no
+// underlying value to sort by, so it's left alone (no pointer cursor, click
+// does nothing).
 function Table({ cols, rows, emptyMsg = "No records found" }) {
+  const [sort, setSort] = useState({ id: null, dir: 1 }); // dir: 1 = asc, -1 = desc
+
   if (!rows.length) return (
     <div style={{ textAlign: "center", padding: "48px", color: "#475569", fontSize: "14px" }}>{emptyMsg}</div>
   );
+
+  const sortIdOf = c => c.key || c.label;
+  const valueOf = (row, c) => c.sortValue ? c.sortValue(row) : (c.key ? row[c.key] : undefined);
+
+  const activeCol = sort.id ? cols.find(c => sortIdOf(c) === sort.id) : null;
+  const sortedRows = activeCol ? [...rows].sort((a, b) => {
+    const av = valueOf(a, activeCol), bv = valueOf(b, activeCol);
+    // Blanks always sort to the end regardless of direction — an empty
+    // Category/Supplier shouldn't jump to the top just because "desc" was
+    // picked.
+    const aEmpty = av === null || av === undefined || av === "";
+    const bEmpty = bv === null || bv === undefined || bv === "";
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1;
+    if (bEmpty) return -1;
+    const an = parseFloat(av), bn = parseFloat(bv);
+    const bothNumeric = Number.isFinite(an) && Number.isFinite(bn);
+    const cmp = bothNumeric ? an - bn : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: "base" });
+    return cmp * sort.dir;
+  }) : rows;
+
+  const toggleSort = c => {
+    if (!c.key && !c.sortValue) return;
+    const id = sortIdOf(c);
+    setSort(prev => prev.id === id ? { id, dir: prev.dir * -1 } : { id, dir: 1 });
+  };
+
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
         <thead>
           <tr>
-            {cols.map((c) => (
-              <th key={c.key || c.label} style={{
-                textAlign: "left", padding: "10px 14px", color: "#475569",
-                fontSize: "11px", fontWeight: 600, textTransform: "uppercase",
-                letterSpacing: "0.05em", borderBottom: "1px solid #1e293b", whiteSpace: "nowrap",
-              }}>{c.label}</th>
-            ))}
+            {cols.map((c) => {
+              const sortable = !!(c.key || c.sortValue);
+              const active = sort.id === sortIdOf(c);
+              return (
+                <th key={c.key || c.label} onClick={() => toggleSort(c)} style={{
+                  textAlign: "left", padding: "10px 14px", color: active ? "#94a3b8" : "#475569",
+                  fontSize: "11px", fontWeight: 600, textTransform: "uppercase",
+                  letterSpacing: "0.05em", borderBottom: "1px solid #1e293b", whiteSpace: "nowrap",
+                  cursor: sortable ? "pointer" : "default", userSelect: "none",
+                }}>{c.label}{active ? (sort.dir === 1 ? " ▲" : " ▼") : ""}</th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
-            <tr key={i} style={{ borderBottom: "1px solid #0f172a" }}
+          {sortedRows.map((row, i) => (
+            <tr key={row.id ?? i} style={{ borderBottom: "1px solid #0f172a" }}
               onMouseEnter={(e) => e.currentTarget.style.background = "#1e293b"}
               onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
               {cols.map((c) => (
