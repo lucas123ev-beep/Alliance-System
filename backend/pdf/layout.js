@@ -46,7 +46,7 @@ function baseCss() {
       border-bottom: 1.5px solid #333; padding: 6px 9px; font-size: 8.5px;
       text-transform: uppercase; text-align: center; font-weight: bold;
     }
-    .items-table td { border-bottom: 0.75px solid #999; padding: 7px 9px; font-size: 9.5px; vertical-align: middle; }
+    .items-table td { border-bottom: 0.75px solid #999; padding: 6px 9px; font-size: 9.5px; vertical-align: middle; }
     .items-table .num { text-align: right; }
     /* Short single-value columns (Color, Width/Unit, Quantity, weight
        spec...) read as a tidy grid when centered — unlike Product/
@@ -54,10 +54,13 @@ function baseCss() {
     .items-table .center { text-align: center; }
     /* Product description is its own paragraph, set apart from the bold
        product name above it — not folded into the bulleted facts list
-       (CAS number, NCM, etc.) below it. */
-    .items-table .desc-text { margin: 4px 0 3px; font-size: 9px; line-height: 1.4; color: #222; }
-    .items-table .desc-bullets { margin: 3px 0 0 14px; padding: 0; font-size: 9px; line-height: 1.5; }
-    .items-table .desc-bullets li { margin-bottom: 2px; }
+       (CAS number, NCM, etc.) below it. Condensed (smaller font, tighter
+       line-height/margins) — a long description with several bullet facts
+       was pushing each item close to a full page on its own, which doesn't
+       scale past 2-3 items per order. */
+    .items-table .desc-text { margin: 2px 0 2px; font-size: 8px; line-height: 1.25; color: #222; }
+    .items-table .desc-bullets { margin: 2px 0 0 12px; padding: 0; font-size: 8px; line-height: 1.25; }
+    .items-table .desc-bullets li { margin-bottom: 0.5px; }
     .totals-row td { font-weight: bold; border-top: 1.5px solid #333; border-bottom: none; }
     .two-col { display: flex; gap: 0; margin-top: 10px; border-top: 1px solid #333; }
     .two-col .col { flex: 1; padding: 8px 14px; font-size: 9.5px; }

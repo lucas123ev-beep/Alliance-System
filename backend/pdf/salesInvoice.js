@@ -155,15 +155,16 @@ function renderSalesInvoice(params) {
     ? `Total Length: ${fmtNumber(totalLength, 3)} m`
     : `Total Quantity: ${fmtNumber(totalQuantity, 2)}`;
 
-  // Label and value share one cell (not split across two stretched-apart
-  // <td>s) so "Grand Total Amount: $X" reads as one unit instead of leaving
-  // a wide empty gap between the label and the number.
+  // Both totals share ONE cell (not split across two stretched-apart
+  // <td>s spanning the full table width, which left a wide empty gap
+  // between them) — right-aligned together so "Total Quantity: X   Grand
+  // Total Amount: $Y" reads as one adjacent pair instead of opposite ends
+  // of the row.
   sectionsHtml += `
     <table class="items-table" style="margin-top:6px;">
       <tbody>
         <tr class="totals-row">
-          <td>${escapeHtml(summaryLabel)}</td>
-          <td class="num">Grand Total Amount: ${fmtMoney(totalAmount, currency)}</td>
+          <td class="num">${escapeHtml(summaryLabel)} &nbsp;&nbsp;|&nbsp;&nbsp; Grand Total Amount: ${fmtMoney(totalAmount, currency)}</td>
         </tr>
       </tbody>
     </table>

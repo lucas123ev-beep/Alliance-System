@@ -1467,12 +1467,28 @@ const handleHeightUnitChange = (e) => {
         </Field>
 <Field label={`Cost Price (${currencyLabel(item.cost_currency || "USD")})`}>
   <Input type="text" inputMode="decimal" value={item.cost_price || ""} onChange={e => setItem(prev => ({ ...prev, cost_price: maskMoney(e.target.value) }))} placeholder="0.00" />
+  {/* Registered Sale Price shown right below Cost Price, for reference
+      while pricing this specific item — no need to flip back to the
+      Products screen just to check what it's normally sold for. */}
+  {selectedProduct && selectedProduct.sale_price ? (
+    <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
+      Registered Sale Price: {currencyLabel(selectedProduct.sale_currency || "USD")} {parseFloat(selectedProduct.sale_price).toFixed(2)}
+    </div>
+  ) : null}
 </Field>
-<Field label="Total Weight" half>
-  <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: item.total_weight ? "#10b981" : "#475569", fontWeight: item.total_weight ? 700 : 400, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
-    {item.total_weight ? `${item.total_weight.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg` : "—"}
-  </div>
-</Field>
+{/* Total Weight only means something for goods actually priced/tracked by
+    weight or volume (Chemical) or where the registered weight spec is part
+    of the trade itself (Textile/DTF Film rolls) — for everything else
+    (Unit/Pair-counted goods) it's not what's being decided on this screen,
+    so it stays out of the way here. The weight is still computed and saved
+    in the background either way, for the Packing List's Gross Weight total. */}
+{(item.category === "Chemical" || item.category === "Textile" || item.category === "DTF Film") && (
+  <Field label="Total Weight" half>
+    <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: item.total_weight ? "#10b981" : "#475569", fontWeight: item.total_weight ? 700 : 400, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
+      {item.total_weight ? `${item.total_weight.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg` : "—"}
+    </div>
+  </Field>
+)}
 {selectedProduct && selectedProduct.category === "Chemical" && selectedProduct.price_basis === "ton" ? (
   // Ton-priced Chemical items: Quantity is entered directly in tons, so
   // this box repurposes the (otherwise unused, Textile-only) meterage slot
@@ -1494,8 +1510,10 @@ const handleHeightUnitChange = (e) => {
 ) : selectedProduct && parseFloat(selectedProduct.units_per_package) > 0 ? (
   // Generalized version of the "≈ Drums" box above, for any OTHER category
   // sold in a unit that isn't the packed unit — e.g. LED lights sold per
-  // PAIR, packed 500 pairs to a box. Same purely-informational role.
-  <Field label="≈ Packages" half>
+  // PAIR, packed 500 pairs to a box. Same purely-informational role. Not
+  // `half` — Total Weight is hidden for this category (see above), so
+  // there's nothing left to pair it with.
+  <Field label="≈ Packages">
     <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: "#f59e0b", fontWeight: 700, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
       {(() => {
         const perPackage = parseFloat(selectedProduct.units_per_package) || 0;
@@ -1505,13 +1523,17 @@ const handleHeightUnitChange = (e) => {
       })()}
     </div>
   </Field>
-) : (
+) : (item.category === "Chemical" || item.category === "Textile" || item.category === "DTF Film") ? (
+  // Meterage/liter-priced Chemical fallback — pairs with the Total Weight
+  // box above for these three categories, same as before. Not shown at all
+  // for the generic Unit/Pair-counted category (nothing to show — there's
+  // no meterage concept there, and Total Weight is already hidden too).
   <Field label="Total Meterage" half>
     <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: item.total_meterage ? "#60a5fa" : "#475569", fontWeight: item.total_meterage ? 700 : 400, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
       {item.total_meterage ? `${item.total_meterage.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m` : "—"}
     </div>
   </Field>
-)}
+) : null}
         <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
           <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
           <Btn onClick={() => {
@@ -2077,18 +2099,6 @@ const handleSalePerLiterChange = (e) => {
   </Select>
 </Field>
 
-{f.category !== "Chemical" && f.category !== "Textile" && f.category !== "DTF Film" && (
-  // What's actually being counted/sold — separate from Package above (the
-  // physical container). Registered here so every order item for this
-  // product defaults correctly instead of relying on whoever places a
-  // given order to remember to switch it from the default.
-  <Field label="Sold By" half>
-    <Select value={f.selling_unit || "Unit"} onChange={set("selling_unit")}>
-      {SELLING_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
-    </Select>
-  </Field>
-)}
-
 <Field label="Width" half>
   <div style={{ display: "flex", gap: "6px" }}>
     <Input value={f.width} onChange={set("width")} placeholder="0" style={{ ...inputStyle, flex: 1 }} />
@@ -2132,6 +2142,21 @@ const handleSalePerLiterChange = (e) => {
   // since part of it is the drum itself, not product).
   <Field label={`Net Weight (chemical only, per package, ${f.weight_unit || "kg"})`}>
     <Input value={f.net_weight || ""} onChange={set("net_weight")} placeholder="e.g. 200 (vs. 264.85 gross above)" style={{ ...inputStyle }} />
+  </Field>
+)}
+
+{f.category !== "Chemical" && f.category !== "Textile" && f.category !== "DTF Film" && (
+  // What's actually being counted/sold — separate from Package above (the
+  // physical container). Registered here so every order item for this
+  // product defaults correctly instead of relying on whoever places a given
+  // order to remember to switch it. Full-width and grouped down here with
+  // Units per Package/Package Weight (not up next to Package) since the
+  // three belong together — up there it split the Width/Height/Thickness/
+  // Weight fields across mismatched rows.
+  <Field label="Sold By">
+    <Select value={f.selling_unit || "Unit"} onChange={set("selling_unit")}>
+      {SELLING_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
+    </Select>
   </Field>
 )}
 
