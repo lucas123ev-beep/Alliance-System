@@ -1303,26 +1303,54 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
       const qty = parseFloat(item.quantity) || 0;
       const category = item.category || product?.category || '';
       const isTextile = category === 'Textile' || category === 'DTF Film';
+      // Ton-based quantity/pricing only makes sense for Textile/DTF Film
+      // (priced by total roll weight) and ton-priced Chemical — everything
+      // else (general goods like LED lights sold per unit/pair) must show
+      // its own real quantity and per-unit price instead. Forcing every
+      // item into "Total Weight (Tons)" / "Unit Price (/Ton)" regardless of
+      // category previously showed nonsense like "1.050 t" and "RMB
+      // 115,000.00/ton" for a batch of LED lights sold per pair.
+      const priceBasis = item.price_basis || product?.price_basis || null;
+      const isTonChemical = category === 'Chemical' && priceBasis === 'ton';
       // Gramatura (GSM) only applies to Textile/DTF Film, registered on the
       // product as weight g/m² or g/m.
       const gramatura = isTextile && product?.weight && (product.weight_unit === 'g/m²' || product.weight_unit === 'g/m')
         ? `${product.weight} ${product.weight_unit}` : '';
-      // Total quantity in tons (replacing the roll count) — Gross Weight =
-      // Net Weight (item.total_weight) + tube core weight × roll count.
-      const netWeight = item.total_weight != null && item.total_weight !== '' ? parseFloat(item.total_weight) : null;
-      const tubeWeightPerRoll = isTextile ? tubeWeightKg(product?.tube_weight, product?.tube_weight_unit) : 0;
-      const grossWeightKg = netWeight != null ? netWeight + tubeWeightPerRoll * qty : null;
-      const quantityTons = grossWeightKg != null ? grossWeightKg / 1000 : null;
-      // unitPrice as stored on the item is a per-roll rate (what was
-      // actually quoted/costed) — now that the Quantity column shows tons
-      // instead of rolls, the Unit Price shown alongside it must also be
-      // re-expressed as a per-ton rate, or unitPrice × quantity visually
-      // stops matching Total (e.g. "RMB 237.00" per roll next to "27.552 t"
-      // reads as if the total should be 237×27.552, when it's actually
-      // 237×971 rolls — same total, wrong-looking math). Total itself is
-      // unaffected, it's still unitPrice(perRoll) × qty(rolls).
       const total = unitPrice * qty;
-      const unitPricePerTon = quantityTons ? total / quantityTons : unitPrice;
+
+      let quantityValue, quantityUnit, quantityDecimals, unitPriceValue;
+      if (isTextile) {
+        // Total quantity in tons (replacing the roll count) — Gross Weight
+        // = Net Weight (item.total_weight) + tube core weight × roll count.
+        const netWeight = item.total_weight != null && item.total_weight !== '' ? parseFloat(item.total_weight) : null;
+        const tubeWeightPerRoll = tubeWeightKg(product?.tube_weight, product?.tube_weight_unit);
+        const grossWeightKg = netWeight != null ? netWeight + tubeWeightPerRoll * qty : null;
+        quantityValue = grossWeightKg != null ? grossWeightKg / 1000 : null;
+        quantityUnit = 't';
+        quantityDecimals = 3;
+        // unitPrice as stored on the item is a per-roll rate (what was
+        // actually quoted/costed) — now that the Quantity column shows tons
+        // instead of rolls, the Unit Price shown alongside it must also be
+        // re-expressed as a per-ton rate, or unitPrice × quantity visually
+        // stops matching Total. Total itself is unaffected, it's still
+        // unitPrice(perRoll) × qty(rolls).
+        unitPriceValue = quantityValue ? total / quantityValue : unitPrice;
+      } else if (isTonChemical) {
+        // Ton-priced Chemical: item.quantity is already stored in tons —
+        // no weight lookup/derivation needed, unitPrice is already per ton.
+        quantityValue = qty;
+        quantityUnit = 't';
+        quantityDecimals = 3;
+        unitPriceValue = unitPrice;
+      } else {
+        // General goods: show the real sold quantity/unit (e.g. "35,000
+        // Pair") and the real per-unit price — no weight/ton conversion.
+        quantityValue = qty;
+        quantityUnit = item.unit || product?.unit || product?.selling_unit || '';
+        quantityDecimals = Number.isInteger(qty) ? 0 : 2;
+        unitPriceValue = unitPrice;
+      }
+
       return {
         productName: product?.name || item.product_name || '—',
         color: product?.color || '',
@@ -1330,9 +1358,11 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
         thickness: product?.thickness ? `${product.thickness}${product.thickness_unit || ''}` : '',
         width: product?.width ? `${product.width}${product.width_unit || ''}` : '',
         gramatura,
-        quantityTons,
+        quantityValue,
+        quantityUnit,
+        quantityDecimals,
         unit: item.unit || '',
-        unitPrice: unitPricePerTon,
+        unitPrice: unitPriceValue,
         currency: item.cost_currency || item.currency || contract.currency,
         total,
       };

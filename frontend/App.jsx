@@ -1934,7 +1934,11 @@ const handleUpload = async (e) => {
   // starting at 001 if none exist yet — still editable afterwards in case
   // a manual code is needed.
   useEffect(() => {
-    if (initial) return;
+    // Skip only when editing an existing product (it already has a real
+    // code). A Duplicate seed is also passed in as `initial` but with
+    // code cleared to "" on purpose — it still needs the next sequential
+    // number generated here, same as a brand-new product.
+    if (initial && initial.code) return;
     api("/products").then(products => {
       const maxNum = (products || []).reduce((max, p) => {
         const match = String(p.code || "").trim().match(/^(\d+)$/);

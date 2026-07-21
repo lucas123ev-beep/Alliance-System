@@ -46,6 +46,23 @@ function renderSalesInvoice(params) {
   const textileItems = items.filter(i => i.isTextile);
   const otherItems = items.filter(i => !i.isTextile);
 
+  // Non-Textile items still get split into their own group per category
+  // (e.g. Chemical vs Machine vs Other) when an order mixes more than one —
+  // otherwise a Chemical item and an unrelated general-goods item (like LED
+  // lights) would land in the same table with no visual separation, which
+  // reads as confusing/ambiguous on a client-facing document. When every
+  // non-Textile item shares one category, this collapses back to a single
+  // plain table exactly like before (no redundant label for the common
+  // single-category case).
+  const otherGroups = [];
+  otherItems.forEach(item => {
+    const key = item.category || "Other";
+    let group = otherGroups.find(g => g.key === key);
+    if (!group) { group = { key, items: [] }; otherGroups.push(group); }
+    group.items.push(item);
+  });
+  const showOtherGroupLabels = otherGroups.length > 1;
+
   // Product name and description are two separate columns (matching the
   // client's own reference documents), not name-plus-paragraph stacked in
   // one cell — NCM and any extra facts (CAS number, etc.) print as their
@@ -80,7 +97,7 @@ function renderSalesInvoice(params) {
   // category — Machine, Accessory, anything counted in Units/Pairs rather
   // than priced by weight — leaves this column fully empty instead of
   // printing a weight nobody quoted or cares about on this document.
-  const otherRows = otherItems.map(item => `
+  const otherRowsFor = groupItems => groupItems.map(item => `
     <tr>
       ${nameCell(item)}
       ${descCell(item)}
@@ -132,8 +149,9 @@ function renderSalesInvoice(params) {
   `;
   }
 
-  if (otherItems.length > 0) {
+  otherGroups.forEach(group => {
     sectionsHtml += `
+    ${showOtherGroupLabels ? `<div class="section-bar" style="margin-top:10px;">${escapeHtml(group.key)}</div>` : ""}
     <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
@@ -148,11 +166,11 @@ function renderSalesInvoice(params) {
         </tr>
       </thead>
       <tbody>
-        ${otherRows}
+        ${otherRowsFor(group.items)}
       </tbody>
     </table>
   `;
-  }
+  });
 
   // Total Length (Textile/DTF Film) or Total Quantity (everything else) now
   // shares the same row as Grand Total Amount instead of living in its own
