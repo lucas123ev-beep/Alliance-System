@@ -61,7 +61,7 @@ function renderSalesInvoice(params) {
     if (!group) { group = { key, items: [] }; otherGroups.push(group); }
     group.items.push(item);
   });
-  const showOtherGroupLabels = otherGroups.length > 1;
+  const separateOtherGroups = otherGroups.length > 1;
 
   // Product name and description are two separate columns (matching the
   // client's own reference documents), not name-plus-paragraph stacked in
@@ -149,10 +149,14 @@ function renderSalesInvoice(params) {
   `;
   }
 
-  otherGroups.forEach(group => {
+  otherGroups.forEach((group, idx) => {
+    // Later groups (2nd category onward) get extra top spacing plus a thick
+    // rule matching the one already used above the Grand Total row —
+    // enough to read as a clear break between categories without a filled
+    // gray label bar, which the client found too heavy/intrusive.
+    const isNewSection = separateOtherGroups && idx > 0;
     sectionsHtml += `
-    ${showOtherGroupLabels ? `<div class="section-bar" style="margin-top:10px;">${escapeHtml(group.key)}</div>` : ""}
-    <table class="items-table" style="margin-top:6px;">
+    <table class="items-table" style="margin-top:${isNewSection ? "18px" : "6px"};${isNewSection ? " border-top:1.5px solid #333;" : ""}">
       <thead>
         <tr>
           <th style="width:12%">Product</th>
