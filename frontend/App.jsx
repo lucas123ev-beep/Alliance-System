@@ -4153,6 +4153,12 @@ function Products() {
   const [modal, setModal] = useState(null);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
+  // Prefills the New Product form when duplicating an existing product
+  // (Code cleared — it's unique, so the copy can't reuse it — and Name
+  // tagged "(Copy)" so it's obviously a draft waiting to be told apart from
+  // the original) instead of starting the whole registration from scratch
+  // for a near-identical item. null for a genuinely blank "+ New Product".
+  const [duplicateSeed, setDuplicateSeed] = useState(null);
 
   const load = useCallback(() => api("/products").then(setProducts), []);
   useEffect(() => { load(); }, [load]);
@@ -4169,15 +4175,17 @@ function Products() {
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Product Registry</h2>
         <div style={{ display: "flex", gap: "10px" }}>
           <Btn outline color="#10b981" onClick={() => window.open(authUrl(`${API}/reports/products-by-supplier`), "_blank")}>📊 Supplier Report</Btn>
-          <Btn onClick={() => setModal("new")}>+ New Product</Btn>
+          <Btn onClick={() => { setDuplicateSeed(null); setModal("new"); }}>+ New Product</Btn>
         </div>
       </div>
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by name, code or category…" style={{ ...inputStyle, marginBottom: "16px" }} />
 
       {modal === "new" && (
-        <Modal title="New Product" onClose={() => setModal(null)}>
-          <ProductForm onSave={b => api("/products", "POST", b).then(load)} onClose={() => setModal(null)} />
+        <Modal title={duplicateSeed ? "Duplicate Product" : "New Product"} onClose={() => { setModal(null); setDuplicateSeed(null); }}>
+          <ProductForm initial={duplicateSeed}
+            onSave={b => api("/products", "POST", b).then(load)}
+            onClose={() => { setModal(null); setDuplicateSeed(null); }} />
         </Modal>
       )}
       {editing && (
@@ -4204,6 +4212,15 @@ cols={[
   { label: "Actions", render: r => (
     <div style={{ display: "flex", gap: "6px" }}>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
+      <Btn small outline color="#3b82f6" onClick={() => {
+        // Strip identity/audit fields that must NOT carry over to the copy —
+        // id (would overwrite the original if sent), code (unique, and this
+        // one's already taken), created_at/updated_by (fresh values belong
+        // to the new row, not borrowed from the original).
+        const { id, code, created_at, updated_by, ...rest } = r;
+        setDuplicateSeed({ ...rest, code: "", name: `${r.name} (Copy)` });
+        setModal("new");
+      }}>Duplicate</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/products/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
       <LastModifiedBy name={r.updated_by} />
     </div>
