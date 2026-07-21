@@ -1175,8 +1175,14 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
       }
       return `${arr.every(i => i.isTextile) ? 'Rolls' : 'Packages'}: ${sumOf(arr, 'roll')}`;
     };
+    // Falls back to this plain aggregate line (no container code — there's
+    // nothing to attribute it to) only when the Packing List has no
+    // registered containers at all. Any real container — even just one —
+    // gets its code printed via the per-container breakdown below instead;
+    // that used to only kick in above 1 container, which silently dropped
+    // the container code for the (very common) single-container case.
     let plSummary = pl ? `${unitSummary(plItems)} | Gross Weight: ${pl.total_gross_weight || 0} kg | Net Weight: ${pl.total_net_weight || 0} kg | CBM: ${pl.total_cbm || 0}` : '';
-    if (pl && Array.isArray(plContainers) && plContainers.length > 1) {
+    if (pl && Array.isArray(plContainers) && plContainers.length >= 1) {
       plSummary = plContainers.map(c => {
         // Same zero-roll filter as the Packing List PDF — unallocated rows
         // that only exist for the allocation UI shouldn't show up here.
