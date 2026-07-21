@@ -3316,18 +3316,30 @@ console.log('quotations set:', quotations?.length);
 )}
       <Table
         cols={[
-          { label: "Number", render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
+          { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
           { label: "Product", key: "product_name" },
           { label: "Client", key: "client" },
-          { label: "Suppliers", render: r => {
+          { label: "Suppliers", sortValue: r => {
+  try {
+    const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
+    const suppliers = [...new Set(items.map(i => i.supplier).filter(Boolean))];
+    return suppliers.join(", ");
+  } catch { return ""; }
+}, render: r => {
   try {
     const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
     const suppliers = [...new Set(items.map(i => i.supplier).filter(Boolean))];
     return suppliers.length > 0 ? suppliers.join(", ") : "—";
   } catch { return "—"; }
 }},
-          { label: "Qty", render: r => `${r.quantity || "—"} ${r.unit || ""}` },
-          { label: "Target Price", render: r => {
+          { label: "Qty", sortValue: r => r.quantity, render: r => `${r.quantity || "—"} ${r.unit || ""}` },
+          { label: "Target Price", sortValue: r => {
+  try {
+    const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
+    const withTarget = items.filter(i => i.target_price !== "" && i.target_price != null);
+    return withTarget.length > 0 ? parseFloat(withTarget[0].target_price) : null;
+  } catch { return null; }
+}, render: r => {
   try {
     const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
     const withTarget = items.filter(i => i.target_price !== "" && i.target_price != null);
@@ -3336,15 +3348,20 @@ console.log('quotations set:', quotations?.length);
     return withTarget.length > 1 ? `${label(withTarget[0])} +${withTarget.length - 1}` : label(withTarget[0]);
   } catch { return "—"; }
 }},
-          { label: "Total", render: r => {
+          { label: "Total", sortValue: r => {
+  try {
+    const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
+    return items.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0);
+  } catch { return null; }
+}, render: r => {
   try {
     const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
     const total = items.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0);
     return total > 0 ? fmt(total, r.currency) : "—";
   } catch { return "—"; }
 }},
-          { label: "Deadline", render: r => fmtDate(r.deadline) },
-          { label: "Status", render: r => (
+          { label: "Deadline", sortValue: r => r.deadline, render: r => fmtDate(r.deadline) },
+          { label: "Status", sortValue: r => r.status, render: r => (
             <select value={r.status}
               onChange={async e => { await api(`/quotations/${r.id}`, "PUT", { ...r, status: e.target.value }); load(); }}
               style={{ ...inputStyle, padding: "4px 8px", fontSize: "12px", width: "auto" }}>
@@ -3434,10 +3451,10 @@ function Dashboard() {
           <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>📋 Pending Orders</h3>
           <Table
             cols={[
-              { label: "Order #", render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.order_number}</span> },
+              { label: "Order #", sortValue: r => r.order_number, render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.order_number}</span> },
               { label: "Client", key: "client" },
-              { label: "Value", render: r => fmt(r.value, r.currency) },
-              { label: "Shipment", render: r => fmtDate(r.shipment_date) },
+              { label: "Value", sortValue: r => r.value, render: r => fmt(r.value, r.currency) },
+              { label: "Shipment", sortValue: r => r.shipment_date, render: r => fmtDate(r.shipment_date) },
             ]}
             rows={data.pendingOrders}
           />
@@ -3450,10 +3467,10 @@ function Dashboard() {
           <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>💬 Pending Quotations</h3>
           <Table
             cols={[
-              { label: "Number", render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.number}</span> },
+              { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.number}</span> },
               { label: "Client", key: "client" },
-              { label: "Total", render: r => r.total ? fmt(r.total, r.currency) : "—" },
-              { label: "Deadline", render: r => fmtDate(r.deadline) },
+              { label: "Total", sortValue: r => r.total, render: r => r.total ? fmt(r.total, r.currency) : "—" },
+              { label: "Deadline", sortValue: r => r.deadline, render: r => fmtDate(r.deadline) },
             ]}
             rows={data.pendingQuotations}
           />
@@ -3466,10 +3483,10 @@ function Dashboard() {
           <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>🧾 Pending Commercial Invoices</h3>
           <Table
             cols={[
-              { label: "Number", render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.number}</span> },
+              { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.number}</span> },
               { label: "Client", key: "client" },
-              { label: "Total", render: r => fmt(r.total, r.currency) },
-              { label: "Issue Date", render: r => fmtDate(r.issue_date) },
+              { label: "Total", sortValue: r => r.total, render: r => fmt(r.total, r.currency) },
+              { label: "Issue Date", sortValue: r => r.issue_date, render: r => fmtDate(r.issue_date) },
             ]}
             rows={data.pendingCommercials}
           />
@@ -3482,9 +3499,9 @@ function Dashboard() {
           <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>🔍 Pending Inspections</h3>
           <Table
             cols={[
-              { label: "Number", render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.number}</span> },
+              { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.number}</span> },
               { label: "Inspector", key: "inspector" },
-              { label: "Date", render: r => fmtDate(r.inspection_date) },
+              { label: "Date", sortValue: r => r.inspection_date, render: r => fmtDate(r.inspection_date) },
             ]}
             rows={data.pendingInspections}
           />
@@ -3497,9 +3514,9 @@ function Dashboard() {
           <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>✏️ Pending Samples</h3>
           <Table
             cols={[
-              { label: "Product", render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.product_name}</span> },
+              { label: "Product", sortValue: r => r.product_name, render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.product_name}</span> },
               { label: "Client", key: "client" },
-              { label: "Requested Date", render: r => fmtDate(r.requested_date) },
+              { label: "Requested Date", sortValue: r => r.requested_date, render: r => fmtDate(r.requested_date) },
             ]}
             rows={data.pendingSamples}
           />
@@ -3514,8 +3531,8 @@ function Dashboard() {
             cols={[
               { label: "Supplier", key: "supplier" },
               { label: "Description", key: "description" },
-              { label: "Amount", render: r => <span style={{ fontWeight: 600, color: "#f59e0b" }}>{fmt(r.amount, r.currency)}</span> },
-              { label: "Due Date", render: r => fmtDate(r.due_date) },
+              { label: "Amount", sortValue: r => r.amount, render: r => <span style={{ fontWeight: 600, color: "#f59e0b" }}>{fmt(r.amount, r.currency)}</span> },
+              { label: "Due Date", sortValue: r => r.due_date, render: r => fmtDate(r.due_date) },
               { label: "Status", key: "status" },
             ]}
             rows={data.pendingSupplierPayments}
@@ -3529,11 +3546,11 @@ function Dashboard() {
           <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>🤝 Active Contracts</h3>
           <Table
             cols={[
-              { label: "Contract #", render: r => <span style={{ fontWeight: 600, color: "#a78bfa" }}>{r.contract_number}</span> },
+              { label: "Contract #", sortValue: r => r.contract_number, render: r => <span style={{ fontWeight: 600, color: "#a78bfa" }}>{r.contract_number}</span> },
               { label: "Supplier", key: "supplier" },
-              { label: "Total", render: r => fmt(r.total, r.currency) },
+              { label: "Total", sortValue: r => r.total, render: r => fmt(r.total, r.currency) },
               { label: "Status", key: "status" },
-              { label: "Delivery", render: r => fmtDate(r.delivery_date) },
+              { label: "Delivery", sortValue: r => r.delivery_date, render: r => fmtDate(r.delivery_date) },
             ]}
             rows={data.activeContracts}
           />
@@ -4121,7 +4138,7 @@ onSave={async b => {
       <Table
         cols={[
           {
-            label: "Order #", render: r =>
+            label: "Order #", sortValue: r => r.order_number, render: r =>
               editNumberId === r.id ? (
                 <div style={{ display: "flex", gap: "6px" }}>
                   <Input value={editNumberVal} onChange={e => setEditNumberVal(e.target.value)}
@@ -4138,11 +4155,11 @@ onSave={async b => {
               )
           },
           { label: "Client", key: "client" },
-          { label: "Value", render: r => fmt(r.value, r.currency) },
-          { label: "Lead Time", render: r => r.production_lead_time ? `${r.production_lead_time}d` : "—" },
-          { label: "Shipment", render: r => fmtDate(r.shipment_date) },
-          { label: "Arrival", render: r => fmtDate(r.arrival_date) },
-          { label: "Status", render: r => (
+          { label: "Value", sortValue: r => r.value, render: r => fmt(r.value, r.currency) },
+          { label: "Lead Time", sortValue: r => r.production_lead_time, render: r => r.production_lead_time ? `${r.production_lead_time}d` : "—" },
+          { label: "Shipment", sortValue: r => r.shipment_date, render: r => fmtDate(r.shipment_date) },
+          { label: "Arrival", sortValue: r => r.arrival_date, render: r => fmtDate(r.arrival_date) },
+          { label: "Status", sortValue: r => r.status, render: r => (
   <select value={r.status}
     onChange={async e => { await changeStatus(r.id, e.target.value); }}
     style={{ ...inputStyle, padding: "4px 8px", fontSize: "12px", width: "auto" }}>
@@ -4239,17 +4256,17 @@ function Products() {
 
       <Table
 cols={[
-  { label: "Code", render: r => <span style={{ fontFamily: "monospace", color: "#60a5fa" }}>{r.code}</span> },
-  { label: "Name", render: r => <span style={{ fontWeight: 600 }}>{r.name}</span> },
+  { label: "Code", sortValue: r => r.code, render: r => <span style={{ fontFamily: "monospace", color: "#60a5fa" }}>{r.code}</span> },
+  { label: "Name", sortValue: r => r.name, render: r => <span style={{ fontWeight: 600 }}>{r.name}</span> },
   { label: "Category", key: "category" },
   { label: "Supplier", key: "supplier" },
   { label: "Unit", key: "unit" },
-  { label: "Width", render: r => r.width || "—" },
-  { label: "Height", render: r => r.height || "—" },
-  { label: "Thickness", render: r => r.thickness || "—" },
-  { label: "Weight", render: r => r.weight || "—" },
-  { label: "Cost", render: r => r.unit_cost ? `${currencyLabel(r.cost_currency || "USD")} ${parseFloat(r.unit_cost).toFixed(2)}` : "—" },
-  { label: "Sale Price", render: r => r.sale_price ? `${currencyLabel(r.sale_currency || "USD")} ${parseFloat(r.sale_price).toFixed(2)}` : "—" },
+  { label: "Width", sortValue: r => r.width, render: r => r.width || "—" },
+  { label: "Height", sortValue: r => r.height, render: r => r.height || "—" },
+  { label: "Thickness", sortValue: r => r.thickness, render: r => r.thickness || "—" },
+  { label: "Weight", sortValue: r => r.weight, render: r => r.weight || "—" },
+  { label: "Cost", sortValue: r => r.unit_cost, render: r => r.unit_cost ? `${currencyLabel(r.cost_currency || "USD")} ${parseFloat(r.unit_cost).toFixed(2)}` : "—" },
+  { label: "Sale Price", sortValue: r => r.sale_price, render: r => r.sale_price ? `${currencyLabel(r.sale_currency || "USD")} ${parseFloat(r.sale_price).toFixed(2)}` : "—" },
   { label: "Actions", render: r => (
     <div style={{ display: "flex", gap: "6px" }}>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
@@ -4313,13 +4330,13 @@ function Samples() {
 )}
       <Table
         cols={[
-  { label: "Code", render: r => <span style={{ fontFamily: "monospace", color: "#60a5fa" }}>{r.code || "—"}</span> },
+  { label: "Code", sortValue: r => r.code, render: r => <span style={{ fontFamily: "monospace", color: "#60a5fa" }}>{r.code || "—"}</span> },
   { label: "Category", key: "category" },
-  { label: "Product", render: r => <span style={{ fontWeight: 600 }}>{r.product_name}</span> },
+  { label: "Product", sortValue: r => r.product_name, render: r => <span style={{ fontWeight: 600 }}>{r.product_name}</span> },
   { label: "Client", key: "client" },
-  { label: "Requested", render: r => fmtDate(r.requested_date) },
-  { label: "Sent", render: r => fmtDate(r.sent_date) },
-{ label: "Status", render: r => (
+  { label: "Requested", sortValue: r => r.requested_date, render: r => fmtDate(r.requested_date) },
+  { label: "Sent", sortValue: r => r.sent_date, render: r => fmtDate(r.sent_date) },
+{ label: "Status", sortValue: r => r.status, render: r => (
   <select value={r.status}
     onChange={async e => { await api(`/samples/${r.id}/status`, "PATCH", { status: e.target.value }); load(); }}
     style={{ ...inputStyle, padding: "4px 8px", color: sampleColors[r.status] || "#94a3b8", fontSize: "12px", width: "auto" }}>
@@ -4442,12 +4459,12 @@ const [proformas, setProformas] = useState([]);
         placeholder="Search by number, client or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
 cols={[
-  { label: "Number", render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
+  { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
   { label: "Client", key: "client" },
-  { label: "Issue Date", render: r => fmtDate(r.issue_date) },
-  { label: "Validity", render: r => fmtDate(r.validity) },
-  { label: "Total", render: r => fmt(r.total, r.currency) },
-  { label: "Status", render: r => (
+  { label: "Issue Date", sortValue: r => r.issue_date, render: r => fmtDate(r.issue_date) },
+  { label: "Validity", sortValue: r => r.validity, render: r => fmtDate(r.validity) },
+  { label: "Total", sortValue: r => r.total, render: r => fmt(r.total, r.currency) },
+  { label: "Status", sortValue: r => r.status, render: r => (
     <select value={r.status}
       onChange={async e => {
         await api(`/proformas/${r.id}`, "PUT", { ...r, status: e.target.value });
@@ -4508,12 +4525,12 @@ function Contracts() {
         placeholder="Search by contract #, supplier or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
         cols={[
-          { label: "Contract #", render: r => <span style={{ fontWeight: 700, color: "#a78bfa" }}>{r.contract_number}</span> },
+          { label: "Contract #", sortValue: r => r.contract_number, render: r => <span style={{ fontWeight: 700, color: "#a78bfa" }}>{r.contract_number}</span> },
           { label: "Supplier", key: "supplier" },
-          { label: "Sign Date", render: r => fmtDate(r.sign_date) },
-          { label: "Delivery Date", render: r => fmtDate(r.delivery_date) },
-          { label: "Total", render: r => fmt(r.total, r.currency) },
-          { label: "Status", render: r => (
+          { label: "Sign Date", sortValue: r => r.sign_date, render: r => fmtDate(r.sign_date) },
+          { label: "Delivery Date", sortValue: r => r.delivery_date, render: r => fmtDate(r.delivery_date) },
+          { label: "Total", sortValue: r => r.total, render: r => fmt(r.total, r.currency) },
+          { label: "Status", sortValue: r => r.status, render: r => (
             <select value={r.status}
               onChange={async e => {
                 await api(`/contracts/${r.id}`, "PUT", { ...r, status: e.target.value });
@@ -4592,7 +4609,7 @@ function Financial({ type }) {
       )}
       <Table
 cols={[
-  { label: isClient ? "Client" : "Supplier", render: r => <span style={{ fontWeight: 600 }}>{r[party]}</span> },
+  { label: isClient ? "Client" : "Supplier", sortValue: r => r[party], render: r => <span style={{ fontWeight: 600 }}>{r[party]}</span> },
   { label: "Type", key: "type" },
   { label: "Description", key: "description" },
   ...(!isClient ? [{
@@ -4609,7 +4626,7 @@ cols={[
       } catch { return "—"; }
     }
   }] : []),
-  { label: "Amount", render: r => (
+  { label: "Amount", sortValue: r => r.amount, render: r => (
     <span style={{ fontWeight: 600, color }}>
       {fmt(r.amount, r.currency)}
       {r.status === "Partial" && (
@@ -4619,8 +4636,8 @@ cols={[
       )}
     </span>
   ) },
-  { label: "Due Date", render: r => fmtDate(r.due_date) },
-  { label: "Status", render: r => (
+  { label: "Due Date", sortValue: r => r.due_date, render: r => fmtDate(r.due_date) },
+  { label: "Status", sortValue: r => r.status, render: r => (
     <select value={r.status}
       onChange={async e => {
         const status = e.target.value;
@@ -4797,7 +4814,7 @@ function Clients() {
       )}
       <Table
         cols={[
-          { label: "Company", render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.company_name}</span> },
+          { label: "Company", sortValue: r => r.company_name, render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.company_name}</span> },
           { label: "Contact", key: "contact_name" },
           { label: "Email", key: "email" },
           { label: "Phone", key: "phone" },
@@ -4964,13 +4981,13 @@ function Suppliers() {
       )}
       <Table
         cols={[
-          { label: "Company", render: r => <span style={{ fontWeight: 600, color: "#a78bfa" }}>{r.company_name}</span> },
+          { label: "Company", sortValue: r => r.company_name, render: r => <span style={{ fontWeight: 600, color: "#a78bfa" }}>{r.company_name}</span> },
           { label: "Contact", key: "contact_name" },
           { label: "Email", key: "email" },
           { label: "Phone", key: "phone" },
           { label: "Product Types", key: "product_types" },
           { label: "Payment Terms", key: "payment_terms" },
-          { label: "Bank", render: r => r.bank_name ? <span style={{ fontSize: "12px", color: "#94a3b8" }}>{r.bank_name}{r.account_number ? ` • ${r.account_number}` : ""}</span> : <span style={{ color: "#475569" }}>—</span> },
+          { label: "Bank", sortValue: r => r.bank_name, render: r => r.bank_name ? <span style={{ fontSize: "12px", color: "#94a3b8" }}>{r.bank_name}{r.account_number ? ` • ${r.account_number}` : ""}</span> : <span style={{ color: "#475569" }}>—</span> },
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
               <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
@@ -5078,11 +5095,11 @@ function CommercialInvoices() {
         placeholder="Search by number, client or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
         cols={[
-          { label: "Number", render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
+          { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
           { label: "Client", key: "client" },
-          { label: "Issue Date", render: r => fmtDate(r.issue_date) },
-          { label: "Total", render: r => fmt(r.total, r.currency) },
-          { label: "Status", render: r => (
+          { label: "Issue Date", sortValue: r => r.issue_date, render: r => fmtDate(r.issue_date) },
+          { label: "Total", sortValue: r => r.total, render: r => fmt(r.total, r.currency) },
+          { label: "Status", sortValue: r => r.status, render: r => (
             <select value={r.status}
               onChange={async e => { await api(`/commercial-invoices/${r.id}`, "PUT", { ...r, status: e.target.value }); load(); }}
               style={{ ...inputStyle, padding: "4px 8px", fontSize: "12px", width: "auto", color: r.status === "Paid" ? "#10b981" : "#f59e0b" }}>
@@ -5151,15 +5168,15 @@ function PackingLists() {
         placeholder="Search by number, order or client…" style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
         cols={[
-          { label: "Number", render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
+          { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
           { label: "Order #", key: "order_number" },
           { label: "Client", key: "client" },
-          { label: "Shipment Date", render: r => r.shipment_date ? fmtDate(r.shipment_date) : "—" },
-          { label: "Arrival Date", render: r => r.arrival_date ? fmtDate(r.arrival_date) : "—" },
-          { label: "Roll", render: r => r.total_roll || "—" },
-          { label: "Gross Weight", render: r => r.total_gross_weight ? `${parseFloat(r.total_gross_weight).toLocaleString("en-US", { maximumFractionDigits: 1 })} kg` : "—" },
-          { label: "Net Weight", render: r => r.total_net_weight ? `${parseFloat(r.total_net_weight).toLocaleString("en-US", { maximumFractionDigits: 1 })} kg` : "—" },
-          { label: "CBM", render: r => r.total_cbm || "—" },
+          { label: "Shipment Date", sortValue: r => r.shipment_date, render: r => r.shipment_date ? fmtDate(r.shipment_date) : "—" },
+          { label: "Arrival Date", sortValue: r => r.arrival_date, render: r => r.arrival_date ? fmtDate(r.arrival_date) : "—" },
+          { label: "Roll", sortValue: r => r.total_roll, render: r => r.total_roll || "—" },
+          { label: "Gross Weight", sortValue: r => r.total_gross_weight, render: r => r.total_gross_weight ? `${parseFloat(r.total_gross_weight).toLocaleString("en-US", { maximumFractionDigits: 1 })} kg` : "—" },
+          { label: "Net Weight", sortValue: r => r.total_net_weight, render: r => r.total_net_weight ? `${parseFloat(r.total_net_weight).toLocaleString("en-US", { maximumFractionDigits: 1 })} kg` : "—" },
+          { label: "CBM", sortValue: r => r.total_cbm, render: r => r.total_cbm || "—" },
           { label: "Status", key: "status" },
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
@@ -5315,11 +5332,11 @@ function Inspections() {
       )}
       <Table
         cols={[
-          { label: "Number", render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
-          { label: "Order", render: r => { const o = orders.find(o => o.id === Number(r.order_id)); return o ? `${o.order_number} – ${o.client}` : "—"; }},
-          { label: "Date", render: r => fmtDate(r.inspection_date) },
+          { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
+          { label: "Order", sortValue: r => { const o = orders.find(o => o.id === Number(r.order_id)); return o ? o.order_number : ""; }, render: r => { const o = orders.find(o => o.id === Number(r.order_id)); return o ? `${o.order_number} – ${o.client}` : "—"; }},
+          { label: "Date", sortValue: r => r.inspection_date, render: r => fmtDate(r.inspection_date) },
           { label: "Inspector", key: "inspector" },
-          { label: "Result", render: r => (
+          { label: "Result", sortValue: r => r.result, render: r => (
   <select value={r.result}
     onChange={async e => { await api(`/inspections/${r.id}`, "PUT", { ...r, status: r.status, result: e.target.value }); load(); }}
     style={{ ...inputStyle, padding: "4px 8px", fontSize: "12px", width: "auto", color: resultColors[r.result] || "#64748b" }}>
