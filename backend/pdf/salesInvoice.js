@@ -150,15 +150,14 @@ function renderSalesInvoice(params) {
   }
 
   otherGroups.forEach((group, idx) => {
-    // Later groups (2nd category onward) get extra top spacing plus a plain
-    // solid rule — no category text, since the client doesn't want their
-    // own internal category labels (e.g. "Accessory") showing up on a
-    // client-facing document. Just enough of a visual break to read as a
-    // new group, nothing more.
+    // Later groups (2nd category onward) get extra top spacing only — no
+    // line, no category text. Just enough of a gap to read as a new group,
+    // since the client doesn't want their own internal category labels
+    // (e.g. "Accessory") showing up on a client-facing document, and even
+    // a plain rule read as too heavy/noisy.
     const isNewSection = separateOtherGroups && idx > 0;
     sectionsHtml += `
-    ${isNewSection ? `<div style="height:3px; background:#333; margin-top:16px;"></div>` : ""}
-    <table class="items-table" style="margin-top:${isNewSection ? "8px" : "6px"};">
+    <table class="items-table" style="margin-top:${isNewSection ? "26px" : "6px"};">
       <thead>
         <tr>
           <th style="width:12%">Product</th>
