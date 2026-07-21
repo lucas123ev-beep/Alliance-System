@@ -150,13 +150,15 @@ function renderSalesInvoice(params) {
   }
 
   otherGroups.forEach((group, idx) => {
-    // Later groups (2nd category onward) get extra top spacing plus a thick
-    // rule matching the one already used above the Grand Total row —
-    // enough to read as a clear break between categories without a filled
-    // gray label bar, which the client found too heavy/intrusive.
+    // Later groups (2nd category onward) get extra top spacing plus a plain
+    // solid rule — no category text, since the client doesn't want their
+    // own internal category labels (e.g. "Accessory") showing up on a
+    // client-facing document. Just enough of a visual break to read as a
+    // new group, nothing more.
     const isNewSection = separateOtherGroups && idx > 0;
     sectionsHtml += `
-    <table class="items-table" style="margin-top:${isNewSection ? "18px" : "6px"};${isNewSection ? " border-top:1.5px solid #333;" : ""}">
+    ${isNewSection ? `<div style="height:3px; background:#333; margin-top:16px;"></div>` : ""}
+    <table class="items-table" style="margin-top:${isNewSection ? "8px" : "6px"};">
       <thead>
         <tr>
           <th style="width:12%">Product</th>
