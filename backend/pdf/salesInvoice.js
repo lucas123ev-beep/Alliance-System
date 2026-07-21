@@ -100,6 +100,13 @@ function renderSalesInvoice(params) {
   // Each category group renders as its own clearly separated table block —
   // Textile/DTF Film with the Total Length column, everything else with
   // Quantity + Total Weight instead.
+  // Column widths are all explicit percentages (not left to auto-distribute)
+  // so Description can take a noticeably wider share — the short columns
+  // (Color, Unit, Weight...) hold single short values/numbers and don't
+  // need much room, so that space is better spent letting more words fit
+  // per description line before wrapping. Doesn't touch the page size
+  // itself (still plain A4 from render.js) — just how the row's own width
+  // is divided up.
   let sectionsHtml = "";
 
   if (textileItems.length > 0) {
@@ -107,15 +114,15 @@ function renderSalesInvoice(params) {
     <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
-          <th style="width:13%">Product</th>
-          <th style="width:22%">Description</th>
-          <th>Color</th>
-          <th>Width</th>
-          <th>Weight</th>
-          <th>Meters/Roll</th>
-          <th>Total Length</th>
-          <th>Unit Price</th>
-          <th>Total Amount (${escapeHtml(currencyLabel(currency))} ${escapeHtml(incoterm || "")})</th>
+          <th style="width:11%">Product</th>
+          <th style="width:29%">Description</th>
+          <th style="width:7%">Color</th>
+          <th style="width:7%">Width</th>
+          <th style="width:7%">Weight</th>
+          <th style="width:8%">Meters/Roll</th>
+          <th style="width:9%">Total Length</th>
+          <th style="width:9%">Unit Price</th>
+          <th style="width:13%">Total Amount (${escapeHtml(currencyLabel(currency))} ${escapeHtml(incoterm || "")})</th>
         </tr>
       </thead>
       <tbody>
@@ -130,14 +137,14 @@ function renderSalesInvoice(params) {
     <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
-          <th style="width:14%">Product</th>
-          <th style="width:24%">Description</th>
-          <th>Color</th>
-          <th>Unit</th>
-          <th>Quantity</th>
-          <th>Total Weight</th>
-          <th>Unit Price</th>
-          <th>Total Amount (${escapeHtml(currencyLabel(currency))} ${escapeHtml(incoterm || "")})</th>
+          <th style="width:12%">Product</th>
+          <th style="width:32%">Description</th>
+          <th style="width:8%">Color</th>
+          <th style="width:9%">Unit</th>
+          <th style="width:10%">Quantity</th>
+          <th style="width:10%">Total Weight</th>
+          <th style="width:9%">Unit Price</th>
+          <th style="width:10%">Total Amount (${escapeHtml(currencyLabel(currency))} ${escapeHtml(incoterm || "")})</th>
         </tr>
       </thead>
       <tbody>

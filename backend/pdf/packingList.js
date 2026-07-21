@@ -84,6 +84,12 @@ function renderItemSections(items) {
     </tr>
   `).join("");
 
+  // Column widths are all explicit percentages (not left to auto-distribute)
+  // so Description can take a noticeably wider share — same reasoning as
+  // salesInvoice.js: the short columns (Color, Roll, CBM...) hold single
+  // short values and don't need much room, freeing up space for more words
+  // per description line before wrapping. Page size itself is untouched
+  // (still plain A4 from render.js).
   let html = "";
 
   if (textileItems.length > 0) {
@@ -91,16 +97,16 @@ function renderItemSections(items) {
     <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
-          <th style="width:11%">Product</th>
-          <th style="width:17%">Description</th>
-          <th>Color</th>
-          <th>Width</th>
-          <th>Weight</th>
-          <th>Total Length</th>
-          <th>Roll</th>
-          <th>Gross Weight</th>
-          <th>Net Weight</th>
-          <th>CBM</th>
+          <th style="width:10%">Product</th>
+          <th style="width:26%">Description</th>
+          <th style="width:6%">Color</th>
+          <th style="width:7%">Width</th>
+          <th style="width:7%">Weight</th>
+          <th style="width:9%">Total Length</th>
+          <th style="width:8%">Roll</th>
+          <th style="width:9%">Gross Weight</th>
+          <th style="width:9%">Net Weight</th>
+          <th style="width:9%">CBM</th>
         </tr>
       </thead>
       <tbody>
@@ -123,15 +129,15 @@ function renderItemSections(items) {
     <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
-          <th style="width:11%">Product</th>
-          <th style="width:17%">Description</th>
-          <th>Color</th>
-          <th>Unit</th>
-          <th>Quantity</th>
-          <th>Packages</th>
-          <th>Gross Weight</th>
-          <th>Net Weight</th>
-          <th>CBM</th>
+          <th style="width:10%">Product</th>
+          <th style="width:27%">Description</th>
+          <th style="width:7%">Color</th>
+          <th style="width:8%">Unit</th>
+          <th style="width:9%">Quantity</th>
+          <th style="width:9%">Packages</th>
+          <th style="width:10%">Gross Weight</th>
+          <th style="width:10%">Net Weight</th>
+          <th style="width:10%">CBM</th>
         </tr>
       </thead>
       <tbody>
