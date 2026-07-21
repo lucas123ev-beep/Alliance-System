@@ -1001,19 +1001,17 @@ function normalizeSalesItem(item, fallbackCurrency) {
   // Drums / Barrels" when 48 actually means 48 tons). Show the tons figure
   // plus, when the product's per-drum weight is known, the estimated
   // number of drums that corresponds to.
+  // units_per_package products (sold per pair/piece, packed N-to-a-box)
+  // deliberately do NOT get a "(≈ N packages)" annotation here — client
+  // docs for those just show the plain sold quantity + unit (e.g. "35,000
+  // Pairs"), same as any normal item; the estimated package count is
+  // Packing-List-only information (it already has its own real Packages
+  // column there, computed on the frontend in buildPackingListDraft).
   let quantityLabel = null;
   if (category === 'Chemical' && priceBasis === 'ton' && item.quantity != null) {
     const perDrumTons = productNetWeightKg(product) / 1000;
     const drums = perDrumTons > 0 ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons) : null;
     quantityLabel = `${item.quantity} t${drums ? ` (≈ ${drums} ${item.unit || 'packages'})` : ''}`;
-  } else if (product?.units_per_package && item.quantity != null) {
-    // Same idea, generalized to any category sold in a unit that differs
-    // from its physical packaging (e.g. LED lights sold per PAIR, packed
-    // 500 pairs/box) — quantity is already the sold unit (not a package
-    // count), so show the estimated package count alongside it too.
-    const perPackage = parseFloat(product.units_per_package) || 0;
-    const packages = perPackage > 0 ? Math.round((parseFloat(item.quantity) || 0) / perPackage) : null;
-    quantityLabel = `${item.quantity} ${item.unit || ''}${packages ? ` (≈ ${packages} packages)` : ''}`.trim();
   }
   // Meters per roll — the roll length used for this specific item (may
   // differ from the product's registered default when a custom length was

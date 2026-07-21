@@ -620,6 +620,11 @@ function PricingRow({ item, product, currency, onChange }) {
 // field, so an ad-hoc item (not tied to a registered product) can still
 // pick a real package type instead of being stuck with whatever the last
 // selected product had.
+// Suggestions only — both places this feeds (ProductForm's Package field,
+// ProductItemModal's order-item Unit field) are free-text inputs backed by
+// a <datalist>, not a locked dropdown, so a peculiar unit that isn't on
+// this list (a new tank type, "Sets", whatever comes up next) can just be
+// typed in directly instead of being stuck without a matching option.
 const PACKAGE_UNIT_OPTIONS = [
   "Bags / Sacks - 25kg",
   "Bags / Sacks - 50kg",
@@ -635,6 +640,11 @@ const PACKAGE_UNIT_OPTIONS = [
   "Plastic Drums / Barrels",
   "Rolls",
   "Steel Drums / Barrels",
+  "IBC Tank",
+  "Flex Tank",
+  "Pairs",
+  "Sets",
+  "Pieces",
 ];
 
 // Shared list of product categories — used by Product registration, Sample
@@ -1011,14 +1021,15 @@ function buildPackingListDraft(order, products) {
     // Quantity column needs its own label (tons + estimated drum count)
     // instead of the generic "{quantity} {unit}" — mirrors quantityLabel in
     // server.js's normalizeSalesItem. units_per_package products (sold per
-    // pair/piece, packed N-to-a-box) get the same treatment, generalized.
+    // pair/piece, packed N-to-a-box) deliberately do NOT get the same "(≈ N
+    // packages)" annotation here — client docs for those just show the
+    // plain sold quantity + unit (e.g. "35,000 Pairs"), same as any normal
+    // item; the estimated package count is Packing-List-only information
+    // (it already has its own real Packages column there).
     let quantityLabel = null;
     if (isTonChemical && item.quantity != null) {
       const drums = perDrumTons > 0 ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons) : null;
       quantityLabel = `${item.quantity} t${drums ? ` (≈ ${drums} ${item.unit || "packages"})` : ""}`;
-    } else if (perPackageUnits > 0 && item.quantity != null) {
-      const packages = Math.round((parseFloat(item.quantity) || 0) / perPackageUnits);
-      quantityLabel = `${item.quantity} ${item.unit || ""}${packages ? ` (≈ ${packages} packages)` : ""}`.trim();
     }
     return {
       product_id: item.product_id,
@@ -1411,10 +1422,13 @@ const handleHeightUnitChange = (e) => {
           </div>
         </Field>
         <Field label="Unit" half>
-  <Select value={item.unit || ""} onChange={e => setItem(p => ({ ...p, unit: e.target.value }))}>
-    <option value="">Select...</option>
-    {PACKAGE_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
-  </Select>
+  {/* Free-text with suggestions (not a locked dropdown) — items sold in a
+      unit that isn't a physical package type at all (Pairs, Sets...) need
+      to be typeable here, not just picked from a packaging-container list. */}
+  <Input list="package-unit-options-item" value={item.unit || ""} onChange={e => setItem(p => ({ ...p, unit: e.target.value }))} placeholder="e.g. Pairs, IBC Tank, Boxes / Cartons - Medium…" />
+  <datalist id="package-unit-options-item">
+    {PACKAGE_UNIT_OPTIONS.map(u => <option key={u} value={u} />)}
+  </datalist>
 </Field>
         <Field label={selectedProduct && selectedProduct.category === "Chemical" && selectedProduct.price_basis === "ton" ? "Quantity (Tons)" : "Quantity"} half>
           <Input type="number" value={item.quantity} onChange={handleQtyChange} placeholder="0" />
@@ -1695,8 +1709,12 @@ useEffect(() => {
         <Field label="Prod. Lead Time (days)" half>
           <Input type="number" value={f.production_lead_time} onChange={set("production_lead_time")} />
         </Field>
-        <Field label="Delivery Days (after TT payment)" half>
-          <Input type="number" value={f.delivery_days || ""} onChange={set("delivery_days")} placeholder="33" />
+        {/* Plain text, not a number input — this can end up printed on the
+            Commercial Invoice PDF too (as a fallback when the Proforma's own
+            Delivery at Port field is blank — see server.js), which now
+            accepts a free-text note instead of only a day-count. */}
+        <Field label="Delivery Days (after TT payment, or a note)" half>
+          <Input value={f.delivery_days || ""} onChange={set("delivery_days")} placeholder="33" />
         </Field>
         <Field label="Incoterm" half>
           <Select value={f.incoterm} onChange={set("incoterm")}>
@@ -2030,10 +2048,14 @@ const handleSalePerLiterChange = (e) => {
       </Field>
 
       <Field label="Package" half>
-  <Select value={f.unit} onChange={set("unit")}>
-    <option value="">Select...</option>
-    {PACKAGE_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
-  </Select>
+  {/* Free-text with suggestions (not a locked dropdown) — same reasoning as
+      ProductItemModal's Unit field: a peculiar packaging type (IBC Tank,
+      Flex Tank, Pairs...) needs to be typeable, not just pickable from a
+      fixed container list. */}
+  <Input list="package-unit-options-form" value={f.unit || ""} onChange={set("unit")} placeholder="e.g. IBC Tank, Boxes / Cartons - Medium…" />
+  <datalist id="package-unit-options-form">
+    {PACKAGE_UNIT_OPTIONS.map(u => <option key={u} value={u} />)}
+  </datalist>
 </Field>
 
 <Field label="Width" half>
@@ -2666,11 +2688,16 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
           )}
         </div>
       </Field>
-      <Field label="End of Production (days after TT payment)" half>
-        <Input type="number" value={f.production_days || ""} onChange={set("production_days")} placeholder="28" />
+      {/* Plain text, not a number input — usually just a day-count ("28"),
+          which still prints as "28 days after TT payment." on the PDF (see
+          daysOrNote in salesInvoice.js), but some deals need a full note
+          here instead (e.g. "Depending on booking, please book at least 7
+          days after production finish date."), which now prints as-is. */}
+      <Field label="End of Production (days after TT payment, or a note)" half>
+        <Input value={f.production_days || ""} onChange={set("production_days")} placeholder="28" />
       </Field>
-      <Field label="Delivery at Port (days after TT payment)" half>
-        <Input type="number" value={f.delivery_days || ""} onChange={set("delivery_days")} placeholder="33" />
+      <Field label="Delivery at Port (days after TT payment, or a note)" half>
+        <Input value={f.delivery_days || ""} onChange={set("delivery_days")} placeholder="33" />
       </Field>
 
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>

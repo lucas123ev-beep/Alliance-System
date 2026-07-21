@@ -1,6 +1,18 @@
 const { wrapDocument } = require("./layout");
 const { escapeHtml, fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLabel } = require("./helpers");
 
+// production_days/delivery_days are usually a plain day-count ("28"), auto-
+// wrapped into "28 days after TT payment." — but some deals need a full
+// note there instead (e.g. "Depending on booking, please book at least 7
+// days after production finish date."), which would read wrong with that
+// suffix glued onto the end of it. Only append the suffix when the value
+// actually looks like a bare number; anything else prints as-is, already a
+// complete sentence on its own.
+function daysOrNote(value, fallback) {
+  const v = (value === undefined || value === null || value === "") ? fallback : value;
+  return /^\d+$/.test(String(v).trim()) ? `${v} days after TT payment.` : String(v);
+}
+
 // Shared layout for Proforma Invoice and Commercial Invoice — the two
 // client-facing sales documents. Structurally identical in the models the
 // client sent, differing only in title and a couple of payment-instruction
@@ -179,9 +191,9 @@ function renderSalesInvoice(params) {
         <div class="col-title">Payment Instructions</div>
         <p><strong>Total Value:</strong> ${escapeHtml(amountToWords(totalAmount, currency))}</p>
         <p><strong>1. Payment terms:</strong> ${escapeHtml(paymentTerms || "100% on BL copy")}.</p>
-        <p><strong>2. End date of production:</strong> ${escapeHtml(productionDays || "28")} days after TT payment.</p>
+        <p><strong>2. End date of production:</strong> ${escapeHtml(daysOrNote(productionDays, "28"))}</p>
         <p><strong>3. Goods delivered:</strong> ${escapeHtml(portOfOrigin || "—")}.</p>
-        <p><strong>4. Delivery date at ${escapeHtml((portOfOrigin || "origin port").split(",")[0])}:</strong> ${escapeHtml(deliveryDays || "33")} days after TT payment.</p>
+        <p><strong>4. Delivery date at ${escapeHtml((portOfOrigin || "origin port").split(",")[0])}:</strong> ${escapeHtml(daysOrNote(deliveryDays, "33"))}</p>
         ${extraShipmentLine ? `
         <p style="margin-bottom:2px;"><strong>5. Packing List Description${extraShipmentLineLabel ? `: ${escapeHtml(extraShipmentLineLabel)}` : ""}</strong></p>
         ${
