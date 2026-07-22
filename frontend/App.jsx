@@ -1371,7 +1371,13 @@ const selectProduct = (p) => {
     // product's own registered Sold By setting (Unit/Pair), not the
     // Package field, since that's a physical container type, not what's
     // being counted/sold.
-    unit: (p.category === "Chemical" || p.category === "Textile" || p.category === "DTF Film") ? (p.unit || "unit") : (p.selling_unit || "Unit"),
+    // Textile/DTF Film always default to Rolls (the Unit field here only
+    // ever offers Rolls/Meters for these two categories, unrelated to the
+    // product's own registered Package field) — Chemical still defaults to
+    // its registered package type, everything else to its Sold By setting.
+    unit: (p.category === "Textile" || p.category === "DTF Film") ? "Rolls"
+      : p.category === "Chemical" ? (p.unit || "unit")
+      : (p.selling_unit || "Unit"),
     currency: p.sale_currency || p.cost_currency || "USD",
     unit_price: salePrice,
     cost_price: costPrice,
@@ -1413,8 +1419,39 @@ const calcMeterage = (product, quantity, heightOverride, heightUnitOverride) => 
   return heightM * qty;
 };
 
+// Whether Quantity is currently being entered as total meters instead of
+// roll count — only offered for Textile/DTF Film, via the Unit dropdown
+// ("Rolls" vs "Meters"). Whoever's quoting an order often knows the total
+// meterage the client wants before knowing how many rolls that works out
+// to — this lets them type meters directly and has the roll count (still
+// the field every downstream calc — weight, Packing List, PDFs — actually
+// uses) derived automatically instead of requiring hand math.
+const isTextileMeters = (item.category === "Textile" || item.category === "DTF Film") && item.unit === "Meters";
+
+const rollLengthM = (hOverride, huOverride) => {
+  const hRaw = hOverride !== undefined ? hOverride : item.height;
+  const huRaw = huOverride !== undefined ? huOverride : item.height_unit;
+  const h = parseFloat(hRaw) || 0;
+  if (!h) return 0;
+  return h * (huRaw === "cm" ? 0.01 : huRaw === "mm" ? 0.001 : 1);
+};
+
 const handleQtyChange = (e) => {
-  const qty = e.target.value;
+  const raw = e.target.value;
+  if (isTextileMeters) {
+    // Box holds total meters here — derive the real roll count (still
+    // item.quantity underneath, unchanged meaning for every other screen)
+    // instead of storing the typed meters as if it were a roll count.
+    const heightM = rollLengthM();
+    const totalMeters = parseFloat(raw) || 0;
+    const rolls = heightM > 0 ? totalMeters / heightM : 0;
+    const rollsStr = rolls ? String(Math.round(rolls * 100) / 100) : "";
+    const total = rolls && item.unit_price ? (rolls * parseFloat(item.unit_price)).toFixed(2) : "";
+    const weight = selectedProduct ? calcWeight(selectedProduct, rollsStr, item.height, item.height_unit) : null;
+    setItem(prev => ({ ...prev, quantity: rollsStr, total_meterage: raw, total, total_weight: weight }));
+    return;
+  }
+  const qty = raw;
   const total = qty && item.unit_price ? (parseFloat(qty) * parseFloat(item.unit_price)).toFixed(2) : "";
   const weight = selectedProduct ? calcWeight(selectedProduct, qty, item.height, item.height_unit) : null;
   const meterage = selectedProduct ? calcMeterage(selectedProduct, qty, item.height, item.height_unit) : null;
@@ -1423,6 +1460,19 @@ const handleQtyChange = (e) => {
 
 const handleHeightChange = (e) => {
   const h = e.target.value;
+  if (isTextileMeters) {
+    // Length per Roll changed while quoting by total meters — meters stays
+    // the fixed, real quantity the client wants; the roll count re-derives
+    // to match instead of drifting out of sync with it.
+    const heightM = rollLengthM(h, item.height_unit);
+    const totalMeters = parseFloat(item.total_meterage) || 0;
+    const rolls = heightM > 0 ? totalMeters / heightM : 0;
+    const rollsStr = rolls ? String(Math.round(rolls * 100) / 100) : "";
+    const total = rolls && item.unit_price ? (rolls * parseFloat(item.unit_price)).toFixed(2) : "";
+    const weight = selectedProduct ? calcWeight(selectedProduct, rollsStr, h, item.height_unit) : null;
+    setItem(prev => ({ ...prev, height: h, quantity: rollsStr, total, total_weight: weight }));
+    return;
+  }
   const weight = selectedProduct ? calcWeight(selectedProduct, item.quantity, h, item.height_unit) : null;
   const meterage = selectedProduct ? calcMeterage(selectedProduct, item.quantity, h, item.height_unit) : null;
   setItem(prev => ({ ...prev, height: h, total_weight: weight, total_meterage: meterage }));
@@ -1430,9 +1480,45 @@ const handleHeightChange = (e) => {
 
 const handleHeightUnitChange = (e) => {
   const hu = e.target.value;
+  if (isTextileMeters) {
+    const heightM = rollLengthM(item.height, hu);
+    const totalMeters = parseFloat(item.total_meterage) || 0;
+    const rolls = heightM > 0 ? totalMeters / heightM : 0;
+    const rollsStr = rolls ? String(Math.round(rolls * 100) / 100) : "";
+    const total = rolls && item.unit_price ? (rolls * parseFloat(item.unit_price)).toFixed(2) : "";
+    const weight = selectedProduct ? calcWeight(selectedProduct, rollsStr, item.height, hu) : null;
+    setItem(prev => ({ ...prev, height_unit: hu, quantity: rollsStr, total, total_weight: weight }));
+    return;
+  }
   const weight = selectedProduct ? calcWeight(selectedProduct, item.quantity, item.height, hu) : null;
   const meterage = selectedProduct ? calcMeterage(selectedProduct, item.quantity, item.height, hu) : null;
   setItem(prev => ({ ...prev, height_unit: hu, total_weight: weight, total_meterage: meterage }));
+};
+
+// Switching the Unit dropdown itself between Rolls/Meters — convert the
+// currently entered figure to the other basis instead of leaving stale
+// numbers behind (e.g. "250" rolls sitting in the box after switching to
+// Meters would otherwise silently mean "250 meters").
+const handleUnitChange = (e) => {
+  const newUnit = e.target.value;
+  const wasMeters = isTextileMeters;
+  const willBeMeters = (item.category === "Textile" || item.category === "DTF Film") && newUnit === "Meters";
+  if (wasMeters === willBeMeters) {
+    setItem(prev => ({ ...prev, unit: newUnit }));
+    return;
+  }
+  const heightM = rollLengthM();
+  if (willBeMeters) {
+    // Rolls -> Meters: total meters = rolls × length/roll (same figure
+    // calcMeterage already produces, just surfaced into the box itself).
+    const rolls = parseFloat(item.quantity) || 0;
+    const meters = heightM > 0 ? rolls * heightM : 0;
+    setItem(prev => ({ ...prev, unit: newUnit, total_meterage: meters ? String(meters) : "" }));
+  } else {
+    // Meters -> Rolls: roll count = meters / length/roll (already kept
+    // current in item.quantity by handleQtyChange, nothing to recompute).
+    setItem(prev => ({ ...prev, unit: newUnit }));
+  }
 };
   
   const dropdownStyle = {
@@ -1471,10 +1557,18 @@ const handleHeightUnitChange = (e) => {
           </div>
         </Field>
         <Field label={(item.category === "Chemical" || item.category === "Textile" || item.category === "DTF Film") ? "Unit" : "Sold By"} half>
-  {(item.category === "Chemical" || item.category === "Textile" || item.category === "DTF Film") ? (
-    // Chemical (drums/tanks) and Textile/DTF Film (rolls) are already
-    // counted in a physical package unit, so the package-type list applies
-    // directly here.
+  {(item.category === "Textile" || item.category === "DTF Film") ? (
+    // Textile/DTF Film: how this specific quote/order is being counted —
+    // Rolls (Quantity below = roll count, meters derived) or Meters
+    // (Quantity below = total meters wanted, roll count derived) — not the
+    // general package-type list, which doesn't apply here.
+    <Select value={item.unit || "Rolls"} onChange={handleUnitChange}>
+      <option value="Rolls">Rolls</option>
+      <option value="Meters">Meters</option>
+    </Select>
+  ) : item.category === "Chemical" ? (
+    // Chemical (drums/tanks) is already counted in a physical package unit,
+    // so the package-type list applies directly here.
     <Select value={item.unit || ""} onChange={e => setItem(p => ({ ...p, unit: e.target.value }))}>
       <option value="">Select...</option>
       {PACKAGE_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
@@ -1490,11 +1584,16 @@ const handleHeightUnitChange = (e) => {
     </Select>
   )}
 </Field>
-        <Field label={selectedProduct && selectedProduct.category === "Chemical" && selectedProduct.price_basis === "ton" ? "Quantity (Tons)" : "Quantity"} half>
-          <Input type="number" value={item.quantity} onChange={handleQtyChange} placeholder="0" />
+        <Field label={
+          isTextileMeters ? "Quantity (Total Meters)"
+          : selectedProduct && selectedProduct.category === "Chemical" && selectedProduct.price_basis === "ton" ? "Quantity (Tons)"
+          : (item.category === "Textile" || item.category === "DTF Film") ? "Quantity (Rolls)"
+          : "Quantity"
+        } half>
+          <Input type="number" value={isTextileMeters ? (item.total_meterage || "") : item.quantity} onChange={handleQtyChange} placeholder="0" />
         </Field>
         {(item.category === "Textile" || item.category === "DTF Film") && (
-          <Field label="Length per Roll (Meters)" half>
+          <Field label={`Length per Roll (Meters)${isTextileMeters ? ` — ≈ ${item.quantity || 0} rolls` : ""}`} half>
             <div style={{ display: "flex", gap: "6px" }}>
               <Input value={item.height || ""} onChange={handleHeightChange} placeholder="0" style={{ flex: 1 }} />
               <Select value={item.height_unit || "cm"} onChange={handleHeightUnitChange} style={{ width: "80px", cursor: "pointer" }}>
@@ -2211,14 +2310,20 @@ const handleSalePerLiterChange = (e) => {
   </Field>
 )}
 
-{f.category !== "Chemical" && (
+{f.category !== "Chemical" && f.category !== "Textile" && f.category !== "DTF Film" && (
   // For any OTHER category sold in a different unit than it's physically
   // packed in — e.g. LED lights sold per PAIR, packed 500 pairs to a
-  // cardboard box. Both optional/blank by default (no effect on anything
-  // unless filled in): leave them empty and Packages on the Packing List
-  // just defaults to the raw quantity ordered, same as always. Fill them in
-  // and Packages/Gross Weight get derived automatically instead of needing
-  // to be typed in by hand on every shipment.
+  // cardboard box. Not for Chemical or Textile/DTF Film — both already have
+  // their own dedicated weight-per-package concept (Net Weight/tons per
+  // drum for Chemical; Tube Weight + Roll Diameter for Textile/DTF, sold by
+  // roll/meter rather than a "units per package" count), so this pair of
+  // fields doesn't mean anything there and was showing up regardless of
+  // category — same gate as Sold By just above, which this belongs next to.
+  // Both optional/blank by default (no effect on anything unless filled
+  // in): leave them empty and Packages on the Packing List just defaults to
+  // the raw quantity ordered, same as always. Fill them in and Packages/
+  // Gross Weight get derived automatically instead of needing to be typed
+  // in by hand on every shipment.
   <>
     <Field label="Units per Package (optional)" half>
       <Input value={f.units_per_package || ""} onChange={set("units_per_package")} placeholder="e.g. 500 (pairs per box)" style={{ ...inputStyle }} />

@@ -77,14 +77,17 @@ function renderSalesInvoice(params) {
     </td>
   `;
 
+  // Width and Meters/Roll dropped from the table (the client found the row
+  // itself too tall) — Width is already stated in the description paragraph
+  // (e.g. "LARGURA DE 1,37 MT..."), so it was a duplicate column stealing
+  // room from Description; Meters/Roll wasn't, so it's just gone rather
+  // than folded in. Weight (gramatura) stays as its own quick-glance column.
   const textileRows = textileItems.map(item => `
     <tr>
       ${nameCell(item)}
       ${descCell(item)}
       <td class="center">${escapeHtml(item.color || "—")}</td>
-      <td class="center">${escapeHtml(item.width || "—")}</td>
       <td class="center">${escapeHtml(item.weightSpec || "—")}</td>
-      <td class="num">${item.metersPerRoll ? fmtNumber(item.metersPerRoll, 2) : "—"}</td>
       <td class="num">${fmtNumber(item.totalLength, 3)}</td>
       <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
       <td class="num">${fmtMoney(item.total, currency)}</td>
@@ -132,14 +135,12 @@ function renderSalesInvoice(params) {
       <thead>
         <tr>
           <th style="width:11%">Product</th>
-          <th style="width:29%">Description</th>
-          <th style="width:7%">Color</th>
-          <th style="width:7%">Width</th>
-          <th style="width:7%">Weight</th>
-          <th style="width:8%">Meters/Roll</th>
-          <th style="width:9%">Total Length</th>
+          <th style="width:42%">Description</th>
+          <th style="width:8%">Color</th>
+          <th style="width:9%">Weight</th>
+          <th style="width:10%">Total Length</th>
           <th style="width:9%">Unit Price</th>
-          <th style="width:13%">Total Amount (${escapeHtml(currencyLabel(currency))} ${escapeHtml(incoterm || "")})</th>
+          <th style="width:11%">Total Amount (${escapeHtml(currencyLabel(currency))} ${escapeHtml(incoterm || "")})</th>
         </tr>
       </thead>
       <tbody>
