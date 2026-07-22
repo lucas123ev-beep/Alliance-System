@@ -1320,21 +1320,26 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
 
       let quantityValue, quantityUnit, quantityDecimals, unitPriceValue;
       if (isTextile) {
-        // Total quantity in tons (replacing the roll count) — Gross Weight
-        // = Net Weight (item.total_weight) + tube core weight × roll count.
-        const netWeight = item.total_weight != null && item.total_weight !== '' ? parseFloat(item.total_weight) : null;
-        const tubeWeightPerRoll = tubeWeightKg(product?.tube_weight, product?.tube_weight_unit);
-        const grossWeightKg = netWeight != null ? netWeight + tubeWeightPerRoll * qty : null;
-        quantityValue = grossWeightKg != null ? grossWeightKg / 1000 : null;
-        quantityUnit = 't';
+        // Textile/DTF Film is quoted and priced by the meter — same basis
+        // as the Proforma/Commercial Invoice (see normalizeSalesItem) and
+        // the Product Item screen's Rolls/Meters toggle. This used to
+        // convert to gross weight in tons instead (Net Weight + tube core
+        // weight × roll count), which made a Textile contract read like a
+        // ton-priced Chemical one — wrong basis entirely, not just wrong
+        // numbers.
+        const metersPerRoll = metersOf(item.height, item.height_unit) ?? metersOf(product?.height, product?.height_unit);
+        const totalMeters = item.total_meterage != null && item.total_meterage !== ''
+          ? parseFloat(item.total_meterage)
+          : (metersPerRoll ? qty * metersPerRoll : null);
+        quantityValue = totalMeters;
+        quantityUnit = 'm';
         quantityDecimals = 3;
-        // unitPrice as stored on the item is a per-roll rate (what was
-        // actually quoted/costed) — now that the Quantity column shows tons
-        // instead of rolls, the Unit Price shown alongside it must also be
-        // re-expressed as a per-ton rate, or unitPrice × quantity visually
-        // stops matching Total. Total itself is unaffected, it's still
-        // unitPrice(perRoll) × qty(rolls).
-        unitPriceValue = quantityValue ? total / quantityValue : unitPrice;
+        // Prefer the registered per-meter cost rate when present — falls
+        // back to total/meters (still correct, just derived) for older
+        // items saved before cost_per_meter existed.
+        unitPriceValue = item.cost_per_meter != null && item.cost_per_meter !== ''
+          ? parseFloat(item.cost_per_meter)
+          : (totalMeters ? total / totalMeters : unitPrice);
       } else if (isTonChemical) {
         // Ton-priced Chemical: item.quantity is already stored in tons —
         // no weight lookup/derivation needed, unitPrice is already per ton.

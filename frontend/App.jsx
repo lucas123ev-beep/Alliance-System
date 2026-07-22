@@ -3994,8 +3994,9 @@ const prevStatus = { "In Production": "Pending", Inspection: "In Production", Co
   // order.order_number carries an "ORD-" prefix (see orderNumber generation
   // from the Proforma) which doesn't belong on a Commercial Invoice number,
   // and it previously got a random trailing suffix appended — dropped so the
-  // CI number lines up 1:1 with the order reference, e.g. "CI-AGNB26.044".
-  const number = `CI-${String(order.order_number || "").replace(/^ORD-/, "")}`;
+  // CI number lines up 1:1 with the order reference, e.g. "AGNB26.044". No
+  // "CI-" prefix either (client doesn't want it on the printed document).
+  const number = String(order.order_number || "").replace(/^ORD-/, "");
   const ci = await api("/commercial-invoices", "POST", {
     order_id: order.id,
     number,
@@ -4165,11 +4166,13 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
       {contractModal.map((c, idx) => (
         <div key={idx} style={{ background: "#1e293b", borderRadius: "12px", padding: "16px", opacity: savedContracts.includes(idx) ? 0.6 : 1 }}>
           <div style={{ marginBottom: "12px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+            {/* Total dropped here — ContractForm's own "Products in this
+                Contract" total below already shows the same figure, so this
+                was just a redundant duplicate. */}
+            <div style={{ marginBottom: "10px" }}>
               <span style={{ fontWeight: 700, color: savedContracts.includes(idx) ? "#10b981" : "#a78bfa", fontSize: "14px" }}>
                 {savedContracts.includes(idx) ? "✅" : "🏭"} {c.supplier || "Supplier " + (idx + 1)}
               </span>
-              <span style={{ color: "#10b981", fontWeight: 600 }}>{currencyLabel(c.currency)} {c.total}</span>
             </div>
           </div>
           {savedContracts.includes(idx) ? (
