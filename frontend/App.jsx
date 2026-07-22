@@ -1219,12 +1219,13 @@ function buildPackingListDraft(order, products) {
 
   return {
     order_id: order.id,
-    // Same format as the Commercial Invoice number — just "PL-" plus the
-    // order's own code, no "ORD-" prefix carried over and no random
-    // trailing digits (those made every generated number look different
-    // from the order it actually belongs to, e.g. "PL-ORD-AGNB26.044-2974"
-    // instead of the expected "PL-AGNB26.044").
-    number: `PL-${String(order.order_number || "").replace(/^ORD-/, "")}`,
+    // Same as the Commercial Invoice number — no internal "PL-" prefix and
+    // no "ORD-" prefix carried over, no random trailing digits either: the
+    // client wants the exact same reference number on every document for
+    // the same deal (Proforma, CI, Packing List, Contract all read
+    // identically), not a different-looking system-generated code per
+    // document type.
+    number: String(order.order_number || "").replace(/^ORD-/, ""),
     date: new Date().toISOString().slice(0, 10),
     way_of_shipment: "By Sea",
     country_of_origin: "China",
@@ -3485,7 +3486,9 @@ console.log('quotations set:', quotations?.length);
         onClick={() => hasProforma ? setEditProforma(hasProforma) : setProformaModal({
   quotation_id: r.id,
   order_id: null,
-  number: `PI-${r.number}-${Date.now().toString().slice(-4)}`,
+  // No "PI-" prefix and no random trailing digits — same reference number
+  // as the Quotation it came from, matching every other document type.
+  number: r.number,
           client: r.client || "",
           issue_date: new Date().toISOString().slice(0, 10),
           validity: "",
@@ -4011,10 +4014,10 @@ const prevStatus = { "In Production": "Pending", Inspection: "In Production", Co
   load();
 };
 const generateContract = (order) => {
-  // Contract Number uses a "PO-" prefix (matching the reference document)
-  // instead of "SC-", built off the plain order reference — the order's
-  // "ORD-" prefix and any random trailing suffix are dropped, same as the
-  // Commercial Invoice number fix, so it reads e.g. "PO-AGNB26.044".
+  // No "PO-" prefix — the client wants the exact same reference number on
+  // every document type for a given deal (Proforma, CI, Packing List,
+  // Contract), not a different-looking system code per type. Same "ORD-"
+  // strip as the other document numbers.
   const baseNumber = String(order.order_number || "").replace(/^ORD-/, "");
   const suppliers = [...new Set((order.items || []).map(i => i.supplier).filter(Boolean))];
   // The supplier tag (e.g. "-SHAN") only exists to tell apart multiple
@@ -4023,7 +4026,7 @@ const generateContract = (order) => {
   // branch too (suppliers.length was only checked against 0, not 1),
   // tacking an unwanted tag onto every contract number/PDF filename.
   if (suppliers.length <= 1) {
-    const number = `PO-${baseNumber}`;
+    const number = baseNumber;
    setContractModal([{
   order_id: order.id,
   contract_number: number,
@@ -4058,7 +4061,7 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
       // spelling any part of the supplier's name into the number, which
       // used to make it (and anywhere it's quoted, like Supplier Flow) read
       // longer/heavier than it needs to.
-      const number = `PO-${baseNumber}-${supplierIdx + 1}`;
+      const number = `${baseNumber}-${supplierIdx + 1}`;
       return {
   order_id: order.id,
   contract_number: number,
