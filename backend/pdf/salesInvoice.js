@@ -157,7 +157,7 @@ function renderSalesInvoice(params) {
     // a plain rule read as too heavy/noisy.
     const isNewSection = separateOtherGroups && idx > 0;
     sectionsHtml += `
-    <table class="items-table" style="margin-top:${isNewSection ? "26px" : "6px"};">
+    <table class="items-table" style="margin-top:${isNewSection ? "16px" : "6px"};">
       <thead>
         <tr>
           <th style="width:12%">Product</th>
