@@ -1362,6 +1362,11 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
         code: item.product_code || product?.code || '',
         thickness: product?.thickness ? `${product.thickness}${product.thickness_unit || ''}` : '',
         width: product?.width ? `${product.width}${product.width_unit || ''}` : '',
+        // Registered Height — a real second dimension for goods like towels
+        // (e.g. "70cm x 140cm"), shown alongside Width. For Textile/DTF
+        // Film this is the same field used as roll length elsewhere; still
+        // a real physical figure worth showing here too.
+        height: product?.height ? `${product.height}${product.height_unit || ''}` : '',
         gramatura,
         quantityValue,
         quantityUnit,

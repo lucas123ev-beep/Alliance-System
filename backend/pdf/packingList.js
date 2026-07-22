@@ -53,6 +53,21 @@ function renderItemSections(items) {
   const textileItems = items.filter(isTextileItem);
   const otherItems = items.filter(i => !isTextileItem(i));
 
+  // Non-Textile items still split into their own group per category (e.g.
+  // Accessory vs Other) when more than one is present — same reasoning as
+  // the Commercial Invoice/Proforma: an LED item and a towel lumped into
+  // one table with no separation reads as confusing. Collapses back to a
+  // single plain table when everything shares one category (the common
+  // case), unchanged from before.
+  const otherGroups = [];
+  otherItems.forEach(item => {
+    const key = item.category || "Other";
+    let group = otherGroups.find(g => g.key === key);
+    if (!group) { group = { key, items: [] }; otherGroups.push(group); }
+    group.items.push(item);
+  });
+  const separateOtherGroups = otherGroups.length > 1;
+
   const textileRows = textileItems.map(item => `
     <tr>
       ${nameCell(item)}
@@ -68,7 +83,7 @@ function renderItemSections(items) {
     </tr>
   `).join("");
 
-  const otherRows = otherItems.map(item => `
+  const otherRowsFor = groupItems => groupItems.map(item => `
     <tr>
       ${nameCell(item)}
       ${descCell(item)}
@@ -124,9 +139,13 @@ function renderItemSections(items) {
   `;
   }
 
-  if (otherItems.length > 0) {
+  otherGroups.forEach((group, idx) => {
+    // Later groups (2nd category onward) get extra top spacing only — no
+    // line, no category text, same treatment as the Commercial Invoice/
+    // Proforma tables: just enough of a gap to read as a new group.
+    const isNewSection = separateOtherGroups && idx > 0;
     html += `
-    <table class="items-table" style="margin-top:6px;">
+    <table class="items-table" style="margin-top:${isNewSection ? "12px" : "6px"};">
       <thead>
         <tr>
           <th style="width:10%">Product</th>
@@ -141,19 +160,19 @@ function renderItemSections(items) {
         </tr>
       </thead>
       <tbody>
-        ${otherRows}
+        ${otherRowsFor(group.items)}
         <tr class="totals-row">
           <td colspan="4">SUBTOTAL:</td>
           <td></td>
-          <td class="num">${fmtNumber(sumOf(otherItems, "roll"), 0)}</td>
-          <td class="num">${fmtNumber(sumOf(otherItems, "grossWeight"), 3)}</td>
-          <td class="num">${fmtNumber(sumOf(otherItems, "netWeight"), 3)}</td>
-          <td class="num">${fmtNumber(sumOf(otherItems, "cbm"), 2)}</td>
+          <td class="num">${fmtNumber(sumOf(group.items, "roll"), 0)}</td>
+          <td class="num">${fmtNumber(sumOf(group.items, "grossWeight"), 3)}</td>
+          <td class="num">${fmtNumber(sumOf(group.items, "netWeight"), 3)}</td>
+          <td class="num">${fmtNumber(sumOf(group.items, "cbm"), 2)}</td>
         </tr>
       </tbody>
     </table>
   `;
-  }
+  });
 
   return html;
 }
