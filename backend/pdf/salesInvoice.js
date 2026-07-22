@@ -131,7 +131,7 @@ function renderSalesInvoice(params) {
 
   if (textileItems.length > 0) {
     sectionsHtml += `
-    <table class="items-table" style="margin-top:6px;">
+    <table class="items-table" style="margin-top:4px;">
       <thead>
         <tr>
           <th style="width:11%">Product</th>
@@ -158,7 +158,7 @@ function renderSalesInvoice(params) {
     // a plain rule read as too heavy/noisy.
     const isNewSection = separateOtherGroups && idx > 0;
     sectionsHtml += `
-    <table class="items-table" style="margin-top:${isNewSection ? "16px" : "6px"};">
+    <table class="items-table" style="margin-top:${isNewSection ? "12px" : "4px"};">
       <thead>
         <tr>
           <th style="width:12%">Product</th>
@@ -192,7 +192,7 @@ function renderSalesInvoice(params) {
   // Total Amount: $Y" reads as one adjacent pair instead of opposite ends
   // of the row.
   sectionsHtml += `
-    <table class="items-table" style="margin-top:6px;">
+    <table class="items-table" style="margin-top:4px;">
       <tbody>
         <tr class="totals-row">
           <td class="num">${escapeHtml(summaryLabel)} &nbsp;&nbsp;|&nbsp;&nbsp; Grand Total Amount: ${fmtMoney(totalAmount, currency)}</td>

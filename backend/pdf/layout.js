@@ -17,36 +17,36 @@ function baseCss() {
   return `
     * { box-sizing: border-box; }
     body {
-      margin: 0; padding: 24px 32px; font-family: Arial, Helvetica, sans-serif;
-      font-size: 10.5px; color: #1a1a1a;
+      margin: 0; padding: 18px 26px; font-family: Arial, Helvetica, sans-serif;
+      font-size: 10px; color: #1a1a1a;
     }
     table { width: 100%; border-collapse: collapse; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-    .header img.logo { height: 34px; }
-    .header .company { text-align: right; font-size: 9px; line-height: 1.5; max-width: 380px; }
-    .header .company .name { font-weight: bold; font-size: 10px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+    .header img.logo { height: 32px; }
+    .header .company { text-align: right; font-size: 8.5px; line-height: 1.4; max-width: 380px; }
+    .header .company .name { font-weight: bold; font-size: 9.5px; }
     .title-bar {
       background: #4a4a4a; color: #fff; text-align: center; font-weight: bold;
-      font-size: 12px; letter-spacing: 0.5px; padding: 6px 0; margin-bottom: 8px;
+      font-size: 11.5px; letter-spacing: 0.5px; padding: 5px 0; margin-bottom: 6px;
     }
     /* Matches the reference layout: centered "Label: value" pairs (merged
        into one cell each, not split label/value columns), grouped into three
        bands — Number/Date, the shipment block, and Country of origin/
        acquisition — each closed off by its own full-width rule instead of
        one rule around the whole table. */
-    .meta-table { border-top: 1px solid #000; border-bottom: 1px solid #000; margin-bottom: 10px; }
-    .meta-table td { padding: 4px 10px; font-size: 9.5px; text-align: center; width: 50%; }
-    .meta-table tr:first-child td { padding: 6px 10px; border-bottom: 1px solid #000; }
+    .meta-table { border-top: 1px solid #000; border-bottom: 1px solid #000; margin-bottom: 8px; }
+    .meta-table td { padding: 3px 8px; font-size: 9px; text-align: center; width: 50%; }
+    .meta-table tr:first-child td { padding: 4px 8px; border-bottom: 1px solid #000; }
     .meta-table tr:last-child td { border-top: 1px solid #000; }
     .section-bar {
-      background: #d9d9d9; text-align: center; font-weight: bold; font-size: 10px;
-      padding: 4px 0;
+      background: #d9d9d9; text-align: center; font-weight: bold; font-size: 9.5px;
+      padding: 3px 0;
     }
     .items-table th {
-      border-bottom: 1.5px solid #333; padding: 6px 9px; font-size: 8.5px;
+      border-bottom: 1.5px solid #333; padding: 4px 7px; font-size: 8px;
       text-transform: uppercase; text-align: center; font-weight: bold;
     }
-    .items-table td { border-bottom: 0.75px solid #999; padding: 6px 9px; font-size: 9.5px; vertical-align: middle; }
+    .items-table td { border-bottom: 0.75px solid #999; padding: 4px 7px; font-size: 9px; vertical-align: middle; }
     .items-table .num { text-align: right; }
     /* Short single-value columns (Color, Width/Unit, Quantity, weight
        spec...) read as a tidy grid when centered — unlike Product/
@@ -59,25 +59,27 @@ function baseCss() {
        weight per line on top of an already-long description; the client's
        own reference documents just run each fact as a flush-left line, no
        marker, no indent, which is both what they want and meaningfully
-       shorter per item (matters once an order has several items). */
-    .items-table .desc-text, .items-table .desc-line { margin: 1px 0; font-size: 8px; line-height: 1.25; color: #222; }
+       shorter per item (matters once an order has several items). Kept
+       tight (small font, tight leading, near-zero margin) since this is
+       the column that most determines how many items fit on one page. */
+    .items-table .desc-text, .items-table .desc-line { margin: 0.5px 0; font-size: 7.5px; line-height: 1.15; color: #222; }
     .totals-row td { font-weight: bold; border-top: 1.5px solid #333; border-bottom: none; }
-    .two-col { display: flex; gap: 0; margin-top: 10px; border-top: 1px solid #333; }
-    .two-col .col { flex: 1; padding: 8px 14px; font-size: 9.5px; }
+    .two-col { display: flex; gap: 0; margin-top: 8px; border-top: 1px solid #333; }
+    .two-col .col { flex: 1; padding: 6px 12px; font-size: 9px; }
     .two-col .col + .col { border-left: 1px solid #999; }
     /* Shipment Details (always the second/last column) reads as a centered
        block of facts in the client's own reference documents, unlike
        Payment Instructions which stays left-aligned prose. */
     .two-col .col:last-child { text-align: center; }
-    .two-col .col-title { font-weight: bold; text-align: center; margin: -8px -14px 8px; padding: 4px 0; background: #d9d9d9; }
+    .two-col .col-title { font-weight: bold; text-align: center; margin: -6px -12px 6px; padding: 3px 0; background: #d9d9d9; }
     /* Browsers default <p> to ~1em top/bottom margin — left unset, that
        reads as scattered whitespace rather than a compact list of facts,
        especially in the Shipment Details column which only has a handful of
        short lines. Every line stays close to the one above/below it. */
-    .two-col p { margin: 3px 0; }
-    .bank-block p { margin: 2px 0; }
-    .small { font-size: 8.5px; color: #444; }
-    .footer-note { margin-top: 14px; font-size: 8px; color: #777; text-align: center; }
+    .two-col p { margin: 2px 0; }
+    .bank-block p { margin: 1px 0; }
+    .small { font-size: 8px; color: #444; }
+    .footer-note { margin-top: 10px; font-size: 7.5px; color: #777; text-align: center; }
   `;
 }
 

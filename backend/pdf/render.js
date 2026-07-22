@@ -59,7 +59,12 @@ async function renderPdfBuffer(html, options = {}) {
       format: "A4",
       landscape: options.landscape || false,
       printBackground: true,
-      margin: { top: "10mm", bottom: "10mm", left: "8mm", right: "8mm" },
+      // Slightly tighter than the original 10mm/8mm — combined with the
+      // tighter in-document padding/font sizes (layout.js), this buys back
+      // real usable page area so more items fit on one sheet before
+      // spilling to a second page, without shrinking to the point of being
+      // hard to read or print.
+      margin: { top: "8mm", bottom: "8mm", left: "6mm", right: "6mm" },
     });
     return pdf;
   } finally {
