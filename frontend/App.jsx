@@ -1,6 +1,338 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, createContext, useContext, Children, cloneElement } from "react";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+
+// ─── LANGUAGE (EN / 简体中文) ───────────────────────────────────────────────
+// Two-language toggle for the system's own interface chrome only — nav,
+// buttons, headers, table columns, form field labels. Deliberately does NOT
+// touch: PDF documents (Contract is already bilingual CN/EN by its own
+// design; Proforma/CI/Packing List stay English, matching the client's own
+// reference documents) or any registered business data (product/client/
+// supplier names, notes, numbers — those are real records, never rewritten).
+//
+// t(key) uses the English UI string itself as the lookup key, so any string
+// not yet added to TRANSLATIONS.zh just falls back to English instead of
+// showing a blank or a raw key — the dictionary can be filled in
+// incrementally, screen by screen, without ever breaking anything.
+const TRANSLATIONS = {
+  zh: {
+    "Alliance Flow": "Alliance Flow",
+    "Order Management": "订单管理",
+    "Log out": "退出登录",
+    "Dashboard": "仪表盘",
+    "Quotations": "报价单",
+    "Proformas": "形式发票",
+    "Orders": "订单",
+    "Commercial": "商业发票",
+    "Packing Lists": "装箱单",
+    "Contracts": "合同",
+    "Inspections": "验货",
+    "Supplier Flow": "供应商付款",
+    "Samples": "样品",
+    "Products": "产品",
+    "Clients": "客户",
+    "Suppliers": "供应商",
+    "Freight Agents": "货运代理",
+    "Reports": "报表",
+    // Page titles (some phrased differently from the matching nav label
+    // above, so they need their own separate dictionary entry).
+    "Product Registry": "产品登记",
+    "Product Development – Samples": "产品开发 – 样品",
+    "Proforma Invoices": "形式发票",
+    "Supplier Contracts": "供应商合同",
+    "💰 Client Cash Flow": "💰 客户现金流",
+    "📦 Supplier Cash Flow": "📦 供应商现金流",
+    "Commercial Invoices": "商业发票",
+    "📊 Reports": "📊 报表",
+    // Modal titles
+    "Edit Product Item": "编辑产品项目",
+    "Add Product": "添加产品",
+    "New Quotation": "新建报价单",
+    "Edit Quotation": "编辑报价单",
+    "Generate Proforma": "生成形式发票",
+    "Edit Proforma": "编辑形式发票",
+    "New Order": "新建订单",
+    "Edit Order": "编辑订单",
+    "Edit Contract": "编辑合同",
+    "Generate Inspection": "生成验货",
+    "Edit Inspection": "编辑验货",
+    "Edit Commercial Invoice": "编辑商业发票",
+    "Generate Supplier Contracts": "生成供应商合同",
+    "Duplicate Product": "复制产品",
+    "New Product": "新建产品",
+    "Edit Product": "编辑产品",
+    "New Sample Request": "新建样品申请",
+    "Edit Sample": "编辑样品",
+    "New Proforma": "新建形式发票",
+    "New Client Payment": "新建客户付款",
+    "Edit Client Payment": "编辑客户付款",
+    "New Supplier Payment": "新建供应商付款",
+    "Edit Supplier Payment": "编辑供应商付款",
+    "New Client": "新建客户",
+    "Edit Client": "编辑客户",
+    "New Supplier": "新建供应商",
+    "Edit Supplier": "编辑供应商",
+    "New Freight Agent": "新建货运代理",
+    "Edit Freight Agent": "编辑货运代理",
+    "Generate Packing List": "生成装箱单",
+    "Edit Packing List": "编辑装箱单",
+    "New Inspection": "新建验货",
+    // Form field labels
+    "Product": "产品",
+    "Supplier": "供应商",
+    "Target Price Basis": "目标价基准",
+    "Total Weight": "总重量",
+    "≈ Packages": "≈ 包装数",
+    "Total Meterage": "总米数",
+    "Order Number": "订单编号",
+    "Client": "客户",
+    "Acquisition Company": "采购公司",
+    "Value": "金额",
+    "Currency": "货币",
+    "Prod. Lead Time (days)": "生产周期（天）",
+    "Delivery Days (after TT payment, or a note)": "交货天数（TT付款后，或备注）",
+    "Incoterm": "贸易术语",
+    "Container": "集装箱",
+    "Port of Loading": "装货港",
+    "Port of Discharge": "卸货港",
+    "Shipment Date": "发货日期",
+    "Arrival Date": "到达日期",
+    "Payment Terms": "付款条件",
+    "Notes": "备注",
+    "Product Code": "产品编号",
+    "Name": "名称",
+    "NCM": "NCM 编码",
+    "HS Code": "HS 编码",
+    "Color": "颜色",
+    "Category": "类别",
+    "Package": "包装",
+    "Width": "宽度",
+    "Height": "高度",
+    "Thickness": "厚度",
+    "Sold By": "销售单位",
+    "Units per Package (optional)": "每包装数量（可选）",
+    "Tube Weight (cardboard core, per roll)": "纸管重量（每卷）",
+    "Roll Diameter (finished roll, tube included)": "卷径（含纸管）",
+    "Volume (per package)": "体积（每包装）",
+    "Price Basis": "计价基准",
+    "Cost Currency": "成本货币",
+    "Cost per Meter": "每米成本",
+    "Cost per Liter": "每升成本",
+    "Cost per Ton": "每吨成本",
+    "Cost Price": "成本价",
+    "VAT %": "增值税 %",
+    "Sale Currency": "销售货币",
+    "Sale per Meter": "每米售价",
+    "Sale per Liter": "每升售价",
+    "Sale per Ton": "每吨售价",
+    "Sale Price": "销售价",
+    "Margin %": "利润率 %",
+    "Description": "描述",
+    "Photos / Files": "照片 / 文件",
+    "Code": "编号",
+    "Product Name": "产品名称",
+    "Requested Date": "申请日期",
+    "Ready Date": "完成日期",
+    "Sent Date": "寄出日期",
+    "Status": "状态",
+    "Photos / Videos": "照片 / 视频",
+    "Linked Order": "关联订单",
+    "Proforma Number": "形式发票编号",
+    "Issue Date": "开票日期",
+    "Validity Date": "有效日期",
+    "Total Amount": "总金额",
+    "Way of Shipment": "运输方式",
+    "End of Production (days after TT payment, or a note)": "生产完成（TT付款后天数，或备注）",
+    "Delivery at Port (days after TT payment, or a note)": "到港交货（TT付款后天数，或备注）",
+    "Contract Number": "合同编号",
+    "Sign Date": "签约日期",
+    "Delivery Date": "交货日期",
+    "Type": "类型",
+    "Amount": "金额",
+    "Due Date": "到期日",
+    "Amount Paid So Far": "已付金额",
+    "Payer": "付款人",
+    "Payment Method": "付款方式",
+    "Applicant": "申请人",
+    "Approved By": "批准人",
+    "Payment Schedule": "付款计划",
+    "Number": "编号",
+    "Deadline": "截止日期",
+    "Specifications": "规格",
+    "Date": "日期",
+    "Loading Date": "装货日期",
+    "Port of Origin": "起运港",
+    "Port of Destination": "目的港",
+    "Manufacturer": "生产商",
+    "Manufacturer Address": "生产商地址",
+    "Freight Agent": "货运代理",
+    "Agent Cost": "代理费用",
+    "Freight Cost": "运费",
+    "Loading Cost": "装货费用",
+    "Container Code": "集装箱号",
+    "Total": "总计",
+    "Company Name": "公司名称",
+    "Contact Name": "联系人",
+    "Email": "邮箱",
+    "Phone": "电话",
+    "Street / Address": "街道 / 地址",
+    "Address 2 / Complement": "地址补充",
+    "Neighborhood": "区域",
+    "City": "城市",
+    "State / Province": "州 / 省",
+    "ZIP / Postal Code": "邮政编码",
+    "Country": "国家",
+    "Tax ID / CNPJ": "税号 / CNPJ",
+    "Product Types": "产品类型",
+    "Beneficiary Name": "收款人姓名",
+    "Bank Name": "银行名称",
+    "Bank Branch": "开户支行",
+    "Account Number": "账号",
+    "SWIFT Code": "SWIFT 代码",
+    "Inspection Number": "验货编号",
+    "Inspection Date": "验货日期",
+    "Inspector": "验货员",
+    "Result": "结果",
+    "Observations": "备注",
+    "Since (optional)": "起始日期（可选）",
+    // Buttons
+    "Cancel": "取消",
+    "Edit": "编辑",
+    "Del": "删除",
+    "Save": "保存",
+    "+ New Quotation": "+ 新建报价单",
+    "+ New Order": "+ 新建订单",
+    "+ New Product": "+ 新建产品",
+    "+ New Sample": "+ 新建样品",
+    "+ New Proforma": "+ 新建形式发票",
+    "+ New Entry": "+ 新建记录",
+    "+ New Client": "+ 新建客户",
+    "+ New Supplier": "+ 新建供应商",
+    "+ New Freight Agent": "+ 新建货运代理",
+    "+ New Inspection": "+ 新建验货",
+    "+ Add Product": "+ 添加产品",
+    "Save Order": "保存订单",
+    "Save Sample": "保存样品",
+    "Save Contract": "保存合同",
+    "Save Packing List": "保存装箱单",
+    "Save Client": "保存客户",
+    "Save Supplier": "保存供应商",
+    "Save Inspection": "保存验货",
+    "Duplicate": "复制",
+    "📄 Download PDF": "📄 下载 PDF",
+    "📄 PDF": "📄 PDF",
+    "OK": "好的",
+    "✅ All contracts saved — Close": "✅ 所有合同已保存 — 关闭",
+    "📊 Supplier Report": "📊 供应商报表",
+    "⬇ Download Report (.xlsx)": "⬇ 下载报表 (.xlsx)",
+    "Contract ✓": "合同 ✓",
+    "Contract": "合同",
+    "Commercial ✓": "商业发票 ✓",
+    "Inspection ✓": "验货 ✓",
+    "Inspection": "验货",
+    "Proforma ✓": "形式发票 ✓",
+    "Proforma": "形式发票",
+    "Order ✓": "订单 ✓",
+    "Create Order": "创建订单",
+    "Packing List ✓": "装箱单 ✓",
+    "Packing List": "装箱单",
+    // Table headers
+    "Actions": "操作",
+    "Report": "报表",
+    "Qty": "数量",
+    "Target Price": "目标价",
+    "Order #": "订单号",
+    "Shipment": "发货",
+    "Contract #": "合同号",
+    "Delivery": "交货",
+    "Lead Time": "生产周期",
+    "Arrival": "到达",
+    "Unit": "单位",
+    "Weight": "重量",
+    "Cost": "成本",
+    "Requested": "申请日期",
+    "Ready": "完成日期",
+    "Sent": "寄出日期",
+    "Validity": "有效期",
+    "Company": "公司",
+    "Contact": "联系人",
+    "Bank": "银行",
+    "Order": "订单",
+    "Roll": "卷数",
+    "Gross Weight": "毛重",
+    "Net Weight": "净重",
+    "CBM": "立方米",
+    // Status / dropdown option values (Incoterms, currency codes, unit
+    // abbreviations like mm/cm, and registered company names are
+    // deliberately NOT translated here — they're international codes or
+    // real data, and safely fall back to English via the same lookup).
+    "Pending": "待处理",
+    "In Production": "生产中",
+    "Completed": "已完成",
+    "Feedback Received": "已收到反馈",
+    "Approved": "已批准",
+    "Partial": "部分",
+    "Overdue": "逾期",
+    "Draft": "草稿",
+    "Accepted": "已接受",
+    "Rejected": "已拒绝",
+    "Signed": "已签署",
+    "In Force": "生效中",
+    "Cancelled": "已取消",
+    "Received": "已收到",
+    "Conditional": "有条件",
+    "Textile": "纺织品",
+    "Machine": "机械",
+    "DTF Film": "DTF 膜",
+    "Chemical": "化工品",
+    "Accessory": "配件",
+    "Packaging": "包装",
+    "Other": "其他",
+    "Bags / Sacks - 25kg": "袋装 - 25公斤",
+    "Bags / Sacks - 50kg": "袋装 - 50公斤",
+    "Boxes / Cartons - Large": "纸箱 - 大",
+    "Boxes / Cartons - Medium": "纸箱 - 中",
+    "Boxes / Cartons - Small": "纸箱 - 小",
+    "Wooden Crates - Large": "木箱 - 大",
+    "Wooden Crates - Medium": "木箱 - 中",
+    "Wooden Crates - Small": "木箱 - 小",
+    "Fiber Drums / Barrels": "纤维桶",
+    "Pallet - America": "托盘 - 美式",
+    "Pallet - Europe": "托盘 - 欧式",
+    "Plastic Drums / Barrels": "塑料桶",
+    "Rolls": "卷装",
+    "Steel Drums / Barrels": "钢桶",
+    "IBC Tank": "IBC 罐",
+    "Flex Tank": "软罐",
+    "Meters": "米",
+    "Pair": "双",
+    "By Sea": "海运",
+    "By Air": "空运",
+    "By Land": "陆运",
+    "Select...": "请选择...",
+    // Login / force-change-password screens
+    "Password": "密码",
+    "Enter password…": "输入密码…",
+    "Signing in…": "登录中…",
+    "Enter": "登录",
+    "Incorrect username or password.": "用户名或密码错误。",
+    "Could not reach the server. Check your connection and try again.": "无法连接服务器，请检查网络后重试。",
+    "Welcome,": "欢迎，",
+    "This is your first time signing in. Set a new password to continue — the temporary one won't work again after this.": "这是您第一次登录。请设置新密码以继续 — 临时密码之后将无法再次使用。",
+    "New password": "新密码",
+    "Confirm password": "确认密码",
+    "Password must be at least 6 characters.": "密码至少需要6个字符。",
+    "Passwords don't match.": "两次输入的密码不一致。",
+    "Couldn't update your password. Try again.": "密码更新失败，请重试。",
+    "Saving…": "保存中…",
+    "Set password & continue": "设置密码并继续",
+  },
+};
+const LanguageContext = createContext({ lang: "en", setLang: () => {} });
+function useT() {
+  const { lang } = useContext(LanguageContext);
+  return (key) => (lang === "zh" && TRANSLATIONS.zh[key]) || key;
+}
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -804,9 +1136,14 @@ function Modal({ title, onClose, children, wide }) {
 }
 
 function Field({ label, children, half }) {
+  // Auto-translates plain-string labels via the shared dictionary (falls
+  // back to the original English string — including dynamic/template
+  // labels built at the call site — when no matching entry exists, so
+  // this is always safe to run unconditionally).
+  const t = useT();
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "6px", gridColumn: half ? "span 1" : "span 2" }}>
-      <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</label>
+      <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{typeof label === "string" ? t(label) : label}</label>
       {children}
     </div>
   );
@@ -825,10 +1162,27 @@ function Input({ style, ...props }) { return <input style={{ ...inputStyle, ...s
 // `style` completely replaced inputStyle (spread order bug), which is why
 // some unit dropdowns rendered with the browser's default white background
 // instead of the app's dark theme.
-function Select({ children, style, ...props }) { return <select style={{ ...inputStyle, cursor: "pointer", ...style }} {...props}>{children}</select>; }
+function Select({ children, style, ...props }) {
+  // Auto-translates plain-string <option> text via the shared dictionary —
+  // same safe fallback-to-English pattern as Field/Btn/Table. Codes that
+  // aren't in the dictionary (currency codes, unit abbreviations like
+  // mm/cm, registered company names) simply fall through unchanged.
+  const t = useT();
+  const translated = Children.map(children, (child) => {
+    if (child && child.type === "option" && typeof child.props.children === "string") {
+      return cloneElement(child, {}, t(child.props.children));
+    }
+    return child;
+  });
+  return <select style={{ ...inputStyle, cursor: "pointer", ...style }} {...props}>{translated}</select>;
+}
 function Textarea(props) { return <textarea style={{ ...inputStyle, resize: "vertical", minHeight: "80px" }} {...props} />; }
 
 function Btn({ children, onClick, color = "#3b82f6", small, outline, disabled }) {
+  // Auto-translates plain-string button labels via the shared dictionary
+  // (same safe fallback-to-English pattern as Field) — non-string children
+  // (icons, fragments) pass through untouched.
+  const t = useT();
   const bg = outline ? "transparent" : color;
   const border = outline ? `1px solid ${color}` : "none";
   const textColor = outline ? color : "#fff";
@@ -844,7 +1198,7 @@ function Btn({ children, onClick, color = "#3b82f6", small, outline, disabled })
         transition: "all 0.15s", fontFamily: "inherit", whiteSpace: "nowrap",
       }}
     >
-      {children}
+      {typeof children === "string" ? t(children) : children}
     </button>
   );
 }
@@ -884,10 +1238,14 @@ function Badge({ status }) {
 // underlying value to sort by, so it's left alone (no pointer cursor, click
 // does nothing).
 function Table({ cols, rows, emptyMsg = "No records found" }) {
+  // Auto-translates column header labels and the empty-state message via
+  // the shared dictionary (same safe fallback-to-English pattern as Field
+  // and Btn) — this alone covers every Table's headers app-wide.
+  const t = useT();
   const [sort, setSort] = useState({ id: null, dir: 1 }); // dir: 1 = asc, -1 = desc
 
   if (!rows.length) return (
-    <div style={{ textAlign: "center", padding: "48px", color: "#475569", fontSize: "14px" }}>{emptyMsg}</div>
+    <div style={{ textAlign: "center", padding: "48px", color: "#475569", fontSize: "14px" }}>{t(emptyMsg)}</div>
   );
 
   const sortIdOf = c => c.key || c.label;
@@ -930,7 +1288,7 @@ function Table({ cols, rows, emptyMsg = "No records found" }) {
                   fontSize: "11px", fontWeight: 600, textTransform: "uppercase",
                   letterSpacing: "0.05em", borderBottom: "1px solid #1e293b", whiteSpace: "nowrap",
                   cursor: sortable ? "pointer" : "default", userSelect: "none",
-                }}>{c.label}{active ? (sort.dir === 1 ? " ▲" : " ▼") : ""}</th>
+                }}>{t(c.label)}{active ? (sort.dir === 1 ? " ▲" : " ▼") : ""}</th>
               );
             })}
           </tr>
@@ -1252,6 +1610,7 @@ function buildPackingListDraft(order, products) {
 // ─── FORMS ───────────────────────────────────────────────────────────────────
 
 function ProductItemModal({ onSave, onClose, initial, products, showTargetPrice }) {
+const t = useT();
 const [item, setItem] = useState(initial || { product_id: "", product_name: "", product_code: "", supplier: "", currency: "USD", cost_currency: "USD", quantity: "", unit: "unit", unit_price: "", cost_price: "", total: "", target_price: "", target_price_unit: "total" });
 const [search, setSearch] = useState(
   initial?.product_code && initial?.product_name
@@ -1533,7 +1892,7 @@ const handleUnitChange = (e) => {
   };
 
   return (
-    <Modal title={initial ? "Edit Product Item" : "Add Product"} onClose={onClose}>
+    <Modal title={initial ? t("Edit Product Item") : t("Add Product")} onClose={onClose}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
         <Field label="Product">
           <div style={{ position: "relative" }}>
@@ -3321,10 +3680,10 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
                         placeholder="0,00"
                         style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
                     </label>
-                    <select value={item.target_price_unit || "total"} onChange={onTargetUnitField}
-                      style={{ ...inputStyle, padding: "6px 8px", fontSize: "12px", width: "auto" }}>
+                    <Select value={item.target_price_unit || "total"} onChange={onTargetUnitField}
+                      style={{ padding: "6px 8px", fontSize: "12px", width: "auto" }}>
                       {targetPriceUnitOptions(item).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
+                    </Select>
                   </div>
                 </div>
               );
@@ -3430,6 +3789,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
   );
 }
 function Quotations() {
+const t = useT();
 const [proformas, setProformas] = useState([]);
 const [proformaModal, setProformaModal] = useState(null);
 const [editProforma, setEditProforma] = useState(null);
@@ -3466,18 +3826,18 @@ console.log('quotations set:', quotations?.length);
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Quotations</h2>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Quotations")}</h2>
         <Btn onClick={() => setModal(true)}>+ New Quotation</Btn>
       </div>
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by number, product, client or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       {modal && (
-        <Modal title="New Quotation" onClose={() => setModal(false)} wide>
+        <Modal title={t("New Quotation")} onClose={() => setModal(false)} wide>
           <QuotationForm onSave={b => api("/quotations", "POST", b).then(load)} onClose={() => setModal(false)} />
         </Modal>
       )}
       {editing && (
-  <Modal title="Edit Quotation" onClose={() => setEditing(null)} wide>
+  <Modal title={t("Edit Quotation")} onClose={() => setEditing(null)} wide>
     <QuotationForm initial={{
       ...editing,
       items: editing.items ? (typeof editing.items === 'string' ? JSON.parse(editing.items) : editing.items) : [],
@@ -3487,7 +3847,7 @@ console.log('quotations set:', quotations?.length);
 )}
 
       {proformaModal && (
-  <Modal title="Generate Proforma" onClose={() => setProformaModal(null)} wide>
+  <Modal title={t("Generate Proforma")} onClose={() => setProformaModal(null)} wide>
     <ProformaForm
       orders={[]}
       initial={proformaModal}
@@ -3497,7 +3857,7 @@ console.log('quotations set:', quotations?.length);
   </Modal>
 )}
 {editProforma && (
-  <Modal title="Edit Proforma" onClose={() => setEditProforma(null)} wide>
+  <Modal title={t("Edit Proforma")} onClose={() => setEditProforma(null)} wide>
     <ProformaForm
       orders={[]}
       initial={editProforma}
@@ -3554,11 +3914,11 @@ console.log('quotations set:', quotations?.length);
 }},
           { label: "Deadline", sortValue: r => r.deadline, render: r => fmtDate(r.deadline) },
           { label: "Status", sortValue: r => r.status, render: r => (
-            <select value={r.status}
+            <Select value={r.status}
               onChange={async e => { await api(`/quotations/${r.id}`, "PUT", { ...r, status: e.target.value }); load(); }}
-              style={{ ...inputStyle, padding: "4px 8px", fontSize: "12px", width: "auto" }}>
+              style={{ padding: "4px 8px", fontSize: "12px", width: "auto" }}>
               {["Pending","Sent","Received","Accepted","Rejected"].map(s => <option key={s}>{s}</option>)}
-            </select>
+            </Select>
           )},
          { label: "Actions", render: r => {
   const hasProforma = proformas.find(p => Number(p.quotation_id) === Number(r.id));
@@ -3583,7 +3943,7 @@ console.log('quotations set:', quotations?.length);
           // Order items work once created from a Proforma.
           items: r.items || "[]",
         })}>
-        📋 {hasProforma ? "Proforma ✓" : "Proforma"}
+        📋 {hasProforma ? t("Proforma ✓") : t("Proforma")}
       </Btn>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/quotations/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
@@ -4060,6 +4420,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
 }
 
 function Orders() {
+const t = useT();
 const [contracts, setContracts] = useState([]);
 const [commercials, setCommercials] = useState([]);
 const [editContract, setEditContract] = useState(null);
@@ -4222,31 +4583,31 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Orders</h2>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Orders")}</h2>
         <Btn onClick={() => setModal("new")}>+ New Order</Btn>
       </div>
       <Input value={search} onChange={e => setSearch(e.target.value)}
   placeholder="Search by order #, client, status or incoterm…" style={{ ...inputStyle, marginBottom: "16px" }} />
 
       {modal === "new" && (
-        <Modal title="New Order" onClose={() => setModal(null)}>
+        <Modal title={t("New Order")} onClose={() => setModal(null)}>
           <OrderForm onSave={createOrder} onClose={() => setModal(null)} />
         </Modal>
       )}
 {editOrder && (
-        <Modal title="Edit Order" onClose={() => setEditOrder(null)}>
+        <Modal title={t("Edit Order")} onClose={() => setEditOrder(null)}>
           <OrderForm initial={editOrder} onSave={updateOrder} onClose={() => setEditOrder(null)} />
         </Modal>
       )}
 {editContract && (
-  <Modal title="Edit Contract" onClose={() => { setEditContract(null); load(); }} wide>
+  <Modal title={t("Edit Contract")} onClose={() => { setEditContract(null); load(); }} wide>
     <ContractForm orders={orders} initial={editContract}
       onSave={async b => { await api(`/contracts/${editContract.id}`, "PUT", b); setEditContract(null); load(); }}
       onClose={() => setEditContract(null)} />
   </Modal>
 )}
       {inspectionModal && (
-  <Modal title="Generate Inspection" onClose={() => setInspectionModal(null)} wide>
+  <Modal title={t("Generate Inspection")} onClose={() => setInspectionModal(null)} wide>
     <InspectionForm
       orders={orders}
       initial={inspectionModal}
@@ -4256,7 +4617,7 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
   </Modal>
 )}
       {editInspection && (
-  <Modal title="Edit Inspection" onClose={() => { setEditInspection(null); load(); }} wide>
+  <Modal title={t("Edit Inspection")} onClose={() => { setEditInspection(null); load(); }} wide>
     <InspectionForm
       orders={orders}
       initial={{ ...editInspection, media: editInspection.media ? (typeof editInspection.media === 'string' ? JSON.parse(editInspection.media) : editInspection.media) : [] }}
@@ -4266,7 +4627,7 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
   </Modal>
 )}
 {editCommercial && (
-  <Modal title="Edit Commercial Invoice" onClose={() => { setEditCommercial(null); load(); }} wide>
+  <Modal title={t("Edit Commercial Invoice")} onClose={() => { setEditCommercial(null); load(); }} wide>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Number" half><Input value={editCommercial.number} onChange={e => setEditCommercial(p => ({ ...p, number: e.target.value }))} /></Field>
       <Field label="Issue Date" half><Input type="date" value={editCommercial.issue_date} onChange={e => setEditCommercial(p => ({ ...p, issue_date: e.target.value }))} /></Field>
@@ -4301,7 +4662,7 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
   </Modal>
 )}
 {contractModal && (
-  <Modal title="Generate Supplier Contracts" onClose={() => { setContractModal(null); setSavedContracts([]); load(); }} wide>
+  <Modal title={t("Generate Supplier Contracts")} onClose={() => { setContractModal(null); setSavedContracts([]); load(); }} wide>
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {contractModal.map((c, idx) => (
         <div key={idx} style={{ background: "#1e293b", borderRadius: "12px", padding: "16px", opacity: savedContracts.includes(idx) ? 0.6 : 1 }}>
@@ -4412,11 +4773,11 @@ onSave={async b => {
           { label: "Shipment", sortValue: r => r.shipment_date, render: r => fmtDate(r.shipment_date) },
           { label: "Arrival", sortValue: r => r.arrival_date, render: r => fmtDate(r.arrival_date) },
           { label: "Status", sortValue: r => r.status, render: r => (
-  <select value={r.status}
+  <Select value={r.status}
     onChange={async e => { await changeStatus(r.id, e.target.value); }}
-    style={{ ...inputStyle, padding: "4px 8px", fontSize: "12px", width: "auto" }}>
+    style={{ padding: "4px 8px", fontSize: "12px", width: "auto" }}>
     {ORDER_STATUSES.map(s => <option key={s}>{s}</option>)}
-  </select>
+  </Select>
 )},
 { label: "Actions", render: r => {
 const hasContract = contracts.filter(c => Number(c.order_id) === Number(r.id));
@@ -4427,11 +4788,11 @@ const hasCommercial = commercials.find(c => Number(c.order_id) === Number(r.id))
     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
       <Btn small color={hasContract.length > 0 ? "#8b5cf6" : "#334155"}
   onClick={() => hasContract.length > 0 ? setEditContract(hasContract[0]) : generateContract(r)}>
-  🤝 {hasContract.length > 0 ? "Contract ✓" : "Contract"}
+  🤝 {hasContract.length > 0 ? t("Contract ✓") : t("Contract")}
 </Btn>
       <Btn small outline={!hasCommercial} color={hasCommercial ? "#10b981" : "#64748b"}
   onClick={() => hasCommercial ? setEditCommercial(hasCommercial) : generateCommercial(r)}>
-  🧾 {hasCommercial ? "Commercial ✓" : "Commercial"}
+  🧾 {hasCommercial ? t("Commercial ✓") : t("Commercial")}
 </Btn>
       <Btn small outline={!hasInspection} color={hasInspection ? "#f59e0b" : "#64748b"}
   onClick={() => hasInspection ? setEditInspection(hasInspection) : setInspectionModal({
@@ -4442,7 +4803,7 @@ const hasCommercial = commercials.find(c => Number(c.order_id) === Number(r.id))
     result: "Pending",
     observations: "",
   })}>
-  🔍 {hasInspection ? "Inspection ✓" : "Inspection"}
+  🔍 {hasInspection ? t("Inspection ✓") : t("Inspection")}
 </Btn>
       <Btn small outline color="#64748b" onClick={() => setEditOrder(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/orders/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
@@ -4459,6 +4820,7 @@ const hasCommercial = commercials.find(c => Number(c.order_id) === Number(r.id))
 }
 
 function Products() {
+  const t = useT();
   const [products, setProducts] = useState([]);
   const [modal, setModal] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -4482,7 +4844,7 @@ function Products() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Product Registry</h2>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Product Registry")}</h2>
         <div style={{ display: "flex", gap: "10px" }}>
           <Btn outline color="#10b981" onClick={() => window.open(authUrl(`${API}/reports/products-by-supplier`), "_blank")}>📊 Supplier Report</Btn>
           <Btn onClick={() => { setDuplicateSeed(null); setModal("new"); }}>+ New Product</Btn>
@@ -4492,14 +4854,14 @@ function Products() {
         placeholder="Search by name, code or category…" style={{ ...inputStyle, marginBottom: "16px" }} />
 
       {modal === "new" && (
-        <Modal title={duplicateSeed ? "Duplicate Product" : "New Product"} onClose={() => { setModal(null); setDuplicateSeed(null); }}>
+        <Modal title={duplicateSeed ? t("Duplicate Product") : t("New Product")} onClose={() => { setModal(null); setDuplicateSeed(null); }}>
           <ProductForm initial={duplicateSeed}
             onSave={b => api("/products", "POST", b).then(load)}
             onClose={() => { setModal(null); setDuplicateSeed(null); }} />
         </Modal>
       )}
       {editing && (
-        <Modal title="Edit Product" onClose={() => setEditing(null)}>
+        <Modal title={t("Edit Product")} onClose={() => setEditing(null)}>
           <ProductForm initial={editing}
             onSave={b => api(`/products/${editing.id}`, "PUT", b).then(load)}
             onClose={() => setEditing(null)} />
@@ -4543,6 +4905,7 @@ cols={[
 }
 
 function Samples() {
+ const t = useT();
  const [samples, setSamples] = useState([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -4564,19 +4927,19 @@ function Samples() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Product Development – Samples</h2>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Product Development – Samples")}</h2>
         <Btn onClick={() => setModal(true)}>+ New Sample</Btn>
       </div>
       <Input value={search} onChange={e => setSearch(e.target.value)}
   placeholder="Search by product, client or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       {modal && (
-        <Modal title="New Sample Request" onClose={() => setModal(false)}>
+        <Modal title={t("New Sample Request")} onClose={() => setModal(false)}>
           <SampleForm onSave={b => api("/samples", "POST", b).then(load)} onClose={() => setModal(false)} />
         </Modal>
       )}
 
   {editing && (
-  <Modal title="Edit Sample" onClose={() => setEditing(null)}>
+  <Modal title={t("Edit Sample")} onClose={() => setEditing(null)}>
     <SampleForm initial={editing} onSave={b => api(`/samples/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
   </Modal>
 )}
@@ -4591,11 +4954,11 @@ function Samples() {
   { label: "Ready", sortValue: r => r.ready_date, render: r => fmtDate(r.ready_date) },
   { label: "Sent", sortValue: r => r.sent_date, render: r => fmtDate(r.sent_date) },
 { label: "Status", sortValue: r => r.status, render: r => (
-  <select value={r.status}
+  <Select value={r.status}
     onChange={async e => { await api(`/samples/${r.id}/status`, "PATCH", { status: e.target.value }); load(); }}
-    style={{ ...inputStyle, padding: "4px 8px", color: sampleColors[r.status] || "#94a3b8", fontSize: "12px", width: "auto" }}>
+    style={{ padding: "4px 8px", color: sampleColors[r.status] || "#94a3b8", fontSize: "12px", width: "auto" }}>
     {SAMPLE_STATUSES.map(s => <option key={s}>{s}</option>)}
-  </select>
+  </Select>
 )},
   { label: "Notes", key: "notes" },
   { label: "", render: r => (
@@ -4614,6 +4977,7 @@ function Samples() {
       
       
 function Proformas() {
+const t = useT();
 const [proformas, setProformas] = useState([]);
   const [orders, setOrders] = useState([]);
   const [quotations, setQuotations] = useState([]);
@@ -4677,16 +5041,16 @@ const [proformas, setProformas] = useState([]);
   return (
     <div>
 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Proforma Invoices</h2>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Proforma Invoices")}</h2>
         <Btn onClick={() => setModal(true)}>+ New Proforma</Btn>
       </div>
       {modal && (
-        <Modal title="New Proforma" onClose={() => setModal(false)} wide>
+        <Modal title={t("New Proforma")} onClose={() => setModal(false)} wide>
           <ProformaForm orders={orders} onSave={b => api("/proformas", "POST", b).then(load)} onClose={() => setModal(false)} />
         </Modal>
       )}
       {editing && (
-        <Modal title="Edit Proforma" onClose={() => setEditing(null)} wide>
+        <Modal title={t("Edit Proforma")} onClose={() => setEditing(null)} wide>
           <ProformaForm orders={orders} initial={editing} onSave={b => api(`/proformas/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
         </Modal>
       )}
@@ -4719,19 +5083,19 @@ cols={[
   { label: "Validity", sortValue: r => r.validity, render: r => fmtDate(r.validity) },
   { label: "Total", sortValue: r => r.total, render: r => fmt(r.total, r.currency) },
   { label: "Status", sortValue: r => r.status, render: r => (
-    <select value={r.status}
+    <Select value={r.status}
       onChange={async e => {
         await api(`/proformas/${r.id}`, "PUT", { ...r, status: e.target.value });
         load();
       }}
-      style={{ ...inputStyle, padding: "4px 8px", fontSize: "12px", width: "auto" }}>
+      style={{ padding: "4px 8px", fontSize: "12px", width: "auto" }}>
       {["Draft","Sent","Accepted","Rejected"].map(s => <option key={s}>{s}</option>)}
-    </select>
+    </Select>
   )},
   { label: "Actions", render: r => (
     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
       <Btn small color={r.order_id ? "#10b981" : "#334155"} onClick={() => !r.order_id && createOrderFromProforma(r)}>
-        🛒 {r.order_id ? "Order ✓" : "Create Order"}
+        🛒 {r.order_id ? t("Order ✓") : t("Create Order")}
       </Btn>
       <Btn small outline color="#10b981" onClick={() => window.open(authUrl(`${API}/proformas/${r.id}/pdf`), "_blank")}>📄 PDF</Btn>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
@@ -4747,6 +5111,7 @@ cols={[
 }
 
 function Contracts() {
+  const t = useT();
   const [contracts, setContracts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [search, setSearch] = useState("");
@@ -4766,10 +5131,10 @@ function Contracts() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Supplier Contracts</h2>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Supplier Contracts")}</h2>
       </div>
       {editing && (
-        <Modal title="Edit Contract" onClose={() => setEditing(null)} wide>
+        <Modal title={t("Edit Contract")} onClose={() => setEditing(null)} wide>
           <ContractForm orders={orders} initial={editing}
             onSave={async b => { await api(`/contracts/${editing.id}`, "PUT", b).then(load); setEditing(null); }}
             onClose={() => setEditing(null)} />
@@ -4785,14 +5150,14 @@ function Contracts() {
           { label: "Delivery Date", sortValue: r => r.delivery_date, render: r => fmtDate(r.delivery_date) },
           { label: "Total", sortValue: r => r.total, render: r => fmt(r.total, r.currency) },
           { label: "Status", sortValue: r => r.status, render: r => (
-            <select value={r.status}
+            <Select value={r.status}
               onChange={async e => {
                 await api(`/contracts/${r.id}`, "PUT", { ...r, status: e.target.value });
                 load();
               }}
-              style={{ ...inputStyle, padding: "4px 8px", fontSize: "12px", width: "auto" }}>
+              style={{ padding: "4px 8px", fontSize: "12px", width: "auto" }}>
               {["Draft","Signed","In Force","Completed","Cancelled"].map(s => <option key={s}>{s}</option>)}
-            </select>
+            </Select>
           )},
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
@@ -4810,6 +5175,7 @@ function Contracts() {
 }
 
 function Financial({ type }) {
+  const t = useT();
   const isClient = type === "client";
   const [records, setRecords] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -4842,7 +5208,7 @@ function Financial({ type }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>
-          {isClient ? "💰 Client Cash Flow" : "📦 Supplier Cash Flow"}
+          {isClient ? t("💰 Client Cash Flow") : t("📦 Supplier Cash Flow")}
         </h2>
         <Btn color={color} onClick={() => setModal(true)}>+ New Entry</Btn>
       </div>
@@ -4852,12 +5218,12 @@ function Financial({ type }) {
         <StatCard label={isClient ? "Received" : "Paid"} value={fmt(totals.paid)} color="#10b981" />
       </div>
       {modal && (
-        <Modal title={isClient ? "New Client Payment" : "New Supplier Payment"} onClose={() => setModal(false)}>
+        <Modal title={isClient ? t("New Client Payment") : t("New Supplier Payment")} onClose={() => setModal(false)}>
           <FinForm type={type} orders={orders} onSave={b => api(endpoint, "POST", b).then(load)} onClose={() => setModal(false)} />
         </Modal>
       )}
       {editing && (
-        <Modal title={isClient ? "Edit Client Payment" : "Edit Supplier Payment"} onClose={() => setEditing(null)}>
+        <Modal title={isClient ? t("Edit Client Payment") : t("Edit Supplier Payment")} onClose={() => setEditing(null)}>
           <FinForm type={type} orders={orders} initial={editing} onSave={b => api(`${endpoint}/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
         </Modal>
       )}
@@ -4892,7 +5258,7 @@ cols={[
   ) },
   { label: "Due Date", sortValue: r => r.due_date, render: r => fmtDate(r.due_date) },
   { label: "Status", sortValue: r => r.status, render: r => (
-    <select value={r.status}
+    <Select value={r.status}
       onChange={async e => {
         const status = e.target.value;
         let paid_amount;
@@ -4927,9 +5293,9 @@ cols={[
         });
         load();
       }}
-      style={{ ...inputStyle, padding: "4px 8px", fontSize: "12px", width: "auto" }}>
+      style={{ padding: "4px 8px", fontSize: "12px", width: "auto" }}>
       {FIN_STATUSES.map(s => <option key={s}>{s}</option>)}
-    </select>
+    </Select>
   )},
   { label: "Actions", render: r => (
     <div style={{ display: "flex", gap: "6px" }}>
@@ -5038,6 +5404,7 @@ function ClientForm({ initial, onSave, onClose }) {
 }
 
 function Clients() {
+  const t = useT();
   const [clients, setClients] = useState([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -5051,18 +5418,18 @@ function Clients() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Clients</h2>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Clients")}</h2>
         <Btn onClick={() => setModal(true)}>+ New Client</Btn>
       </div>
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by company or contact…" style={{ ...inputStyle, marginBottom: "16px" }} />
       {modal && (
-        <Modal title="New Client" onClose={() => setModal(false)}>
+        <Modal title={t("New Client")} onClose={() => setModal(false)}>
           <ClientForm onSave={b => api("/clients", "POST", b).then(load)} onClose={() => setModal(false)} />
         </Modal>
       )}
       {editing && (
-        <Modal title="Edit Client" onClose={() => setEditing(null)}>
+        <Modal title={t("Edit Client")} onClose={() => setEditing(null)}>
           <ClientForm initial={editing} onSave={b => api(`/clients/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
         </Modal>
       )}
@@ -5205,6 +5572,7 @@ function SupplierForm({ initial, onSave, onClose }) {
 }
 
 function Suppliers() {
+  const t = useT();
   const [suppliers, setSuppliers] = useState([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -5218,18 +5586,18 @@ function Suppliers() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Suppliers</h2>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Suppliers")}</h2>
         <Btn color="#8b5cf6" onClick={() => setModal(true)}>+ New Supplier</Btn>
       </div>
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by company or product type…" style={{ ...inputStyle, marginBottom: "16px" }} />
       {modal && (
-        <Modal title="New Supplier" onClose={() => setModal(false)}>
+        <Modal title={t("New Supplier")} onClose={() => setModal(false)}>
           <SupplierForm onSave={b => api("/suppliers", "POST", b).then(load)} onClose={() => setModal(false)} />
         </Modal>
       )}
       {editing && (
-        <Modal title="Edit Supplier" onClose={() => setEditing(null)}>
+        <Modal title={t("Edit Supplier")} onClose={() => setEditing(null)}>
           <SupplierForm initial={editing} onSave={b => api(`/suppliers/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
         </Modal>
       )}
@@ -5279,6 +5647,7 @@ function FreightAgentForm({ initial, onSave, onClose }) {
 }
 
 function FreightAgents() {
+  const t = useT();
   const [agents, setAgents] = useState([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -5292,18 +5661,18 @@ function FreightAgents() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Freight Agents</h2>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Freight Agents")}</h2>
         <Btn color="#0ea5e9" onClick={() => setModal(true)}>+ New Freight Agent</Btn>
       </div>
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by company or contact…" style={{ ...inputStyle, marginBottom: "16px" }} />
       {modal && (
-        <Modal title="New Freight Agent" onClose={() => setModal(false)}>
+        <Modal title={t("New Freight Agent")} onClose={() => setModal(false)}>
           <FreightAgentForm onSave={b => api("/freight-agents", "POST", b).then(load)} onClose={() => setModal(false)} />
         </Modal>
       )}
       {editing && (
-        <Modal title="Edit Freight Agent" onClose={() => setEditing(null)}>
+        <Modal title={t("Edit Freight Agent")} onClose={() => setEditing(null)}>
           <FreightAgentForm initial={editing} onSave={b => api(`/freight-agents/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
         </Modal>
       )}
@@ -5329,6 +5698,7 @@ function FreightAgents() {
 }
 
 function CommercialInvoices() {
+  const t = useT();
   const [invoices, setInvoices] = useState([]);
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
@@ -5368,10 +5738,10 @@ function CommercialInvoices() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Commercial Invoices</h2>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Commercial Invoices")}</h2>
       </div>
       {editing && (
-        <Modal title="Edit Commercial Invoice" onClose={() => setEditing(null)} wide>
+        <Modal title={t("Edit Commercial Invoice")} onClose={() => setEditing(null)} wide>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
             <Field label="Number" half><Input value={editing.number} onChange={e => setEditing(p => ({ ...p, number: e.target.value }))} /></Field>
             <Field label="Issue Date" half><Input type="date" value={editing.issue_date} onChange={e => setEditing(p => ({ ...p, issue_date: e.target.value }))} /></Field>
@@ -5400,7 +5770,7 @@ function CommercialInvoices() {
         </Modal>
       )}
       {packingListModal && (
-        <Modal title="Generate Packing List" onClose={() => { setPackingListModal(null); load(); }} wide>
+        <Modal title={t("Generate Packing List")} onClose={() => { setPackingListModal(null); load(); }} wide>
           <PackingListForm
             initial={packingListModal}
             onSave={async b => { await api("/packing-lists", "POST", b); load(); }}
@@ -5409,7 +5779,7 @@ function CommercialInvoices() {
         </Modal>
       )}
       {editPackingList && (
-        <Modal title="Edit Packing List" onClose={() => { setEditPackingList(null); load(); }} wide>
+        <Modal title={t("Edit Packing List")} onClose={() => { setEditPackingList(null); load(); }} wide>
           <PackingListForm
             initial={editPackingList}
             onSave={async b => { await api(`/packing-lists/${editPackingList.id}`, "PUT", b); load(); }}
@@ -5426,11 +5796,11 @@ function CommercialInvoices() {
           { label: "Issue Date", sortValue: r => r.issue_date, render: r => fmtDate(r.issue_date) },
           { label: "Total", sortValue: r => r.total, render: r => fmt(r.total, r.currency) },
           { label: "Status", sortValue: r => r.status, render: r => (
-            <select value={r.status}
+            <Select value={r.status}
               onChange={async e => { await api(`/commercial-invoices/${r.id}`, "PUT", { ...r, status: e.target.value }); load(); }}
-              style={{ ...inputStyle, padding: "4px 8px", fontSize: "12px", width: "auto", color: r.status === "Paid" ? "#10b981" : "#f59e0b" }}>
+              style={{ padding: "4px 8px", fontSize: "12px", width: "auto", color: r.status === "Paid" ? "#10b981" : "#f59e0b" }}>
               <option>Pending</option><option>Paid</option>
-            </select>
+            </Select>
           )},
           { label: "Actions", render: r => {
             const order = orders.find(o => Number(o.id) === Number(r.order_id));
@@ -5442,7 +5812,7 @@ function CommercialInvoices() {
                 {order && (
                   <Btn small outline={!hasPackingList} color={hasPackingList ? "#06b6d4" : "#64748b"}
                     onClick={() => hasPackingList ? setEditPackingList(hasPackingList) : generatePackingList(order)}>
-                    📦 {hasPackingList ? "Packing List ✓" : "Packing List"}
+                    📦 {hasPackingList ? t("Packing List ✓") : t("Packing List")}
                   </Btn>
                 )}
                 <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/commercial-invoices/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
@@ -5464,6 +5834,7 @@ function CommercialInvoices() {
 // the linked Order (see the /api/packing-lists route's join), same
 // single-source-of-truth approach as the Commercial Invoice screen.
 function PackingLists() {
+  const t = useT();
   const [lists, setLists] = useState([]);
   const [search, setSearch] = useState("");
   const [editList, setEditList] = useState(null);
@@ -5479,10 +5850,10 @@ function PackingLists() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Packing Lists</h2>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Packing Lists")}</h2>
       </div>
       {editList && (
-        <Modal title="Edit Packing List" onClose={() => { setEditList(null); load(); }} wide>
+        <Modal title={t("Edit Packing List")} onClose={() => { setEditList(null); load(); }} wide>
           <PackingListForm
             initial={editList}
             onSave={async b => { await api(`/packing-lists/${editList.id}`, "PUT", b); load(); }}
@@ -5616,6 +5987,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
 }
 
 function Inspections() {
+  const t = useT();
   const [inspections, setInspections] = useState([]);
   const [orders, setOrders] = useState([]);
   const [modal, setModal] = useState(false);
@@ -5639,18 +6011,18 @@ function Inspections() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Inspections</h2>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Inspections")}</h2>
         <Btn onClick={() => setModal(true)}>+ New Inspection</Btn>
       </div>
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by number, inspector or result…" style={{ ...inputStyle, marginBottom: "16px" }} />
       {modal && (
-        <Modal title="New Inspection" onClose={() => setModal(false)} wide>
+        <Modal title={t("New Inspection")} onClose={() => setModal(false)} wide>
           <InspectionForm orders={orders} onSave={async b => { await api("/inspections", "POST", b); load(); }} onClose={() => setModal(false)} />
         </Modal>
       )}
       {editing && (
-        <Modal title="Edit Inspection" onClose={() => setEditing(null)} wide>
+        <Modal title={t("Edit Inspection")} onClose={() => setEditing(null)} wide>
           <InspectionForm orders={orders} initial={{ ...editing, media: editing.media ? (typeof editing.media === 'string' ? JSON.parse(editing.media) : editing.media) : [] }}
             onSave={async b => { await api(`/inspections/${editing.id}`, "PUT", b); load(); }}
             onClose={() => setEditing(null)} />
@@ -5663,11 +6035,11 @@ function Inspections() {
           { label: "Date", sortValue: r => r.inspection_date, render: r => fmtDate(r.inspection_date) },
           { label: "Inspector", key: "inspector" },
           { label: "Result", sortValue: r => r.result, render: r => (
-  <select value={r.result}
+  <Select value={r.result}
     onChange={async e => { await api(`/inspections/${r.id}`, "PUT", { ...r, status: r.status, result: e.target.value }); load(); }}
-    style={{ ...inputStyle, padding: "4px 8px", fontSize: "12px", width: "auto", color: resultColors[r.result] || "#64748b" }}>
+    style={{ padding: "4px 8px", fontSize: "12px", width: "auto", color: resultColors[r.result] || "#64748b" }}>
     {["Pending","Approved","Rejected","Conditional"].map(s => <option key={s}>{s}</option>)}
-  </select>
+  </Select>
 )},
           { label: "Report", render: r => {
   let hasMedia = false;
@@ -5705,6 +6077,7 @@ function Inspections() {
 // xlsx/reportBuilder.js. This screen is just the trigger; there's no data to
 // fetch or list here.
 function Reports() {
+  const t = useT();
   const [since, setSince] = useState("");
   // Category list comes from the backend (xlsx/reportBuilder.js's own
   // CATEGORIES export) instead of being duplicated here, so the checkboxes
@@ -5742,7 +6115,7 @@ function Reports() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>📊 Reports</h2>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("📊 Reports")}</h2>
       </div>
       <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "12px", padding: "24px", maxWidth: "640px" }}>
         <p style={{ color: "#94a3b8", fontSize: "13px", lineHeight: 1.6, margin: "0 0 16px" }}>
@@ -5816,6 +6189,7 @@ const TABS = [
 // own username/password; the backend hashes and checks passwords and every
 // API route now requires the session token this screen gets back.
 function LoginScreen({ onLoggedIn }) {
+  const t = useT();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -5833,7 +6207,7 @@ function LoginScreen({ onLoggedIn }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "Incorrect username or password.");
+        setError(data.error || t("Incorrect username or password."));
         return;
       }
       setAuthToken(data.token);
@@ -5841,7 +6215,7 @@ function LoginScreen({ onLoggedIn }) {
       localStorage.setItem("af_user", JSON.stringify(user));
       onLoggedIn(user);
     } catch {
-      setError("Could not reach the server. Check your connection and try again.");
+      setError(t("Could not reach the server. Check your connection and try again."));
     } finally {
       setBusy(false);
     }
@@ -5859,17 +6233,17 @@ function LoginScreen({ onLoggedIn }) {
       }}>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: "22px", fontWeight: 800, color: "#f1f5f9", letterSpacing: "-0.02em" }}>Alliance Global System</div>
-          <div style={{ fontSize: "12px", color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "4px" }}>Order Management</div>
+          <div style={{ fontSize: "12px", color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "4px" }}>{t("Order Management")}</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div>
-            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Name</label>
+            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("Name")}</label>
             <input
               type="text"
               value={username}
               onChange={e => { setUsername(e.target.value); setError(""); }}
               onKeyDown={e => { if (e.key === "Enter") submit(); }}
-              placeholder="Name"
+              placeholder={t("Name")}
               autoCapitalize="off" autoCorrect="off"
               style={{
                 background: "#1e293b", border: `1px solid ${error ? "#ef4444" : "#334155"}`,
@@ -5880,13 +6254,13 @@ function LoginScreen({ onLoggedIn }) {
             />
           </div>
           <div>
-            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Password</label>
+            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("Password")}</label>
             <input
               type="password"
               value={password}
               onChange={e => { setPassword(e.target.value); setError(""); }}
               onKeyDown={e => { if (e.key === "Enter") submit(); }}
-              placeholder="Enter password…"
+              placeholder={t("Enter password…")}
               style={{
                 background: "#1e293b", border: `1px solid ${error ? "#ef4444" : "#334155"}`,
                 borderRadius: "8px", padding: "12px 14px", color: "#f1f5f9",
@@ -5894,7 +6268,7 @@ function LoginScreen({ onLoggedIn }) {
               }}
             />
           </div>
-          {error && <div style={{ color: "#ef4444", fontSize: "12px" }}>{error}</div>}
+          {error && <div style={{ color: "#ef4444", fontSize: "12px" }}>{t(error)}</div>}
           <button
             onClick={submit}
             disabled={busy}
@@ -5904,7 +6278,7 @@ function LoginScreen({ onLoggedIn }) {
               cursor: busy ? "not-allowed" : "pointer", marginTop: "4px", opacity: busy ? 0.6 : 1,
             }}
           >
-            {busy ? "Signing in…" : "Enter"}
+            {busy ? t("Signing in…") : t("Enter")}
           </button>
         </div>
       </div>
@@ -5916,6 +6290,7 @@ function LoginScreen({ onLoggedIn }) {
 // password (must_change_password) — forces setting a real one before the
 // person can reach any actual data.
 function ForceChangePasswordScreen({ user, onDone }) {
+  const t = useT();
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
   const [error, setError] = useState("");
@@ -5923,8 +6298,8 @@ function ForceChangePasswordScreen({ user, onDone }) {
 
   const submit = async () => {
     if (busy) return;
-    if (pw1.length < 6) return setError("Password must be at least 6 characters.");
-    if (pw1 !== pw2) return setError("Passwords don't match.");
+    if (pw1.length < 6) return setError(t("Password must be at least 6 characters."));
+    if (pw1 !== pw2) return setError(t("Passwords don't match."));
     setError("");
     setBusy(true);
     try {
@@ -5933,7 +6308,7 @@ function ForceChangePasswordScreen({ user, onDone }) {
       localStorage.setItem("af_user", JSON.stringify(updated));
       onDone(updated);
     } catch {
-      setError("Couldn't update your password. Try again.");
+      setError(t("Couldn't update your password. Try again."));
     } finally {
       setBusy(false);
     }
@@ -5950,14 +6325,14 @@ function ForceChangePasswordScreen({ user, onDone }) {
         boxShadow: "0 25px 60px rgba(0,0,0,0.6)", display: "flex", flexDirection: "column", gap: "20px",
       }}>
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: "18px", fontWeight: 800, color: "#f1f5f9" }}>Welcome, {user.name}</div>
+          <div style={{ fontSize: "18px", fontWeight: 800, color: "#f1f5f9" }}>{t("Welcome,")} {user.name}</div>
           <div style={{ fontSize: "12.5px", color: "#94a3b8", marginTop: "8px", lineHeight: 1.5 }}>
-            This is your first time signing in. Set a new password to continue — the temporary one won't work again after this.
+            {t("This is your first time signing in. Set a new password to continue — the temporary one won't work again after this.")}
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div>
-            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>New password</label>
+            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("New password")}</label>
             <input
               type="password" value={pw1}
               onChange={e => { setPw1(e.target.value); setError(""); }}
@@ -5970,7 +6345,7 @@ function ForceChangePasswordScreen({ user, onDone }) {
             />
           </div>
           <div>
-            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Confirm password</label>
+            <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("Confirm password")}</label>
             <input
               type="password" value={pw2}
               onChange={e => { setPw2(e.target.value); setError(""); }}
@@ -5982,7 +6357,7 @@ function ForceChangePasswordScreen({ user, onDone }) {
               }}
             />
           </div>
-          {error && <div style={{ color: "#ef4444", fontSize: "12px" }}>{error}</div>}
+          {error && <div style={{ color: "#ef4444", fontSize: "12px" }}>{t(error)}</div>}
           <button
             onClick={submit}
             disabled={busy}
@@ -5992,7 +6367,7 @@ function ForceChangePasswordScreen({ user, onDone }) {
               cursor: busy ? "not-allowed" : "pointer", marginTop: "4px", opacity: busy ? 0.6 : 1,
             }}
           >
-            {busy ? "Saving…" : "Set password & continue"}
+            {busy ? t("Saving…") : t("Set password & continue")}
           </button>
         </div>
       </div>
@@ -6009,6 +6384,16 @@ export default function App() {
   });
   const [tab, setTab] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [lang, setLang] = useState(() => {
+    try { return localStorage.getItem("af_lang") || "en"; } catch { return "en"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("af_lang", lang); } catch { /* private browsing — fine, just won't persist */ }
+  }, [lang]);
+  // App is the top of the tree (renders the LanguageContext.Provider
+  // itself further down), so it reads its own `lang` state directly rather
+  // than through useT()/useContext — same lookup logic either way.
+  const t = (key) => (lang === "zh" && TRANSLATIONS.zh[key]) || key;
 
   const logout = async () => {
     try { await api("/logout", "POST"); } catch { /* token may already be gone — fine either way */ }
@@ -6018,11 +6403,19 @@ export default function App() {
   };
 
   if (!user) {
-    return <LoginScreen onLoggedIn={setUser} />;
+    return (
+      <LanguageContext.Provider value={{ lang, setLang }}>
+        <LoginScreen onLoggedIn={setUser} />
+      </LanguageContext.Provider>
+    );
   }
 
   if (user.mustChangePassword) {
-    return <ForceChangePasswordScreen user={user} onDone={setUser} />;
+    return (
+      <LanguageContext.Provider value={{ lang, setLang }}>
+        <ForceChangePasswordScreen user={user} onDone={setUser} />
+      </LanguageContext.Provider>
+    );
   }
 
 const renderTab = () => {
@@ -6067,30 +6460,34 @@ const renderTab = () => {
           <div style={{ padding: "20px 16px", borderBottom: "1px solid #1e293b" }}>
             {sidebarOpen ? (
               <div>
-                <div style={{ fontSize: "16px", fontWeight: 800, color: "#f1f5f9", letterSpacing: "-0.02em" }}>Alliance Flow</div>
-                <div style={{ fontSize: "10px", color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em" }}>Order Management</div>
+                <div style={{ fontSize: "16px", fontWeight: 800, color: "#f1f5f9", letterSpacing: "-0.02em" }}>{t("Alliance Flow")}</div>
+                <div style={{ fontSize: "10px", color: "#475569", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em" }}>{t("Order Management")}</div>
               </div>
             ) : (
               <div style={{ fontSize: "20px", textAlign: "center" }}>⬡</div>
             )}
           </div>
           <nav style={{ flex: 1, padding: "12px 8px", display: "flex", flexDirection: "column", gap: "2px" }}>
-            {TABS.map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)}
+            {/* Renamed the loop var from `t` to `navItem` — `t` is the
+                translate function in scope here, and shadowing it inside
+                this callback would silently make every t(...) call below
+                resolve to the tab object instead. */}
+            {TABS.map(navItem => (
+              <button key={navItem.id} onClick={() => setTab(navItem.id)}
                 style={{
                   display: "flex", alignItems: "center", gap: "10px",
                   padding: "10px 10px", borderRadius: "8px", border: "none", cursor: "pointer",
-                  background: tab === t.id ? "#1e293b" : "transparent",
-                  color: tab === t.id ? "#f1f5f9" : "#64748b",
-                  fontFamily: "inherit", fontSize: "13px", fontWeight: tab === t.id ? 600 : 400,
+                  background: tab === navItem.id ? "#1e293b" : "transparent",
+                  color: tab === navItem.id ? "#f1f5f9" : "#64748b",
+                  fontFamily: "inherit", fontSize: "13px", fontWeight: tab === navItem.id ? 600 : 400,
                   textAlign: "left", transition: "all 0.1s",
-                  borderLeft: tab === t.id ? "2px solid #3b82f6" : "2px solid transparent",
+                  borderLeft: tab === navItem.id ? "2px solid #3b82f6" : "2px solid transparent",
                 }}
-                onMouseEnter={e => { if (tab !== t.id) e.currentTarget.style.color = "#94a3b8"; }}
-                onMouseLeave={e => { if (tab !== t.id) e.currentTarget.style.color = "#64748b"; }}
+                onMouseEnter={e => { if (tab !== navItem.id) e.currentTarget.style.color = "#94a3b8"; }}
+                onMouseLeave={e => { if (tab !== navItem.id) e.currentTarget.style.color = "#64748b"; }}
               >
-                <span style={{ fontSize: "16px", flexShrink: 0, width: "20px", textAlign: "center" }}>{t.icon}</span>
-                {sidebarOpen && <span style={{ overflow: "hidden", whiteSpace: "nowrap" }}>{t.label}</span>}
+                <span style={{ fontSize: "16px", flexShrink: 0, width: "20px", textAlign: "center" }}>{navItem.icon}</span>
+                {sidebarOpen && <span style={{ overflow: "hidden", whiteSpace: "nowrap" }}>{t(navItem.label)}</span>}
               </button>
             ))}
           </nav>
@@ -6101,7 +6498,7 @@ const renderTab = () => {
                   <div style={{ fontSize: "12.5px", fontWeight: 600, color: "#cbd5e1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.name}</div>
                   <div style={{ fontSize: "10px", color: "#475569" }}>@{user.username}</div>
                 </div>
-                <button onClick={logout} title="Log out"
+                <button onClick={logout} title={t("Log out")}
                   style={{
                     background: "none", border: "none", color: "#64748b", cursor: "pointer",
                     fontSize: "13px", padding: "4px 6px", borderRadius: "6px", flexShrink: 0,
@@ -6121,6 +6518,24 @@ const renderTab = () => {
               >⏻</button>
             )}
           </div>
+          {/* Interface language toggle — only switches the system's own UI
+              text (nav, buttons, labels), never PDFs or any registered
+              data. */}
+          <div style={{ padding: "10px 12px", borderTop: "1px solid #1e293b" }}>
+            <button onClick={() => setLang(l => (l === "en" ? "zh" : "en"))}
+              title="Switch interface language / 切换界面语言"
+              style={{
+                width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                padding: "8px", background: "#1e293b", border: "1px solid #334155", borderRadius: "6px",
+                color: "#94a3b8", cursor: "pointer", fontSize: "12px", fontWeight: 600,
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = "#f1f5f9"}
+              onMouseLeave={e => e.currentTarget.style.color = "#94a3b8"}
+            >
+              <span>🌐</span>
+              {sidebarOpen && <span>{lang === "en" ? "English" : "简体中文"}</span>}
+            </button>
+          </div>
           <div style={{ padding: "8px 8px 12px", borderTop: "1px solid #1e293b" }}>
             <button onClick={() => setSidebarOpen(o => !o)}
               style={{
@@ -6134,13 +6549,16 @@ const renderTab = () => {
           </div>
         </aside>
 
-        {/* Main */}
+        {/* Main — every screen component renders inside this Provider, so
+            any of them can call useT() to translate their own text. */}
         <main style={{ flex: 1, padding: "32px", minWidth: 0 }}>
           <div style={{
             background: "#0a1628", border: "1px solid #1e293b", borderRadius: "16px",
             padding: "28px", minHeight: "calc(100vh - 64px)",
           }}>
-            {renderTab()}
+            <LanguageContext.Provider value={{ lang, setLang }}>
+              {renderTab()}
+            </LanguageContext.Provider>
           </div>
         </main>
       </div>
