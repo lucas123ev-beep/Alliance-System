@@ -5272,7 +5272,7 @@ function FreightAgentForm({ initial, onSave, onClose }) {
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
       <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: "8px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={() => onSave(f)}>Save</Btn>
+        <Btn onClick={async () => { await onSave(f); onClose(); }}>Save</Btn>
       </div>
     </div>
   );
