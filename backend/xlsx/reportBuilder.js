@@ -264,7 +264,22 @@ function buildFullReportWorkbook(db, since, selectedCategories) {
   if (include("orders")) addCategorySheets(workbook, {
     label: "Orders",
     since,
-    rawRows: db.prepare(`SELECT * FROM orders WHERE created_at >= ? ORDER BY created_at DESC`).all(sinceValue),
+    // Freight Agent / Agent Cost / Freight Cost / Loading Cost are entered
+    // on the Packing List screen (they're shipment-logistics info, that's
+    // where the rest of the shipment data already lives) but are purely
+    // informational and deliberately never printed on the Packing List PDF
+    // itself — this Orders report is the only place they're meant to
+    // surface. Pulled via a correlated subquery (not a JOIN) so an order
+    // with more than one Packing List still yields exactly one order row,
+    // using its earliest Packing List.
+    rawRows: db.prepare(`
+      SELECT o.*,
+        (SELECT freight_agent FROM packing_lists WHERE order_id = o.id ORDER BY id ASC LIMIT 1) AS freight_agent,
+        (SELECT agent_cost FROM packing_lists WHERE order_id = o.id ORDER BY id ASC LIMIT 1) AS agent_cost,
+        (SELECT freight_cost FROM packing_lists WHERE order_id = o.id ORDER BY id ASC LIMIT 1) AS freight_cost,
+        (SELECT loading_cost FROM packing_lists WHERE order_id = o.id ORDER BY id ASC LIMIT 1) AS loading_cost
+      FROM orders o WHERE o.created_at >= ? ORDER BY o.created_at DESC
+    `).all(sinceValue),
     isDone: r => r.status === "Completed",
     columns: [
       { key: "order_number", header: "Order Number", width: 18 },
@@ -281,6 +296,10 @@ function buildFullReportWorkbook(db, since, selectedCategories) {
       { key: "incoterm", header: "Incoterm", width: 12 },
       { key: "container", header: "Container", width: 16 },
       { key: "container_qty", header: "Container Qty", width: 12, type: "number" },
+      { key: "freight_agent", header: "Freight Agent", width: 22 },
+      { key: "agent_cost", header: "Agent Cost", width: 14, type: "money" },
+      { key: "freight_cost", header: "Freight Cost", width: 14, type: "money" },
+      { key: "loading_cost", header: "Loading Cost", width: 14, type: "money" },
       { key: "created_at", header: "Created At", width: 14, type: "date" },
     ],
     mapRow: r => ({
@@ -290,6 +309,8 @@ function buildFullReportWorkbook(db, since, selectedCategories) {
       production_lead_time: toNumber(r.production_lead_time), delivery_days: toNumber(r.delivery_days),
       shipment_date: toExcelDate(r.shipment_date), arrival_date: toExcelDate(r.arrival_date),
       incoterm: r.incoterm, container: r.container, container_qty: toNumber(r.container_qty),
+      freight_agent: r.freight_agent || "", agent_cost: toNumber(r.agent_cost),
+      freight_cost: toNumber(r.freight_cost), loading_cost: toNumber(r.loading_cost),
       created_at: toExcelDate(r.created_at),
     }),
   });

@@ -1251,8 +1251,8 @@ function buildPackingListDraft(order, products) {
 
 // ─── FORMS ───────────────────────────────────────────────────────────────────
 
-function ProductItemModal({ onSave, onClose, initial, products }) {
-const [item, setItem] = useState(initial || { product_id: "", product_name: "", product_code: "", supplier: "", currency: "USD", cost_currency: "USD", quantity: "", unit: "unit", unit_price: "", cost_price: "", total: "" });
+function ProductItemModal({ onSave, onClose, initial, products, showTargetPrice }) {
+const [item, setItem] = useState(initial || { product_id: "", product_name: "", product_code: "", supplier: "", currency: "USD", cost_currency: "USD", quantity: "", unit: "unit", unit_price: "", cost_price: "", total: "", target_price: "", target_price_unit: "total" });
 const [search, setSearch] = useState(
   initial?.product_code && initial?.product_name
     ? `${initial.product_code} – ${initial.product_name}`
@@ -1623,6 +1623,25 @@ const handleUnitChange = (e) => {
     setItem(prev => ({ ...prev, unit_price: masked, total: qty && priceNum ? (qty * priceNum).toFixed(2) : prev.total }));
   }} placeholder="0.00" />
 </Field>
+{/* Target Price only shown for Quotation items (showTargetPrice) — lets
+    whoever's building a quotation record what the client is asking to pay
+    right when the item is added, instead of a separate edit step
+    afterwards (the Quotation list still shows/edits this too, unchanged —
+    this is purely a convenience shortcut at add-time). */}
+{showTargetPrice && (
+  <>
+    <Field label={`Target Price (${currencyLabel(item.currency || "USD")})`} half>
+      <Input type="text" inputMode="decimal" value={item.target_price ?? ""} onChange={e => {
+        setItem(prev => ({ ...prev, target_price: maskMoney(e.target.value) }));
+      }} placeholder="0.00" />
+    </Field>
+    <Field label="Target Price Basis" half>
+      <Select value={item.target_price_unit || "total"} onChange={e => setItem(prev => ({ ...prev, target_price_unit: e.target.value }))}>
+        {targetPriceUnitOptions(item).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </Select>
+    </Field>
+  </>
+)}
 {/* Total Weight only means something for goods actually priced/tracked by
     weight or volume (Chemical) or where the registered weight spec is part
     of the trade itself (Textile/DTF Film rolls) — for everything else
@@ -2551,10 +2570,30 @@ const handleSalePerLiterChange = (e) => {
 }
 
 function SampleForm({ onSave, onClose, initial }) {
-const [f, setF] = useState(initial || { code: "", product_name: "", category: "", client: "", requested_date: "", status: "Requested", notes: "" });
+const [f, setF] = useState(initial || { code: "", product_name: "", category: "", client: "", supplier: "", requested_date: "", ready_date: "", status: "Requested", notes: "" });
 const [clients, setClients] = useState([]);
 const [clientSearch, setClientSearch] = useState(initial?.client || "");
 const [showClientList, setShowClientList] = useState(false);
+const [suppliers, setSuppliers] = useState([]);
+const [supplierSearch, setSupplierSearch] = useState(initial?.supplier || "");
+const [showSupplierList, setShowSupplierList] = useState(false);
+
+// Auto-generate the next sequential Code for new sample requests — same
+// convention as Product Code/Quotation Number: highest purely-numeric code
+// already registered, +1, zero-padded to 3 digits. Never overwrites an
+// existing sample's code when editing, still fully editable afterwards.
+useEffect(() => {
+  if (initial && initial.code) return;
+  api("/samples").then(samples => {
+    const maxNum = (samples || []).reduce((max, s) => {
+      const match = String(s.code || "").trim().match(/^(\d+)$/);
+      if (!match) return max;
+      return Math.max(max, parseInt(match[1], 10));
+    }, 0);
+    const next = String(maxNum + 1).padStart(3, "0");
+    setF(p => (p.code ? p : { ...p, code: next }));
+  });
+}, []);
 const [media, setMedia] = useState(() => {
   if (!initial?.media) return [];
   let parsed = initial.media;
@@ -2580,9 +2619,10 @@ setMedia(prev => [...prev, ...validResults]);
   setUploading(false);
 };
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
-  useEffect(() => { api("/clients").then(setClients); }, []);
+  useEffect(() => { api("/clients").then(setClients); api("/suppliers").then(setSuppliers); }, []);
 
   const filteredClients = clients.filter(c => c.company_name.toLowerCase().includes(clientSearch.toLowerCase()));
+  const filteredSuppliers = suppliers.filter(s => s.company_name.toLowerCase().includes(supplierSearch.toLowerCase()));
 
   const dropdownStyle = {
     position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
@@ -2625,7 +2665,29 @@ setMedia(prev => [...prev, ...validResults]);
           )}
         </div>
       </Field>
+      <Field label="Supplier" half>
+        <div style={{ position: "relative" }}>
+          <Input value={supplierSearch}
+            onChange={e => { setSupplierSearch(e.target.value); setF(p => ({ ...p, supplier: e.target.value })); setShowSupplierList(true); }}
+            onFocus={() => setShowSupplierList(true)}
+            onBlur={() => setTimeout(() => setShowSupplierList(false), 200)}
+            placeholder="Search supplier…" />
+          {showSupplierList && filteredSuppliers.length > 0 && (
+            <div style={dropdownStyle}>
+              {filteredSuppliers.map(s => (
+                <div key={s.id} style={dropItemStyle}
+                  onMouseDown={() => { setSupplierSearch(s.company_name); setF(p => ({ ...p, supplier: s.company_name })); setShowSupplierList(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  {s.company_name}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Field>
       <Field label="Requested Date" half><Input type="date" value={f.requested_date} onChange={set("requested_date")} /></Field>
+      <Field label="Ready Date" half><Input type="date" value={f.ready_date || ""} onChange={set("ready_date")} /></Field>
       <Field label="Sent Date" half><Input type="date" value={f.sent_date || ""} onChange={set("sent_date")} /></Field>
       <Field label="Status" half>
         <Select value={f.status} onChange={set("status")}>
@@ -3132,6 +3194,25 @@ function QuotationForm({ onSave, onClose, initial }) {
     api("/products").then(setProducts);
   }, []);
 
+  // Auto-generate the next sequential Quotation Number for new quotations —
+  // same convention as Product Code (ProductForm): look at every purely-
+  // numeric number already registered, take the highest, add one, zero-pad
+  // to 3 digits. Never overwrites an existing quotation's number when
+  // editing, and still fully editable afterwards (e.g. to the client's own
+  // compound reference format) same as Product Code is.
+  useEffect(() => {
+    if (initial && initial.number) return;
+    api("/quotations").then(quotations => {
+      const maxNum = (quotations || []).reduce((max, q) => {
+        const match = String(q.number || "").trim().match(/^(\d+)$/);
+        if (!match) return max;
+        return Math.max(max, parseInt(match[1], 10));
+      }, 0);
+      const next = String(maxNum + 1).padStart(3, "0");
+      setF(p => (p.number ? p : { ...p, number: next }));
+    });
+  }, []);
+
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const itemsTotal = items.reduce((sum, i) => sum + (parseLocaleNumber(i.total) || 0), 0);
 const [initialLoad, setInitialLoad] = useState(true);
@@ -3172,6 +3253,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
         <ProductItemModal
           products={products}
           initial={editingItemIdx !== null ? items[editingItemIdx] : null}
+          showTargetPrice
           onSave={(item) => {
             if (editingItemIdx !== null) { updateItem(editingItemIdx, item); setEditingItemIdx(null); }
             else addItem(item);
@@ -3700,6 +3782,16 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
   });
   const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }));
 
+  // Freight Agent — same searchable "type or pick from the registered list"
+  // pattern used for Client/Supplier elsewhere in the app. Just a text
+  // snapshot on the packing list (like orders.supplier), not a foreign key,
+  // so it still reads correctly even if the agent record changes later.
+  const [freightAgents, setFreightAgents] = useState([]);
+  const [agentSearch, setAgentSearch] = useState(initial.freight_agent || "");
+  const [showAgentList, setShowAgentList] = useState(false);
+  useEffect(() => { api("/freight-agents").then(setFreightAgents); }, []);
+  const filteredAgents = freightAgents.filter(a => a.company_name.toLowerCase().includes(agentSearch.toLowerCase()));
+
   const applyTotals = (prev, items) => {
     const totals = items.reduce((acc, i) => ({
       totalLength: acc.totalLength + (parseFloat(i.totalLength) || 0),
@@ -3864,6 +3956,51 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
       <Field label="Port of Destination" half><Input value={f.port_of_destination} onChange={set("port_of_destination")} /></Field>
       <Field label="Manufacturer" half><Input value={f.manufacturer} onChange={set("manufacturer")} /></Field>
       <Field label="Manufacturer Address" half><Input value={f.manufacturer_address} onChange={set("manufacturer_address")} /></Field>
+
+      {/* Freight Agent + costs — informational only, never printed on this
+          document's own PDF (see server.js's renderPackingList call); they
+          only ever surface back on the Order's own report. */}
+      <Field label="Freight Agent" half>
+        <div style={{ position: "relative" }}>
+          <Input
+            value={agentSearch}
+            onChange={e => { setAgentSearch(e.target.value); setF(p => ({ ...p, freight_agent: e.target.value })); setShowAgentList(true); }}
+            onFocus={() => setShowAgentList(true)}
+            onBlur={() => setTimeout(() => setShowAgentList(false), 200)}
+            placeholder="Search or type freight agent…"
+          />
+          {showAgentList && filteredAgents.length > 0 && (
+            <div style={{
+              position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+              background: "#1e293b", border: "1px solid #334155", borderRadius: "8px",
+              maxHeight: "180px", overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+            }}>
+              {filteredAgents.map(a => (
+                <div key={a.id} style={{ padding: "10px 12px", cursor: "pointer", fontSize: "13px", color: "#cbd5e1", borderBottom: "1px solid #0f172a" }}
+                  onMouseDown={() => { setAgentSearch(a.company_name); setF(p => ({ ...p, freight_agent: a.company_name })); setShowAgentList(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  {a.company_name}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Field>
+      {/* Plain number inputs (not the BR-masked money fields used elsewhere
+          in the app) — matches how every other cost/weight figure already
+          on this specific form (Gross/Net Weight, CBM) is entered, and
+          avoids sending a comma-formatted display string somewhere that
+          only ever expects a clean parseable number. */}
+      <Field label="Agent Cost" half>
+        <Input type="number" value={f.agent_cost || ""} onChange={set("agent_cost")} placeholder="0.00" />
+      </Field>
+      <Field label="Freight Cost" half>
+        <Input type="number" value={f.freight_cost || ""} onChange={set("freight_cost")} placeholder="0.00" />
+      </Field>
+      <Field label="Loading Cost" half>
+        <Input type="number" value={f.loading_cost || ""} onChange={set("loading_cost")} placeholder="0.00" />
+      </Field>
 
       {!isMultiContainer && containers.length === 1 && (
         // Single container: still worth capturing its code (shows at the top
@@ -4449,7 +4586,9 @@ function Samples() {
   { label: "Category", key: "category" },
   { label: "Product", sortValue: r => r.product_name, render: r => <span style={{ fontWeight: 600 }}>{r.product_name}</span> },
   { label: "Client", key: "client" },
+  { label: "Supplier", key: "supplier" },
   { label: "Requested", sortValue: r => r.requested_date, render: r => fmtDate(r.requested_date) },
+  { label: "Ready", sortValue: r => r.ready_date, render: r => fmtDate(r.ready_date) },
   { label: "Sent", sortValue: r => r.sent_date, render: r => fmtDate(r.sent_date) },
 { label: "Status", sortValue: r => r.status, render: r => (
   <select value={r.status}
@@ -5117,6 +5256,78 @@ function Suppliers() {
   );
 }
 
+// Freight forwarding agents — a lean registry (see the matching comment on
+// the freight_agents table in database.js). No address/bank fields like
+// Clients/Suppliers get; just enough to identify who to contact, plus a
+// searchable picker used on the Packing List screen.
+function FreightAgentForm({ initial, onSave, onClose }) {
+  const [f, setF] = useState(initial || { company_name: "", contact_name: "", email: "", phone: "", notes: "" });
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+      <Field label="Company Name"><Input value={f.company_name} onChange={set("company_name")} /></Field>
+      <Field label="Contact Name" half><Input value={f.contact_name} onChange={set("contact_name")} /></Field>
+      <Field label="Email" half><Input type="email" value={f.email} onChange={set("email")} /></Field>
+      <Field label="Phone" half><Input value={f.phone} onChange={e => setF(p => ({ ...p, phone: maskPhone(e.target.value) }))} placeholder="(00) 00000-0000" /></Field>
+      <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
+      <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+        <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={() => onSave(f)}>Save</Btn>
+      </div>
+    </div>
+  );
+}
+
+function FreightAgents() {
+  const [agents, setAgents] = useState([]);
+  const [modal, setModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [search, setSearch] = useState("");
+  const load = useCallback(() => api("/freight-agents").then(setAgents), []);
+  useEffect(() => { load(); }, [load]);
+  const filtered = agents.filter(a =>
+    a.company_name.toLowerCase().includes(search.toLowerCase()) ||
+    (a.contact_name || "").toLowerCase().includes(search.toLowerCase())
+  );
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Freight Agents</h2>
+        <Btn color="#0ea5e9" onClick={() => setModal(true)}>+ New Freight Agent</Btn>
+      </div>
+      <Input value={search} onChange={e => setSearch(e.target.value)}
+        placeholder="Search by company or contact…" style={{ ...inputStyle, marginBottom: "16px" }} />
+      {modal && (
+        <Modal title="New Freight Agent" onClose={() => setModal(false)}>
+          <FreightAgentForm onSave={b => api("/freight-agents", "POST", b).then(load)} onClose={() => setModal(false)} />
+        </Modal>
+      )}
+      {editing && (
+        <Modal title="Edit Freight Agent" onClose={() => setEditing(null)}>
+          <FreightAgentForm initial={editing} onSave={b => api(`/freight-agents/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
+        </Modal>
+      )}
+      <Table
+        cols={[
+          { label: "Company", sortValue: r => r.company_name, render: r => <span style={{ fontWeight: 600, color: "#0ea5e9" }}>{r.company_name}</span> },
+          { label: "Contact", key: "contact_name" },
+          { label: "Email", key: "email" },
+          { label: "Phone", key: "phone" },
+          { label: "Notes", key: "notes" },
+          { label: "Actions", render: r => (
+            <div style={{ display: "flex", gap: "6px" }}>
+              <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
+              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/freight-agents/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              <LastModifiedBy name={r.updated_by} />
+            </div>
+          )},
+        ]}
+        rows={filtered}
+      />
+    </div>
+  );
+}
+
 function CommercialInvoices() {
   const [invoices, setInvoices] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -5593,6 +5804,7 @@ const TABS = [
   { id: "products", label: "Products", icon: "🗂" },
   { id: "clients", label: "Clients", icon: "🏢" },
   { id: "suppliers", label: "Suppliers", icon: "🏭" },
+  { id: "freight-agents", label: "Freight Agents", icon: "🚢" },
   { id: "reports", label: "Reports", icon: "📊" },
 ];
 
@@ -5819,6 +6031,7 @@ const renderTab = () => {
       case "orders": return <Orders />;
       case "clients": return <Clients />;
       case "suppliers": return <Suppliers />;
+      case "freight-agents": return <FreightAgents />;
       case "products": return <Products />;
       case "samples": return <Samples />;
       case "quotations": return <Quotations />;

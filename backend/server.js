@@ -272,20 +272,20 @@ app.get('/api/samples', (req, res) => {
 });
 
 app.post('/api/samples', (req, res) => {
-  const { code, product_id, product_name, category, client, requested_date, sent_date, feedback_date, status, notes } = req.body;
+  const { code, product_id, product_name, category, client, supplier, requested_date, ready_date, sent_date, feedback_date, status, notes, media } = req.body;
   const result = db.prepare(`
-    INSERT INTO samples (code, product_id, product_name, category, client, requested_date, sent_date, feedback_date, status, notes, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(code || '', product_id || null, product_name, category || '', client, requested_date, sent_date, feedback_date, status || 'Requested', notes, actorName(req));
+    INSERT INTO samples (code, product_id, product_name, category, client, supplier, requested_date, ready_date, sent_date, feedback_date, status, notes, media, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(code || '', product_id || null, product_name, category || '', client, supplier || '', requested_date, ready_date || null, sent_date, feedback_date, status || 'Requested', notes, media || null, actorName(req));
   res.status(201).json(db.prepare('SELECT * FROM samples WHERE id=?').get(result.lastInsertRowid));
 });
 
 app.put('/api/samples/:id', (req, res) => {
-  const { code, product_name, category, client, requested_date, sent_date, status, notes, media } = req.body;
+  const { code, product_name, category, client, supplier, requested_date, ready_date, sent_date, status, notes, media } = req.body;
   db.prepare(`
-UPDATE samples SET code=?, product_name=?, category=?, client=?, requested_date=?, sent_date=?, status=?, notes=?, media=?, updated_by=?
+UPDATE samples SET code=?, product_name=?, category=?, client=?, supplier=?, requested_date=?, ready_date=?, sent_date=?, status=?, notes=?, media=?, updated_by=?
 WHERE id=?
-`).run(code || '', product_name, category || '', client, requested_date, sent_date, status, notes, media || null, actorName(req), req.params.id);
+`).run(code || '', product_name, category || '', client, supplier || '', requested_date, ready_date || null, sent_date, status, notes, media || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM samples WHERE id=?').get(req.params.id));
 });
 
@@ -569,16 +569,22 @@ app.get('/api/packing-lists/:id', (req, res) => {
 app.post('/api/packing-lists', (req, res) => {
   const { order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
     port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
-    total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date } = req.body;
+    total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date,
+    // Freight forwarding info — informational only, never printed on the
+    // Packing List PDF itself (renderPackingList/packingList.js never
+    // receives these), only ever surfaced on the Order's own report.
+    freight_agent, agent_cost, freight_cost, loading_cost } = req.body;
   try {
     const result = db.prepare(`
       INSERT INTO packing_lists (order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
         port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
-        total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date,
+        freight_agent, agent_cost, freight_cost, loading_cost, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, number, date, way_of_shipment || 'By Sea', country_of_origin || 'China', country_of_acquisition || '',
       port_of_origin || '', port_of_destination || '', incoterm || '', manufacturer || '', manufacturer_address || '', items_json || null,
-      total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null, actorName(req));
+      total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null,
+      freight_agent || '', agent_cost || null, freight_cost || null, loading_cost || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -588,15 +594,18 @@ app.post('/api/packing-lists', (req, res) => {
 app.put('/api/packing-lists/:id', (req, res) => {
   const { order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
     port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
-    total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date } = req.body;
+    total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date,
+    freight_agent, agent_cost, freight_cost, loading_cost } = req.body;
   db.prepare(`
     UPDATE packing_lists SET order_id=?, number=?, date=?, way_of_shipment=?, country_of_origin=?, country_of_acquisition=?,
       port_of_origin=?, port_of_destination=?, incoterm=?, manufacturer=?, manufacturer_address=?, items_json=?,
-      total_length=?, total_roll=?, total_gross_weight=?, total_net_weight=?, total_cbm=?, status=?, notes=?, containers_json=?, loading_date=?, updated_by=?
+      total_length=?, total_roll=?, total_gross_weight=?, total_net_weight=?, total_cbm=?, status=?, notes=?, containers_json=?, loading_date=?,
+      freight_agent=?, agent_cost=?, freight_cost=?, loading_cost=?, updated_by=?
     WHERE id=?
   `).run(order_id || null, number, date, way_of_shipment || 'By Sea', country_of_origin || 'China', country_of_acquisition || '',
     port_of_origin || '', port_of_destination || '', incoterm || '', manufacturer || '', manufacturer_address || '', items_json || null,
-    total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null, actorName(req), req.params.id);
+    total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null,
+    freight_agent || '', agent_cost || null, freight_cost || null, loading_cost || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(req.params.id));
 });
 
@@ -877,6 +886,39 @@ app.put('/api/suppliers/:id', (req, res) => {
 
 app.delete('/api/suppliers/:id', (req, res) => {
   db.prepare('DELETE FROM suppliers WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── FREIGHT AGENTS ───────────────────────────────────────────────────────────
+
+app.get('/api/freight-agents', (req, res) => {
+  res.json(db.prepare('SELECT * FROM freight_agents ORDER BY id ASC').all());
+});
+
+app.post('/api/freight-agents', (req, res) => {
+  const { company_name, contact_name, email, phone, notes } = req.body;
+  try {
+    const result = db.prepare(`
+      INSERT INTO freight_agents (company_name, contact_name, email, phone, notes, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(company_name, contact_name || '', email || '', phone || '', notes || '', actorName(req));
+    res.status(201).json(db.prepare('SELECT * FROM freight_agents WHERE id=?').get(result.lastInsertRowid));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/freight-agents/:id', (req, res) => {
+  const { company_name, contact_name, email, phone, notes } = req.body;
+  db.prepare(`
+    UPDATE freight_agents SET company_name=?, contact_name=?, email=?, phone=?, notes=?, updated_by=?
+    WHERE id=?
+  `).run(company_name, contact_name || '', email || '', phone || '', notes || '', actorName(req), req.params.id);
+  res.json(db.prepare('SELECT * FROM freight_agents WHERE id=?').get(req.params.id));
+});
+
+app.delete('/api/freight-agents/:id', (req, res) => {
+  db.prepare('DELETE FROM freight_agents WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 

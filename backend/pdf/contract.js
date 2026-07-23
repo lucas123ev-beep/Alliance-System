@@ -64,13 +64,13 @@ function renderContract(params) {
       <div>合同日期 / Contract Date: <strong>${escapeHtml(signDate)}</strong></div>
       <div>合同编号 / Contract No.: <strong>${escapeHtml(contractNumber)}</strong></div>
     </div>
-    <p style="font-size:9.5px; color:#444;">根据《中华人民共和国合同法》及相关法律规定买卖双方本着平等互利的原则，自愿签订以下合约，供双方共同履行。</p>
+    <p style="font-size:9.5px; color:#444;">根据《中华人民共和国合同法》及相关法律规定买卖双方本着平等互利的原则，自愿签订以下合约，供双方共同履行。<br/>In accordance with the Contract Law of the People's Republic of China and relevant laws and regulations, both parties hereby enter into this contract on the basis of equality and mutual benefit, to be jointly performed by both parties.</p>
     <p style="font-weight:bold; margin-bottom:4px;">1. 产品规格及要求 / Product Specifications</p>
     <table class="items-table">
       <thead>
         <tr>
-          <th>项目</th><th>品名</th><th>颜色</th><th>编号</th><th>厚度</th><th>有效门幅</th>
-          <th>高度 Height</th><th>克重 Gramatura</th><th>数量 Quantity</th><th>含税单价 Unit Price</th><th>金额</th>
+          <th>项目 No.</th><th>品名 Product Name</th><th>颜色 Color</th><th>编号 Code</th><th>厚度 Thickness</th><th>有效门幅 Width</th>
+          <th>高度 Height</th><th>克重 Weight</th><th>数量 Quantity</th><th>含税单价 Unit Price</th><th>金额 Amount</th>
         </tr>
       </thead>
       <tbody>
@@ -92,7 +92,7 @@ function renderContract(params) {
         <div class="role">买方 / Buyer: ${escapeHtml(acq.chineseName || acq.name)}</div>
         <div>帐号 / Account: ${escapeHtml(acq.bank.account)}</div>
         <div>开户 / Bank: ${escapeHtml(acq.bank.bankName)}</div>
-        <div class="sign-line">签名 / 公司盖章 &nbsp;&nbsp;&nbsp;&nbsp; 日期:</div>
+        <div class="sign-line">签名 / 公司盖章 Signature / Company Seal &nbsp;&nbsp;&nbsp;&nbsp; 日期 Date:</div>
       </div>
       <div class="party">
         <div class="role">卖方 / Seller: ${escapeHtml(supplier.name)}</div>
@@ -101,7 +101,7 @@ function renderContract(params) {
         ${supplier.bankBranch ? `<div>行号 / Bank Code: ${escapeHtml(supplier.bankBranch)}</div>` : ""}
         ${supplier.contactName ? `<div>联系人 / Attn: ${escapeHtml(supplier.contactName)}</div>` : ""}
         ${supplier.phone ? `<div>电话 / Tel: ${escapeHtml(supplier.phone)}</div>` : ""}
-        <div class="sign-line">签名 / 公司盖章 &nbsp;&nbsp;&nbsp;&nbsp; 日期:</div>
+        <div class="sign-line">签名 / 公司盖章 Signature / Company Seal &nbsp;&nbsp;&nbsp;&nbsp; 日期 Date:</div>
       </div>
     </div>
   `;

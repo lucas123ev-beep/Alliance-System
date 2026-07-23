@@ -292,6 +292,20 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- Freight forwarding agents — a lean registry (just who to contact, not a
+  -- full CRM record like Clients/Suppliers) since the only other place they
+  -- get used is a searchable picker on the Packing List screen.
+  CREATE TABLE IF NOT EXISTS freight_agents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_name TEXT NOT NULL,
+    contact_name TEXT,
+    email TEXT,
+    phone TEXT,
+    notes TEXT,
+    updated_by TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   -- Real per-person accounts, replacing the old single shared frontend
   -- password. One row per team member; password_hash is a bcrypt hash,
   -- never the plain password.
@@ -532,6 +546,20 @@ const migrations = [
   // right (the mistake that started this — an item shipped in boxes was
   // getting the box type printed as its Unit column instead of "Pair").
   ['products', 'selling_unit', 'TEXT'],
+  // Freight forwarding info entered on the Packing List screen — purely
+  // informational (never printed on the Packing List PDF itself), only
+  // ever surfaced back on the Order's own report. freight_agent stores the
+  // agent's company_name (same pattern as orders.supplier — a plain text
+  // snapshot, not a foreign key, so it keeps reading correctly even if the
+  // Freight Agent record is edited/deleted later).
+  ['packing_lists', 'freight_agent', "TEXT DEFAULT ''"],
+  ['packing_lists', 'agent_cost', 'REAL'],
+  ['packing_lists', 'freight_cost', 'REAL'],
+  ['packing_lists', 'loading_cost', 'REAL'],
+  // Which supplier a sample request went to, and when it's expected to be
+  // ready — neither existed before, so Samples had no way to track either.
+  ['samples', 'supplier', "TEXT DEFAULT ''"],
+  ['samples', 'ready_date', 'TEXT'],
 ];
 
 for (const [table, column, definition] of migrations) {
