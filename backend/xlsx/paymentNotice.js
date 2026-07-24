@@ -12,6 +12,11 @@ const { fmtDateShort, currencyLabel } = require("../pdf/helpers");
 // every generated workbook in the app reads as the same document family.
 const HEADER_RULE = { style: "medium", color: { argb: "FF000000" } };
 const LABEL_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF7F7F7" } };
+// Heavier rule used only for the outer edge of the Payer→Purpose block —
+// matches the thick outline the client added by hand to their own copy of
+// this file when asking for this styling.
+const THICK_RULE = { style: "thick", color: { argb: "FF000000" } };
+const THIN_SEP = { style: "thin", color: { argb: "FFCCCCCC" } };
 
 function buildPaymentNoticeWorkbook(params) {
   const {
@@ -43,11 +48,16 @@ function buildPaymentNoticeWorkbook(params) {
 
   // Payer sits on its own bold row right under the letterhead, matching the
   // old PDF's layout (payer identity is the first thing read on the form).
+  // This whole block (Payer through Payment Purpose) reads as one grouped
+  // card — value column centered, thick outer border around the perimeter
+  // — per the client's own hand-styled example.
   const payerRow = sheet.addRow(["付款单位 Payer", payer || ""]);
   payerRow.getCell(1).font = { bold: true };
   payerRow.getCell(2).font = { bold: true };
+  payerRow.getCell(2).alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  payerRow.eachCell(c => { c.border = { bottom: THIN_SEP }; });
 
-  // Every other field: bold shaded label cell in column A, plain value in
+  // Every other field: bold shaded label cell in column A, centered value in
   // column B — reads like the PDF's two-column table without needing an
   // actual bordered table for a one-record form.
   const addField = (label, value, { numFmt, dateValue } = {}) => {
@@ -57,9 +67,9 @@ function buildPaymentNoticeWorkbook(params) {
     labelCell.fill = LABEL_FILL;
     labelCell.alignment = { vertical: "middle", wrapText: true };
     const valueCell = row.getCell(2);
-    valueCell.alignment = { vertical: "middle", wrapText: true };
+    valueCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
     if (numFmt) valueCell.numFmt = numFmt;
-    row.eachCell(c => { c.border = { bottom: { style: "thin", color: { argb: "FFCCCCCC" } } }; });
+    row.eachCell(c => { c.border = { bottom: THIN_SEP }; });
     return row;
   };
 
@@ -82,7 +92,26 @@ function buildPaymentNoticeWorkbook(params) {
   addField(`金额 Amount (${currencyLabel(currency) || ""})`, Number.isFinite(amountNum) ? amountNum : "—", {
     numFmt: Number.isFinite(amountNum) ? "#,##0.00" : undefined,
   });
-  addField("支付目的及摘要 Payment Purpose / Description", purpose || "—");
+  const purposeRow = addField("支付目的及摘要 Payment Purpose / Description", purpose || "—");
+
+  // Thick outer border around the whole Payer→Purpose block — internal
+  // thin separators between fields (set above) stay untouched; this only
+  // overrides the four outside edges.
+  for (let r = payerRow.number; r <= purposeRow.number; r++) {
+    const row = sheet.getRow(r);
+    const leftCell = row.getCell(1);
+    const rightCell = row.getCell(2);
+    leftCell.border = { ...leftCell.border, left: THICK_RULE };
+    rightCell.border = { ...rightCell.border, right: THICK_RULE };
+    if (r === payerRow.number) {
+      leftCell.border = { ...leftCell.border, top: THICK_RULE };
+      rightCell.border = { ...rightCell.border, top: THICK_RULE };
+    }
+    if (r === purposeRow.number) {
+      leftCell.border = { ...leftCell.border, bottom: THICK_RULE };
+      rightCell.border = { ...rightCell.border, bottom: THICK_RULE };
+    }
+  }
 
   sheet.addRow([]); // spacer before the approval block
 

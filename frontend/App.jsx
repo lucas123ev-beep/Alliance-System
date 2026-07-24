@@ -3526,7 +3526,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
     order_id: "", [isClient ? "client" : "supplier"]: "", description: "",
     type: isClient ? "Invoice" : "Purchase Order",
     amount: "", currency: "USD", due_date: "", status: "Pending", notes: "",
-    payer: "", payment_method: "Online bank payment", applicant: "", approved_by: "",
+    payment_method: "Online bank payment", applicant: "", approved_by: "",
     payment_schedule: "100", paid_amount: "",
   });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
@@ -3537,7 +3537,15 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Linked Order" half>
-        <Select value={f.order_id} onChange={set("order_id")}>
+        <Select value={f.order_id} onChange={e => {
+          const orderId = e.target.value;
+          // Currency always matches the linked Order's own registered
+          // currency — no separate manual dropdown here anymore, so there's
+          // no way for this record to end up in a different currency than
+          // the deal it's actually part of.
+          const linkedOrder = orders.find(o => String(o.id) === String(orderId));
+          setF(p => ({ ...p, order_id: orderId, currency: linkedOrder?.currency || p.currency }));
+        }}>
           <option value="">None</option>
           {orders.map(o => <option key={o.id} value={o.id}>{o.order_number} – {o.client}</option>)}
         </Select>
@@ -3551,11 +3559,6 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
         </Select>
       </Field>
       <Field label="Amount" half><Input type="text" inputMode="decimal" value={f.amount} onChange={e => setF(p => ({ ...p, amount: maskMoney(e.target.value) }))} /></Field>
-      <Field label="Currency" half>
-        <Select value={f.currency} onChange={set("currency")}>
-          <option>USD</option><option>EUR</option><option>BRL</option><option value="CNY">RMB</option><option value="HKD">HKD</option>
-        </Select>
-      </Field>
       <Field label="Due Date" half><Input type="date" value={f.due_date} onChange={set("due_date")} /></Field>
       {/* Only meaningful with status "Partial" — how much of Amount has
           actually been paid so far, so the Cash Flow Pending/Paid summary
@@ -3574,13 +3577,8 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
           <div style={{ gridColumn: "span 2", marginTop: "4px", marginBottom: "-4px", fontSize: "12px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             {t("Payment Notice")}
           </div>
-          <Field label="Payer" half>
-            <Select value={f.payer} onChange={set("payer")}>
-              <option value="">Select...</option>
-              <option value="HONG KONG ALLIANCE GLOBAL TRADING CO., LTD">HONG KONG ALLIANCE GLOBAL TRADING CO., LTD</option>
-              <option value="NINGBO WORLD ALLIANCE TRADING. CO. LTD.">NINGBO WORLD ALLIANCE TRADING. CO. LTD.</option>
-            </Select>
-          </Field>
+          {/* No Payer field — supplier payments always run through Ningbo
+              now (see NINGBO_ACQ in server.js), so there's nothing to pick. */}
           <Field label="Payment Method" half>
             <Select value={f.payment_method} onChange={set("payment_method")}>
               <option value="Online bank payment">Online bank payment</option>
