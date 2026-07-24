@@ -326,6 +326,18 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- Generic key/value store — currently only holds the last successfully
+  -- fetched currency exchange rate snapshot (key 'fx_rates'), so that if
+  -- the live rate provider is briefly unreachable, or the server just
+  -- restarted, Cost/Sale Price currency conversion (Products screen's
+  -- real-margin calculation) still has *some* recent rate to fall back on
+  -- instead of failing outright. See getFxRates() in server.js.
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
   -- Real per-person accounts, replacing the old single shared frontend
   -- password. One row per team member; password_hash is a bcrypt hash,
   -- never the plain password.

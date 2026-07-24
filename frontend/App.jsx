@@ -412,6 +412,12 @@ const TRANSLATIONS = {
     "Trade Name": "商用名称",
     "English name, e.g. for Chinese suppliers": "英文名称，例如中国供应商的英文名",
     "Excel": "Excel",
+    "Real Margin": "实际利润率",
+    "Loss": "亏损",
+    "Loading exchange rate...": "正在加载汇率...",
+    "Could not load exchange rate.": "无法加载汇率。",
+    "Rate date": "汇率日期",
+    "cached": "缓存",
   },
 };
 const LanguageContext = createContext({ lang: "en", setLang: () => {} });
@@ -2711,6 +2717,17 @@ const [f, setF] = useState(initial || {
 const [uploading, setUploading] = useState(false);
 const [lightbox, setLightbox] = useState(null);
 const [showPriceHistory, setShowPriceHistory] = useState(false);
+// Live exchange rates (USD base) — used only to convert Cost Price into
+// Sale Price's currency so the Real Margin indicator below is accurate
+// even when a product is bought in RMB and sold in USD (or any other
+// currency mismatch). Fetched once per form open; the backend itself
+// caches the upstream rate for 24h, so this is cheap to call every time.
+const [fx, setFx] = useState(null);
+const [fxError, setFxError] = useState(false);
+
+useEffect(() => {
+  api("/exchange-rates").then(setFx).catch(() => setFxError(true));
+}, []);
 
 const handleUpload = async (e) => {
   const files = Array.from(e.target.files);
@@ -2902,6 +2919,27 @@ const handleSalePerLiterChange = (e) => {
     padding: "10px 12px", cursor: "pointer", fontSize: "13px", color: "#cbd5e1",
     borderBottom: "1px solid #0f172a",
   };
+
+  // Real profit margin, converting Cost Price into Sale Price's currency
+  // via the live exchange rate first — comparing the two raw numbers
+  // directly (e.g. RMB 368.15 cost vs USD 119.4 sale) is meaningless and
+  // used to require doing this conversion by hand. Same-currency products
+  // skip the rate lookup entirely and are always calculable.
+  const costNum = parseLocaleNumber(f.unit_cost) || 0;
+  const saleNum = parseLocaleNumber(f.sale_price) || 0;
+  const costCur = f.cost_currency || "USD";
+  const saleCur = f.sale_currency || "USD";
+  let costInSaleCur = null;
+  if (costNum > 0) {
+    if (costCur === saleCur) {
+      costInSaleCur = costNum;
+    } else if (fx?.rates?.[costCur] && fx?.rates?.[saleCur]) {
+      costInSaleCur = (costNum / fx.rates[costCur]) * fx.rates[saleCur];
+    }
+  }
+  const realMarginPct = (costInSaleCur != null && costInSaleCur > 0 && saleNum > 0)
+    ? ((saleNum - costInSaleCur) / costInSaleCur) * 100
+    : null;
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
@@ -3167,6 +3205,33 @@ const handleSalePerLiterChange = (e) => {
     </Field>
   </div>
 </div>
+
+{costNum > 0 && saleNum > 0 && (
+  <div style={{
+    gridColumn: "span 2", background: "#1e293b",
+    border: `1px solid ${realMarginPct == null ? "#334155" : realMarginPct < 0 ? "#ef4444" : "#10b981"}`,
+    borderRadius: "10px", padding: "14px 18px", display: "flex", alignItems: "center",
+    justifyContent: "space-between", flexWrap: "wrap", gap: "8px",
+  }}>
+    <div>
+      <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("Real Margin")}</div>
+      <div style={{ fontSize: "22px", fontWeight: 700, color: realMarginPct == null ? "#94a3b8" : realMarginPct < 0 ? "#ef4444" : "#10b981" }}>
+        {realMarginPct == null
+          ? (costCur === saleCur ? "—" : (fxError ? "—" : t("Loading exchange rate...")))
+          : `${realMarginPct > 0 ? "+" : ""}${realMarginPct.toFixed(1)}%`}
+        {realMarginPct != null && realMarginPct < 0 && <span style={{ fontSize: "13px", marginLeft: "8px" }}>⚠️ {t("Loss")}</span>}
+      </div>
+    </div>
+    {costCur !== saleCur && (
+      <div style={{ fontSize: "11px", color: "#64748b", textAlign: "right" }}>
+        {costInSaleCur != null
+          ? <div>{currencyLabel(costCur)} {costNum.toFixed(2)} ≈ {currencyLabel(saleCur)} {costInSaleCur.toFixed(2)}</div>
+          : <div>{fxError ? t("Could not load exchange rate.") : t("Loading exchange rate...")}</div>}
+        {fx?.date && <div>{t("Rate date")}: {fx.date}{fx.stale ? ` (${t("cached")})` : ""}</div>}
+      </div>
+    )}
+  </div>
+)}
 
       <Field label="Description"><Textarea value={f.description} onChange={set("description")} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>

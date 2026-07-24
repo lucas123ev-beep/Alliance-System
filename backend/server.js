@@ -308,6 +308,60 @@ WHERE id=?
   res.json(updated);
 });
 
+// ─── EXCHANGE RATES ──────────────────────────────────────────────────────────
+// Powers the Products screen's live "Real Margin" indicator: Cost and Sale
+// Price can be registered in different currencies (RMB from a Chinese
+// supplier vs. USD quoted to the client), so comparing the two raw numbers
+// directly is meaningless — a healthy margin can look like a huge loss and
+// vice versa unless one side is converted through a real exchange rate.
+// Frankfurter (ECB reference rates, api.frankfurter.app) needs no API key
+// and updates once a day on banking days — plenty for this use case, so
+// results are cached here for 24h instead of hitting it on every request.
+const FX_CURRENCIES = ['CNY', 'EUR', 'BRL', 'GBP', 'JPY', 'HKD'];
+let fxCache = { date: null, rates: null };
+
+async function getFxRates() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (fxCache.date === today && fxCache.rates) {
+    return { rates: fxCache.rates, date: fxCache.date, stale: false };
+  }
+  try {
+    const resp = await fetch(`https://api.frankfurter.app/latest?from=USD&to=${FX_CURRENCIES.join(',')}`);
+    if (!resp.ok) throw new Error(`Frankfurter responded ${resp.status}`);
+    const data = await resp.json();
+    const rates = { USD: 1, ...data.rates };
+    fxCache = { date: today, rates };
+    db.prepare(`
+      INSERT INTO app_settings (key, value, updated_at) VALUES ('fx_rates', ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')
+    `).run(JSON.stringify({ date: today, rates }));
+    return { rates, date: today, stale: false };
+  } catch (err) {
+    console.error('Exchange rate fetch failed, falling back to last known rates:', err.message);
+    // Live provider unreachable (or Render's outbound network hiccuped) —
+    // fall back to whatever we last saw this boot, then to the last
+    // snapshot persisted to app_settings (survives a restart), rather than
+    // breaking the margin calculation entirely.
+    if (fxCache.rates) return { rates: fxCache.rates, date: fxCache.date, stale: true };
+    const saved = db.prepare(`SELECT value FROM app_settings WHERE key='fx_rates'`).get();
+    if (saved) {
+      const parsed = JSON.parse(saved.value);
+      fxCache = { date: parsed.date, rates: parsed.rates };
+      return { rates: parsed.rates, date: parsed.date, stale: true };
+    }
+    throw err;
+  }
+}
+
+app.get('/api/exchange-rates', async (req, res) => {
+  try {
+    const { rates, date, stale } = await getFxRates();
+    res.json({ base: 'USD', date, stale, rates });
+  } catch (err) {
+    res.status(502).json({ error: 'Could not fetch exchange rates', message: err.message });
+  }
+});
+
 app.delete('/api/products/:id', (req, res) => {
   db.prepare('DELETE FROM products WHERE id=?').run(req.params.id);
   res.json({ success: true });
