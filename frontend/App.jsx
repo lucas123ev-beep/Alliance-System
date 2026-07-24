@@ -326,6 +326,80 @@ const TRANSLATIONS = {
     "Couldn't update your password. Try again.": "密码更新失败，请重试。",
     "Saving…": "保存中…",
     "Set password & continue": "设置密码并继续",
+    // Dashboard
+    "Loading...": "加载中...",
+    "Client Receivables": "客户应收款",
+    "Supplier Payables": "供应商应付款",
+    "Pending Orders": "待处理订单",
+    "Pending Quotations": "待处理报价单",
+    "Pending Commercial Invoices": "待处理商业发票",
+    "Pending Inspections": "待验货",
+    "Pending Samples": "待处理样品",
+    "Pending Supplier Payments": "待付供应商款项",
+    "Active Contracts": "生效中合同",
+    // Reports screen
+    "Generates one Excel workbook. Each screen you pick below becomes two sheets — everything still open/pending first, everything already completed second — with status, key dates and values for that screen.": "生成一个 Excel 工作簿。下方勾选的每个模块会生成两个工作表 — 先是仍在处理中的，然后是已完成的 — 包含该模块的状态、关键日期和金额。",
+    "Which screens?": "选择模块",
+    "All": "全选",
+    "None": "全不选",
+    "Pick at least one screen above.": "请至少选择一个模块。",
+    "Leave the date blank to include everything on record. When set, only records created on or after that date are included, in each screen's own timeline.": "留空日期以包含所有记录。设置日期后，仅包含在该日期或之后创建的记录（按各模块自身的时间线）。",
+    // Search placeholders
+    "Search product…": "搜索产品…",
+    "Search client…": "搜索客户…",
+    "Search China ports or type any…": "搜索中国港口或输入任意港口…",
+    "Search Brazil ports or type any…": "搜索巴西港口或输入任意港口…",
+    "Search or type payment terms…": "搜索或输入付款条件…",
+    "Search supplier…": "搜索供应商…",
+    "Search by number, product, client or status…": "按编号、产品、客户或状态搜索…",
+    "Search or type freight agent…": "搜索或输入货运代理…",
+    "Search by order #, client, status or incoterm…": "按订单号、客户、状态或贸易术语搜索…",
+    "Search by name, code or category…": "按名称、编号或类别搜索…",
+    "Search by product, client or status…": "按产品、客户或状态搜索…",
+    "Search by number, client or status…": "按编号、客户或状态搜索…",
+    "Search by contract #, supplier or status…": "按合同号、供应商或状态搜索…",
+    "Search by company or contact…": "按公司或联系人搜索…",
+    "Search by company or product type…": "按公司或产品类型搜索…",
+    "Search by number, order or client…": "按编号、订单或客户搜索…",
+    "Search by number, inspector or result…": "按编号、验货员或结果搜索…",
+    // Inline pricing row (Quotation/Order item editor)
+    "Value / Meter": "单价 / 米",
+    "Value / Roll": "单价 / 卷",
+    "Value /": "单价 /",
+    "Ton": "吨",
+    "Liter": "升",
+    "Unit Price": "单价",
+    "Per Meter": "每米",
+    "Per Liter": "每升",
+    "Per Unit": "每件",
+    // Empty-state messages
+    "No records found": "暂无记录",
+    "No quotations yet.": "暂无报价单。",
+    "No orders found.": "暂无订单。",
+    "No commercial invoices yet.": "暂无商业发票。",
+    "No packing lists yet — generate one from the Commercial Invoices screen.": "暂无装箱单 — 请在商业发票页面生成。",
+    "No inspections yet.": "暂无验货记录。",
+    "Shipment Details (for PDF)": "运输详情（用于PDF）",
+    "Payment Notice": "付款通知",
+    "Commercial Invoice Generated!": "商业发票已生成！",
+    "was created for": "已创建，客户为",
+    "Order Created!": "订单已创建！",
+    "was created successfully!": "已成功创建！",
+    "Delete?": "确认删除？",
+    "⏳ Uploading...": "⏳ 上传中...",
+    "📎 Add Photos / Files": "📎 添加照片 / 文件",
+    "📎 Add Photos / Videos": "📎 添加照片 / 视频",
+    "📎 Add Photos / PDFs": "📎 添加照片 / PDF",
+    "Upload failed: ": "上传失败：",
+    "No items.": "暂无项目。",
+    "Container code, e.g. OOCU7979442": "集装箱号，例如 OOCU7979442",
+    "Length:": "长度：",
+    "Qty:": "数量：",
+    "Packages": "包装数",
+    "Gross Weight (kg)": "毛重 (kg)",
+    "Net Weight (kg)": "净重 (kg)",
+    "Informational only — not used in any calculation.": "仅供参考 — 不参与任何计算。",
+    "Adds this % on top of the Sale Price — not calculated from Cost.": "在销售价基础上加此百分比 — 不基于成本价计算。",
   },
 };
 const LanguageContext = createContext({ lang: "en", setLang: () => {} });
@@ -887,6 +961,7 @@ const targetPriceUnitSuffix = (item) => {
 // registered on the Product, and Order items may be added/edited directly
 // without ever going through a Quotation.
 function PricingRow({ item, product, currency, onChange }) {
+  const t = useT();
   const isTextile = item.category === "Textile" || item.category === "DTF Film";
   const isLiquid = item.category === "Chemical";
   const isTon = isLiquid && item.price_basis === "ton";
@@ -902,13 +977,13 @@ function PricingRow({ item, product, currency, onChange }) {
   const totalHandler = isTextile ? onPriceField("total") : isLiquid ? onLiquidField("total") : onSimpleField("total");
   return (
     <div style={{ display: "flex", gap: "12px", alignItems: "flex-end", marginTop: "8px", flexWrap: "wrap" }}>
-      <label style={{ fontSize: "11px", color: "#64748b" }}>Margin %
+      <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Margin %")}
         <input type="text" inputMode="decimal" value={item.sale_pct ?? ""} onChange={pctHandler}
           placeholder="0" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "70px" }} />
       </label>
       {isTextile ? (
         <>
-          <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Meter ({currencyLabel(currency)})
+          <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Value / Meter")} ({currencyLabel(currency)})
             <input type="text" inputMode="decimal" value={item.sale_per_meter ?? ""} onChange={onPriceField("sale_per_meter")}
               placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
           </label>
@@ -918,7 +993,7 @@ function PricingRow({ item, product, currency, onChange }) {
               without doing the math by hand. Editable in-place too: typing
               here recalculates Value/Meter and Total the same as editing
               any of the other three fields does. */}
-          <label style={{ fontSize: "11px", color: "#64748b" }}>Value / Roll ({currencyLabel(currency)})
+          <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Value / Roll")} ({currencyLabel(currency)})
             <input type="text" inputMode="decimal" value={item.unit_price ?? ""} onChange={onPriceField("unit_price")}
               placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
           </label>
@@ -929,17 +1004,17 @@ function PricingRow({ item, product, currency, onChange }) {
         // was added) — the two rates are kept in separate fields
         // (sale_per_liter / sale_per_ton) so switching a product's basis
         // later doesn't silently reinterpret an old item's registered rate.
-        <label style={{ fontSize: "11px", color: "#64748b" }}>Value / {isTon ? "Ton" : "Liter"} ({currencyLabel(currency)})
+        <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Value /")} {isTon ? t("Ton") : t("Liter")} ({currencyLabel(currency)})
           <input type="text" inputMode="decimal" value={item[rateKey] ?? ""} onChange={onLiquidField(rateKey)}
             placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
         </label>
       ) : (
-        <label style={{ fontSize: "11px", color: "#64748b" }}>Unit Price ({currencyLabel(currency)})
+        <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Unit Price")} ({currencyLabel(currency)})
           <input type="text" inputMode="decimal" value={item.unit_price ?? ""} onChange={onSimpleField("unit_price")}
             placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
         </label>
       )}
-      <label style={{ fontSize: "11px", color: "#64748b" }}>Total ({currencyLabel(currency)})
+      <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Total")} ({currencyLabel(currency)})
         <input type="text" inputMode="decimal" value={item.total ?? ""} onChange={totalHandler}
           placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "110px", fontWeight: 700, color: "#10b981" }} />
       </label>
@@ -1155,7 +1230,12 @@ const inputStyle = {
   width: "100%", boxSizing: "border-box", fontFamily: "inherit",
 };
 
-function Input({ style, ...props }) { return <input style={{ ...inputStyle, ...style }} {...props} />; }
+function Input({ style, placeholder, ...props }) {
+  // Auto-translates plain-string placeholders via the shared dictionary —
+  // same safe fallback-to-English pattern as Field/Btn/Table/Select.
+  const t = useT();
+  return <input style={{ ...inputStyle, ...style }} placeholder={typeof placeholder === "string" ? t(placeholder) : placeholder} {...props} />;
+}
 // `style` is destructured separately and merged AFTER the base inputStyle so
 // that callers passing a custom style (e.g. a narrower width for an inline
 // unit dropdown) only override what they specify — previously a passed-in
@@ -1300,7 +1380,15 @@ function Table({ cols, rows, emptyMsg = "No records found" }) {
               onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
               {cols.map((c) => (
                 <td key={c.key || c.label} style={{ padding: "12px 14px", color: "#cbd5e1", verticalAlign: "middle" }}>
-                  {c.render ? c.render(row) : row[c.key]}
+                  {c.render
+                    ? c.render(row)
+                    // Only "status"/"result" are safe to auto-translate here —
+                    // they're always controlled enum values (Draft/Paid/Pending…),
+                    // never free-typed registered data like a client or
+                    // supplier name, which must never be run through t().
+                    : (c.key === "status" || c.key === "result") && typeof row[c.key] === "string"
+                      ? t(row[c.key])
+                      : row[c.key]}
                 </td>
               ))}
             </tr>
@@ -1312,13 +1400,14 @@ function Table({ cols, rows, emptyMsg = "No records found" }) {
 }
 
 function StatCard({ label, value, sub, color = "#3b82f6" }) {
+  const t = useT();
   return (
     <div style={{
       background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px",
       padding: "20px 24px", display: "flex", flexDirection: "column", gap: "4px",
       borderLeft: `3px solid ${color}`,
     }}>
-      <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+      <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{typeof label === "string" ? t(label) : label}</div>
       <div style={{ fontSize: "26px", fontWeight: 700, color: "#f1f5f9", fontFamily: "'DM Sans', sans-serif" }}>{value}</div>
       {sub && <div style={{ fontSize: "12px", color: "#64748b" }}>{sub}</div>}
     </div>
@@ -2078,6 +2167,7 @@ const handleUnitChange = (e) => {
 }
 
 function OrderForm({ initial, onSave, onClose }) {
+  const t = useT();
   const [f, setF] = useState(initial || {
     order_number: "", client: "", supplier: "", value: "", currency: "USD",
     production_lead_time: "", delivery_days: "", shipment_date: "", arrival_date: "",
@@ -2353,6 +2443,7 @@ useEffect(() => {
 }
 
 function ProductForm({ initial, onSave, onClose }) {
+const t = useT();
 const [f, setF] = useState(initial || {
   code: "", name: "", description: "", unit: "unit", ncm: "", hs_code: "", color: "",
   width: "", width_unit: "cm",
@@ -2398,7 +2489,7 @@ const handleUpload = async (e) => {
   try {
     const results = await Promise.all(files.map(uploadToCloudinary));
     setMedia(prev => [...prev, ...results.filter(Boolean)]);
-  } catch(err) { alert("Upload failed: " + err.message); }
+  } catch(err) { alert(t("Upload failed: ") + err.message); }
   setUploading(false);
 };
 
@@ -2812,7 +2903,7 @@ const handleSalePerLiterChange = (e) => {
       <div style={{ flex: 1 }}>
         <Field label="VAT %">
           <Input type="number" value={f.vat_pct || ""} onChange={set("vat_pct")} placeholder="e.g. 13" />
-          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>Informational only — not used in any calculation.</div>
+          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>{t("Informational only — not used in any calculation.")}</div>
         </Field>
       </div>
     </div>
@@ -2843,7 +2934,7 @@ const handleSalePerLiterChange = (e) => {
     </Field>
     <Field label="Margin %">
       <Input type="number" value={f.sale_pct || ""} onFocus={handleMarkupFocus} onChange={handleSalePctChange} placeholder="e.g. 15" />
-      <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>Adds this % on top of the Sale Price — not calculated from Cost.</div>
+      <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>{t("Adds this % on top of the Sale Price — not calculated from Cost.")}</div>
     </Field>
   </div>
 </div>
@@ -2853,7 +2944,7 @@ const handleSalePerLiterChange = (e) => {
         <Field label="Photos / Files">
   <div>
     <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 16px", cursor: "pointer", fontSize: "13px", color: "#94a3b8", marginBottom: "12px" }}>
-      {uploading ? "⏳ Uploading..." : "📎 Add Photos / Files"}
+      {uploading ? t("⏳ Uploading...") : t("📎 Add Photos / Files")}
       <input type="file" multiple accept="image/*,application/pdf,video/*" onChange={handleUpload} style={{ display: "none" }} disabled={uploading} />
     </label>
     {lightbox && (
@@ -2929,6 +3020,7 @@ const handleSalePerLiterChange = (e) => {
 }
 
 function SampleForm({ onSave, onClose, initial }) {
+const t = useT();
 const [f, setF] = useState(initial || { code: "", product_name: "", category: "", client: "", supplier: "", requested_date: "", ready_date: "", status: "Requested", notes: "" });
 const [clients, setClients] = useState([]);
 const [clientSearch, setClientSearch] = useState(initial?.client || "");
@@ -2973,7 +3065,7 @@ const results = await Promise.all(files.map(uploadToCloudinary));
 const validResults = results.filter(Boolean);
 setMedia(prev => [...prev, ...validResults]);
   } catch(err) {
-    alert("Upload failed: " + err.message);
+    alert(t("Upload failed: ") + err.message);
   }
   setUploading(false);
 };
@@ -3064,7 +3156,7 @@ setMedia(prev => [...prev, ...validResults]);
       padding: "10px 16px", cursor: "pointer", fontSize: "13px", color: "#94a3b8",
       marginBottom: "12px",
     }}>
-      {uploading ? "⏳ Uploading..." : "📎 Add Photos / Videos"}
+      {uploading ? t("⏳ Uploading...") : t("📎 Add Photos / Videos")}
       <input type="file" multiple accept="image/*,video/*" onChange={handleUpload}
         style={{ display: "none" }} disabled={uploading} />
     </label>
@@ -3272,7 +3364,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
         </Select>
       </Field>
       <div style={{ gridColumn: "span 2", marginTop: "4px", marginBottom: "-4px", fontSize: "12px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-        Shipment Details (for PDF)
+        {t("Shipment Details (for PDF)")}
       </div>
       <Field label="Acquisition Company" half>
         <Select value={f.acquisition_company} onChange={set("acquisition_company")}>
@@ -3419,6 +3511,7 @@ function ContractForm({ onSave, onClose, orders, initial }) {
 }
   
 function FinForm({ type, onSave, onClose, orders, initial }) {
+  const t = useT();
   const isClient = type === "client";
   const [f, setF] = useState(initial || {
     order_id: "", [isClient ? "client" : "supplier"]: "", description: "",
@@ -3470,7 +3563,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
       {!isClient && (
         <>
           <div style={{ gridColumn: "span 2", marginTop: "4px", marginBottom: "-4px", fontSize: "12px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            Payment Notice
+            {t("Payment Notice")}
           </div>
           <Field label="Payer" half>
             <Select value={f.payer} onChange={set("payer")}>
@@ -3524,6 +3617,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
 }
 
 function QuotationForm({ onSave, onClose, initial }) {
+  const t = useT();
   const [f, setF] = useState(initial || {
   number: "", client: "", currency: "USD", deadline: "",
   total: "",
@@ -3592,7 +3686,7 @@ useEffect(() => {
     try {
 const results = await Promise.all(files.map(uploadToCloudinary));
 setMedia(prev => [...prev, ...results.filter(Boolean)]);
-    } catch(err) { alert("Upload failed: " + err.message); }
+    } catch(err) { alert(t("Upload failed: ") + err.message); }
     setUploading(false);
   };
 
@@ -3721,7 +3815,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
         <Field label="Photos / Videos">
           <div>
             <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 16px", cursor: "pointer", fontSize: "13px", color: "#94a3b8", marginBottom: "12px" }}>
-              {uploading ? "⏳ Uploading..." : "📎 Add Photos / Videos"}
+              {uploading ? t("⏳ Uploading...") : t("📎 Add Photos / Videos")}
               <input type="file" multiple accept="image/*,video/*" onChange={handleUpload} style={{ display: "none" }} disabled={uploading} />
             </label>
             {lightbox && (
@@ -3946,7 +4040,7 @@ console.log('quotations set:', quotations?.length);
         📋 {hasProforma ? t("Proforma ✓") : t("Proforma")}
       </Btn>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
-      <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/quotations/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+      <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/quotations/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
       <LastModifiedBy name={r.updated_by} />
     </div>
   );
@@ -3963,9 +4057,10 @@ console.log('quotations set:', quotations?.length);
 
       
 function Dashboard() {
+  const t = useT();
   const [data, setData] = useState(null);
   useEffect(() => { api("/dashboard").then(setData); }, []);
-  if (!data) return <div style={{ color: "#475569", padding: "40px", textAlign: "center" }}>Loading...</div>;
+  if (!data) return <div style={{ color: "#475569", padding: "40px", textAlign: "center" }}>{t("Loading...")}</div>;
 
   const orderStatuses = ["Pending", "In Production", "Inspection", "Shipment", "Completed"];
   const statusColors = { Pending: "#64748b", "In Production": "#3b82f6", Inspection: "#f59e0b", Shipment: "#10b981", Completed: "#8b5cf6" };
@@ -3984,14 +4079,14 @@ function Dashboard() {
       {/* Financial Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
         <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>💰 Client Receivables</h3>
+          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>💰 {t("Client Receivables")}</h3>
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
             <StatCard label="Pending Invoices" value={data.clientFinancial?.pending || 0} color="#f59e0b" />
             <StatCard label="Paid Invoices" value={data.clientFinancial?.received || 0} color="#10b981" />
           </div>
         </div>
         <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>📦 Supplier Payables</h3>
+          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>📦 {t("Supplier Payables")}</h3>
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
             <StatCard label="Active Contracts" value={data.supplierFinancial?.pending || 0} color="#f59e0b" />
             <StatCard label="Completed" value={data.supplierFinancial?.paid || 0} color="#10b981" />
@@ -4002,7 +4097,7 @@ function Dashboard() {
       {/* Pending Orders */}
       {data.pendingOrders?.length > 0 && (
         <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>📋 Pending Orders</h3>
+          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>📋 {t("Pending Orders")}</h3>
           <Table
             cols={[
               { label: "Order #", sortValue: r => r.order_number, render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.order_number}</span> },
@@ -4018,7 +4113,7 @@ function Dashboard() {
       {/* Pending Quotations */}
       {data.pendingQuotations?.length > 0 && (
         <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>💬 Pending Quotations</h3>
+          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>💬 {t("Pending Quotations")}</h3>
           <Table
             cols={[
               { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.number}</span> },
@@ -4034,7 +4129,7 @@ function Dashboard() {
       {/* Pending Commercial Invoices */}
       {data.pendingCommercials?.length > 0 && (
         <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>🧾 Pending Commercial Invoices</h3>
+          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>🧾 {t("Pending Commercial Invoices")}</h3>
           <Table
             cols={[
               { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.number}</span> },
@@ -4050,7 +4145,7 @@ function Dashboard() {
       {/* Pending Inspections */}
       {data.pendingInspections?.length > 0 && (
         <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>🔍 Pending Inspections</h3>
+          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>🔍 {t("Pending Inspections")}</h3>
           <Table
             cols={[
               { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.number}</span> },
@@ -4065,7 +4160,7 @@ function Dashboard() {
       {/* Pending Samples */}
       {data.pendingSamples?.length > 0 && (
         <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>✏️ Pending Samples</h3>
+          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>✏️ {t("Pending Samples")}</h3>
           <Table
             cols={[
               { label: "Product", sortValue: r => r.product_name, render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.product_name}</span> },
@@ -4080,7 +4175,7 @@ function Dashboard() {
       {/* Pending Supplier Payments (Payment Notices not yet Paid) */}
       {data.pendingSupplierPayments?.length > 0 && (
         <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>💳 Pending Supplier Payments</h3>
+          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>💳 {t("Pending Supplier Payments")}</h3>
           <Table
             cols={[
               { label: "Supplier", key: "supplier" },
@@ -4097,7 +4192,7 @@ function Dashboard() {
       {/* Active Contracts */}
       {data.activeContracts?.length > 0 && (
         <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>🤝 Active Contracts</h3>
+          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>🤝 {t("Active Contracts")}</h3>
           <Table
             cols={[
               { label: "Contract #", sortValue: r => r.contract_number, render: r => <span style={{ fontWeight: 600, color: "#a78bfa" }}>{r.contract_number}</span> },
@@ -4116,6 +4211,7 @@ function Dashboard() {
 }
       
 function PackingListForm({ initial, onSave, onClose, onDelete }) {
+  const t = useT();
   const [f, setF] = useState(() => {
     const rawItems = initial._items || (initial.items_json ? (() => { try { return JSON.parse(initial.items_json); } catch { return []; } })() : []);
     // Ton-priced Chemical items: Gross Weight must always equal Packages ×
@@ -4278,23 +4374,23 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
         <span style={{ color: "#64748b", marginLeft: "8px" }}>
           {item.color} {item.width} {item.weightSpec}
           {item.isTextile
-            ? ` · Length: ${parseFloat(item.totalLength || 0).toFixed(2)} m`
+            ? ` · ${t("Length:")} ${parseFloat(item.totalLength || 0).toFixed(2)} m`
             : (item.quantityLabel
-                ? ` · Qty: ${item.quantityLabel}`
-                : (item.quantity != null ? ` · Qty: ${item.quantity} ${item.unit || ""}` : ""))}
+                ? ` · ${t("Qty:")} ${item.quantityLabel}`
+                : (item.quantity != null ? ` · ${t("Qty:")} ${item.quantity} ${item.unit || ""}` : ""))}
         </span>
       </div>
       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-        <label style={{ fontSize: "11px", color: "#64748b" }}>{item.isTextile ? "Roll" : "Packages"}
+        <label style={{ fontSize: "11px", color: "#64748b" }}>{item.isTextile ? t("Roll") : t("Packages")}
           <input type="number" value={item.roll} onChange={e => updateItemRoll(idx, e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
         </label>
-        <label style={{ fontSize: "11px", color: "#64748b" }}>Gross Weight (kg)
+        <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Gross Weight (kg)")}
           <input type="number" value={item.grossWeight} onChange={e => updateItem(idx, "grossWeight", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
         </label>
-        <label style={{ fontSize: "11px", color: "#64748b" }}>Net Weight (kg)
+        <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Net Weight (kg)")}
           <input type="number" value={item.netWeight} onChange={e => updateItem(idx, "netWeight", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
         </label>
-        <label style={{ fontSize: "11px", color: "#64748b" }}>CBM
+        <label style={{ fontSize: "11px", color: "#64748b" }}>{t("CBM")}
           <input type="number" value={item.cbm} onChange={e => updateItem(idx, "cbm", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
         </label>
       </div>
@@ -4373,7 +4469,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
       <Field label={isMultiContainer ? "Items — allocated per container" : "Items — Roll / Gross Weight / Net Weight / CBM"}>
         <div style={{ display: "flex", flexDirection: "column", gap: isMultiContainer ? "12px" : 0 }}>
           {items.length === 0 && (
-            <div style={{ background: "#0f172a", borderRadius: "8px", border: "1px solid #334155", padding: "12px 14px", color: "#475569", fontSize: "13px" }}>No items.</div>
+            <div style={{ background: "#0f172a", borderRadius: "8px", border: "1px solid #334155", padding: "12px 14px", color: "#475569", fontSize: "13px" }}>{t("No items.")}</div>
           )}
           {isMultiContainer ? (
             containers.map(c => {
@@ -4383,7 +4479,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
                 <div key={c.seq} style={{ background: "#0f172a", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>
                   <div style={{ background: "#1e293b", padding: "8px 14px", display: "flex", alignItems: "center", gap: "10px" }}>
                     <span style={{ fontSize: "12px", fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      Container {String(c.seq).padStart(2, "0")}
+                      {t("Container")} {String(c.seq).padStart(2, "0")}
                     </span>
                     <Input value={c.code || ""} onChange={e => updateContainerCode(c.seq, e.target.value)}
                       placeholder="Container code, e.g. OOCU7979442" style={{ ...inputStyle, flex: 1, padding: "6px 10px", fontSize: "13px" }} />
@@ -4739,9 +4835,9 @@ onSave={async b => {
             boxShadow: "0 25px 60px rgba(0,0,0,0.6)",
           }}>
             <div style={{ fontSize: "48px", marginBottom: "16px" }}>🧾</div>
-            <h3 style={{ margin: "0 0 8px", color: "#10b981", fontSize: "18px", fontWeight: 700 }}>Commercial Invoice Generated!</h3>
+            <h3 style={{ margin: "0 0 8px", color: "#10b981", fontSize: "18px", fontWeight: 700 }}>{t("Commercial Invoice Generated!")}</h3>
             <p style={{ color: "#94a3b8", fontSize: "14px", margin: "0 0 24px" }}>
-              <strong style={{ color: "#f1f5f9" }}>{ciNotification.number}</strong> was created for <strong style={{ color: "#f1f5f9" }}>{ciNotification.client}</strong>.
+              <strong style={{ color: "#f1f5f9" }}>{ciNotification.number}</strong> {t("was created for")} <strong style={{ color: "#f1f5f9" }}>{ciNotification.client}</strong>.
             </p>
             <Btn color="#10b981" onClick={() => setCiNotification(null)}>OK</Btn>
           </div>
@@ -4806,7 +4902,7 @@ const hasCommercial = commercials.find(c => Number(c.order_id) === Number(r.id))
   🔍 {hasInspection ? t("Inspection ✓") : t("Inspection")}
 </Btn>
       <Btn small outline color="#64748b" onClick={() => setEditOrder(r)}>Edit</Btn>
-      <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/orders/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+      <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/orders/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
       <LastModifiedBy name={r.updated_by} />
     </div>
   );
@@ -4893,7 +4989,7 @@ cols={[
         setDuplicateSeed({ ...rest, code: "", name: `${r.name} (Copy)` });
         setModal("new");
       }}>Duplicate</Btn>
-      <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/products/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+      <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/products/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
       <LastModifiedBy name={r.updated_by} />
     </div>
   )},
@@ -4964,7 +5060,7 @@ function Samples() {
   { label: "", render: r => (
     <div style={{ display: "flex", gap: "6px" }}>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
-      <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/samples/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+      <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/samples/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
       <LastModifiedBy name={r.updated_by} />
     </div>
   )},
@@ -5065,9 +5161,9 @@ const [proformas, setProformas] = useState([]);
             boxShadow: "0 25px 60px rgba(0,0,0,0.6)",
           }}>
             <div style={{ fontSize: "48px", marginBottom: "16px" }}>🛒</div>
-            <h3 style={{ margin: "0 0 8px", color: "#10b981", fontSize: "18px", fontWeight: 700 }}>Order Created!</h3>
+            <h3 style={{ margin: "0 0 8px", color: "#10b981", fontSize: "18px", fontWeight: 700 }}>{t("Order Created!")}</h3>
             <p style={{ color: "#94a3b8", fontSize: "14px", margin: "0 0 24px" }}>
-              Order <strong style={{ color: "#f1f5f9" }}>{orderNotification}</strong> was created successfully!
+              {t("Order")} <strong style={{ color: "#f1f5f9" }}>{orderNotification}</strong> {t("was created successfully!")}
             </p>
             <Btn color="#10b981" onClick={() => setOrderNotification(null)}>OK</Btn>
           </div>
@@ -5099,7 +5195,7 @@ cols={[
       </Btn>
       <Btn small outline color="#10b981" onClick={() => window.open(authUrl(`${API}/proformas/${r.id}/pdf`), "_blank")}>📄 PDF</Btn>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
-      <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/proformas/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+      <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/proformas/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
       <LastModifiedBy name={r.updated_by} />
     </div>
   )},
@@ -5163,7 +5259,7 @@ function Contracts() {
             <div style={{ display: "flex", gap: "6px" }}>
               <Btn small outline color="#10b981" onClick={() => window.open(authUrl(`${API}/contracts/${r.id}/pdf`), "_blank")}>📄 PDF</Btn>
               <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
-              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/contracts/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/contracts/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
               <LastModifiedBy name={r.updated_by} />
             </div>
           )},
@@ -5309,7 +5405,7 @@ cols={[
         </Btn>
       ))}
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
-      <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`${endpoint}/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+      <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`${endpoint}/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
       <LastModifiedBy name={r.updated_by} />
     </div>
   )},
@@ -5443,7 +5539,7 @@ function Clients() {
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
               <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
-              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/clients/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/clients/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
               <LastModifiedBy name={r.updated_by} />
             </div>
           )},
@@ -5613,7 +5709,7 @@ function Suppliers() {
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
               <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
-              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/suppliers/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/suppliers/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
               <LastModifiedBy name={r.updated_by} />
             </div>
           )},
@@ -5686,7 +5782,7 @@ function FreightAgents() {
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
               <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
-              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/freight-agents/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/freight-agents/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
               <LastModifiedBy name={r.updated_by} />
             </div>
           )},
@@ -5815,7 +5911,7 @@ function CommercialInvoices() {
                     📦 {hasPackingList ? t("Packing List ✓") : t("Packing List")}
                   </Btn>
                 )}
-                <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/commercial-invoices/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+                <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/commercial-invoices/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
                 <LastModifiedBy name={r.updated_by} />
               </div>
             );
@@ -5879,7 +5975,7 @@ function PackingLists() {
             <div style={{ display: "flex", gap: "6px" }}>
               <Btn small outline color="#10b981" onClick={() => window.open(authUrl(`${API}/packing-lists/${r.id}/pdf`), "_blank")}>📄 PDF</Btn>
               <Btn small outline color="#64748b" onClick={() => setEditList(r)}>Edit</Btn>
-              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/packing-lists/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/packing-lists/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
               <LastModifiedBy name={r.updated_by} />
             </div>
           )},
@@ -5892,6 +5988,7 @@ function PackingLists() {
 }
 
 function InspectionForm({ onSave, onClose, initial, orders }) {
+  const t = useT();
   const [f, setF] = useState(initial || {
     order_id: "", number: "", inspection_date: "", inspector: "",
     result: "Pending", observations: "",
@@ -5915,7 +6012,7 @@ const [media, setMedia] = useState(() => {
     try {
 const results = await Promise.all(files.map(uploadToCloudinary));
 setMedia(prev => [...prev, ...results.filter(Boolean)]);
-    } catch(err) { alert("Upload failed: " + err.message); }
+    } catch(err) { alert(t("Upload failed: ") + err.message); }
     setUploading(false);
   };
 
@@ -5940,7 +6037,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
       <Field label="Photos / PDFs">
         <div>
           <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 16px", cursor: "pointer", fontSize: "13px", color: "#94a3b8", marginBottom: "12px" }}>
-            {uploading ? "⏳ Uploading..." : "📎 Add Photos / PDFs"}
+            {uploading ? t("⏳ Uploading...") : t("📎 Add Photos / PDFs")}
             <input type="file" multiple accept="image/*,application/pdf" onChange={handleUpload} style={{ display: "none" }} disabled={uploading} />
           </label>
           {lightbox && (
@@ -6057,7 +6154,7 @@ function Inspections() {
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
               <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
-              <Btn small outline color="#ef4444" onClick={async () => { if (confirm("Delete?")) { await api(`/inspections/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/inspections/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
               <LastModifiedBy name={r.updated_by} />
             </div>
           )},
@@ -6119,25 +6216,23 @@ function Reports() {
       </div>
       <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "12px", padding: "24px", maxWidth: "640px" }}>
         <p style={{ color: "#94a3b8", fontSize: "13px", lineHeight: 1.6, margin: "0 0 16px" }}>
-          Generates one Excel workbook. Each screen you pick below becomes two sheets — everything
-          still open/pending first, everything already completed second — with status, key dates
-          and values for that screen.
+          {t("Generates one Excel workbook. Each screen you pick below becomes two sheets — everything still open/pending first, everything already completed second — with status, key dates and values for that screen.")}
         </p>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
           <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            Which screens?
+            {t("Which screens?")}
           </label>
           <div style={{ display: "flex", gap: "10px" }}>
-            <button onClick={() => toggleAll(true)} style={{ background: "none", border: "none", color: "#60a5fa", fontSize: "11.5px", cursor: "pointer", padding: 0 }}>All</button>
-            <button onClick={() => toggleAll(false)} style={{ background: "none", border: "none", color: "#60a5fa", fontSize: "11.5px", cursor: "pointer", padding: 0 }}>None</button>
+            <button onClick={() => toggleAll(true)} style={{ background: "none", border: "none", color: "#60a5fa", fontSize: "11.5px", cursor: "pointer", padding: 0 }}>{t("All")}</button>
+            <button onClick={() => toggleAll(false)} style={{ background: "none", border: "none", color: "#60a5fa", fontSize: "11.5px", cursor: "pointer", padding: 0 }}>{t("None")}</button>
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 16px", marginBottom: "20px" }}>
           {categories.map(c => (
             <label key={c.key} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", color: "#e2e8f0", cursor: "pointer" }}>
               <input type="checkbox" checked={!!checked[c.key]} onChange={() => toggle(c.key)} />
-              {c.label}
+              {t(c.label)}
             </label>
           ))}
         </div>
@@ -6150,12 +6245,11 @@ function Reports() {
         </div>
         {noneChecked && (
           <p style={{ color: "#f87171", fontSize: "11.5px", marginTop: "10px", marginBottom: 0 }}>
-            Pick at least one screen above.
+            {t("Pick at least one screen above.")}
           </p>
         )}
         <p style={{ color: "#64748b", fontSize: "11.5px", marginTop: "14px", marginBottom: 0 }}>
-          Leave the date blank to include everything on record. When set, only records created on
-          or after that date are included, in each screen's own timeline.
+          {t("Leave the date blank to include everything on record. When set, only records created on or after that date are included, in each screen's own timeline.")}
         </p>
       </div>
     </div>
