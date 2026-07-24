@@ -413,6 +413,7 @@ const TRANSLATIONS = {
     "English name, e.g. for Chinese suppliers": "英文名称，例如中国供应商的英文名",
     "Excel": "Excel",
     "Real Margin": "实际利润率",
+    "Added on top of the Real Margin below.": "会加到下方的实际利润率上。",
     "Loss": "亏损",
     "Loading exchange rate...": "正在加载汇率...",
     "Could not load exchange rate.": "无法加载汇率。",
@@ -2940,6 +2941,12 @@ const handleSalePerLiterChange = (e) => {
   const realMarginPct = (costInSaleCur != null && costInSaleCur > 0 && saleNum > 0)
     ? ((saleNum - costInSaleCur) / costInSaleCur) * 100
     : null;
+  // VAT % (e.g. a Chinese export rebate) adds straight onto the margin
+  // below instead of just sitting there as a reference note — per the
+  // client's own instruction, it's a simple sum on top of the currency-
+  // converted real margin, not a separate calculation of its own.
+  const vatPct = parseFloat(f.vat_pct) || 0;
+  const combinedMarginPct = realMarginPct != null ? realMarginPct + vatPct : null;
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
@@ -3170,7 +3177,7 @@ const handleSalePerLiterChange = (e) => {
       <div style={{ flex: 1 }}>
         <Field label="VAT %">
           <Input type="number" value={f.vat_pct || ""} onChange={set("vat_pct")} placeholder="e.g. 13" />
-          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>{t("Informational only — not used in any calculation.")}</div>
+          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>{t("Added on top of the Real Margin below.")}</div>
         </Field>
       </div>
     </div>
@@ -3215,12 +3222,17 @@ const handleSalePerLiterChange = (e) => {
   }}>
     <div>
       <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("Real Margin")}</div>
-      <div style={{ fontSize: "22px", fontWeight: 700, color: realMarginPct == null ? "#94a3b8" : realMarginPct < 0 ? "#ef4444" : "#10b981" }}>
-        {realMarginPct == null
+      <div style={{ fontSize: "22px", fontWeight: 700, color: combinedMarginPct == null ? "#94a3b8" : combinedMarginPct < 0 ? "#ef4444" : "#10b981" }}>
+        {combinedMarginPct == null
           ? (costCur === saleCur ? "—" : (fxError ? "—" : t("Loading exchange rate...")))
-          : `${realMarginPct > 0 ? "+" : ""}${realMarginPct.toFixed(1)}%`}
-        {realMarginPct != null && realMarginPct < 0 && <span style={{ fontSize: "13px", marginLeft: "8px" }}>⚠️ {t("Loss")}</span>}
+          : `${combinedMarginPct > 0 ? "+" : ""}${combinedMarginPct.toFixed(1)}%`}
+        {combinedMarginPct != null && combinedMarginPct < 0 && <span style={{ fontSize: "13px", marginLeft: "8px" }}>⚠️ {t("Loss")}</span>}
       </div>
+      {realMarginPct != null && vatPct !== 0 && (
+        <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+          {realMarginPct.toFixed(1)}% {vatPct > 0 ? "+" : ""}{vatPct.toFixed(1)}% {t("VAT %")}
+        </div>
+      )}
     </div>
     {costCur !== saleCur && (
       <div style={{ fontSize: "11px", color: "#64748b", textAlign: "right" }}>
