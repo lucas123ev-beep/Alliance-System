@@ -6,7 +6,6 @@ const { renderPdfBuffer } = require('./pdf/render');
 const { renderSalesInvoice } = require('./pdf/salesInvoice');
 const { renderPackingList } = require('./pdf/packingList');
 const { renderContract } = require('./pdf/contract');
-const { renderPaymentNotice } = require('./pdf/paymentNotice');
 const ACQUISITION_COMPANIES = require('./pdf/acquisitionCompanies');
 // The company is a trader with two invoicing entities (HK/Ningbo), but only
 // Ningbo is the real Chinese trading company that actually handles
@@ -18,6 +17,7 @@ const NINGBO_ACQ = ACQUISITION_COMPANIES.NINGBO;
 const { parseJsonSafe, contentDisposition } = require('./pdf/helpers');
 const { buildFullReportWorkbook, CATEGORIES: REPORT_CATEGORIES } = require('./xlsx/reportBuilder');
 const { buildProductSupplierReportWorkbook } = require('./xlsx/productSupplierReport');
+const { buildPaymentNoticeWorkbook } = require('./xlsx/paymentNotice');
 const {
   hashPassword, verifyPassword, generateToken, requireAuth, actorName,
   isLockedOut, lockoutMinutesRemaining, recordFailedLogin, resetFailedLogins,
@@ -1466,23 +1466,24 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
   }
 });
 
-app.get('/api/financial/suppliers/:id/payment-notice-pdf', async (req, res) => {
+// Payment Request Form — generated as an Excel workbook (not a PDF), per
+// the client's request. See xlsx/paymentNotice.js.
+app.get('/api/financial/suppliers/:id/payment-notice-xlsx', async (req, res) => {
   try {
     const fin = db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(req.params.id);
     if (!fin) return res.status(404).json({ error: 'Payment record not found' });
     const supplierRow = findSupplierByName(fin.supplier);
-    const order = fin.order_id ? db.prepare('SELECT * FROM orders WHERE id=?').get(fin.order_id) : null;
 
     // Split-payment support: ?pct=20&label=Deposit renders just that
     // installment's slice of the total amount, with the label appended to
     // the purpose line — used when payment_schedule is a split like
-    // "20/80" and the frontend generates one PDF per installment.
+    // "20/80" and the frontend generates one file per installment.
     const pct = req.query.pct ? parseFloat(req.query.pct) : null;
     const label = req.query.label || '';
     const amount = pct != null ? (parseFloat(fin.amount) || 0) * (pct / 100) : fin.amount;
     const purpose = label ? `${fin.description || ''} — ${label} (${pct}%)`.trim() : fin.description;
 
-    const html = renderPaymentNotice({
+    const workbook = buildPaymentNoticeWorkbook({
       // Supplier payments always run through Ningbo too (same reasoning as
       // the Contract PDF's Buyer) — the "Payer" field remains a manual
       // override for the rare case that isn't true, but the default no
@@ -1505,12 +1506,16 @@ app.get('/api/financial/suppliers/:id/payment-notice-pdf', async (req, res) => {
       approvedBy: fin.approved_by,
     });
 
-    const pdf = await renderPdfBuffer(html);
+    const buffer = await workbook.xlsx.writeBuffer();
     const suffix = label ? `-${label}` : '';
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(`PaymentNotice-${fin.id}${suffix}.pdf`) });
-    res.send(pdf);
+    const filename = `PaymentNotice-${fin.id}${suffix}.xlsx`;
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': contentDisposition(filename),
+    });
+    res.send(Buffer.from(buffer));
   } catch (err) {
-    console.error('Payment notice PDF error:', err);
+    console.error('Payment notice xlsx error:', err);
     res.status(500).json({ error: err.message });
   }
 });

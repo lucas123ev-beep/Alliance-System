@@ -375,8 +375,8 @@ const migrations = [
   ['products', 'tube_weight_unit', "TEXT DEFAULT 'kg'"],
   // Split-payment schedule for a Supplier Payment, e.g. "20/80" (20% deposit
   // + 80% balance) or "50/50" — "100" (or blank) means a single payment.
-  // Each installment gets its own Payment Notice PDF (see the
-  // payment-notice-pdf route's ?pct=&label= params).
+  // Each installment gets its own Payment Notice (see the
+  // payment-notice-xlsx route's ?pct=&label= params).
   ['financial_suppliers', 'payment_schedule', "TEXT DEFAULT '100'"],
   // Multi-container shipments: JSON array of { seq, code } — one entry per
   // physical container the order ships in. When there's more than one, each

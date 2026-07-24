@@ -402,6 +402,7 @@ const TRANSLATIONS = {
     "Adds this % on top of the Sale Price — not calculated from Cost.": "在销售价基础上加此百分比 — 不基于成本价计算。",
     "Trade Name": "商用名称",
     "English name, e.g. for Chinese suppliers": "英文名称，例如中国供应商的英文名",
+    "Excel": "Excel",
   },
 };
 const LanguageContext = createContext({ lang: "en", setLang: () => {} });
@@ -1094,7 +1095,7 @@ const PAYMENT_SCHEDULES = {
   // Lading — a common trade-finance term distinct from the generic
   // "Deposit / Balance" presets above (which don't say how each part is
   // actually settled). Each part's label feeds straight into the Payment
-  // Notice PDF's purpose line (see the payment-notice-pdf route).
+  // Notice's purpose line (see the payment-notice-xlsx route).
   "20TT/BL": { label: "20% TT / Balance Against BL", parts: [{ pct: 20, label: "TT" }, { pct: 80, label: "Balance Against BL" }] },
   "30TT/BL": { label: "30% TT / Balance Against BL", parts: [{ pct: 30, label: "TT" }, { pct: 70, label: "Balance Against BL" }] },
 };
@@ -1193,7 +1194,9 @@ function Modal({ title, onClose, children, wide }) {
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
         zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px",
       }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      // Clicking the backdrop used to close the modal — too easy to trigger
+      // by accident mid-edit (a slightly-off click loses whatever was being
+      // filled in). Now only the explicit × button or Cancel closes it.
     >
       <div
         style={{
@@ -3597,12 +3600,13 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px", flexWrap: "wrap" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
         {/* Each installment in the chosen schedule (e.g. 20% Deposit / 80%
-            Balance) gets its own Payment Notice PDF button — a single 100%
-            schedule falls back to the one plain button it had before. */}
+            Balance) gets its own Payment Notice button — a single 100%
+            schedule falls back to the one plain button it had before.
+            Generates an Excel file, not a PDF. */}
         {!isClient && f.id && (PAYMENT_SCHEDULES[f.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]).parts.map((part, i) => (
           <Btn key={i} outline color="#10b981"
-            onClick={() => window.open(authUrl(`${API}/financial/suppliers/${f.id}/payment-notice-pdf${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`), "_blank")}>
-            📄 {part.label ? `${part.label} PDF (${part.pct}%)` : "Payment Notice PDF"}
+            onClick={() => window.open(authUrl(`${API}/financial/suppliers/${f.id}/payment-notice-xlsx${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`), "_blank")}>
+            📊 {part.label ? `${part.label} (${part.pct}%)` : t("Payment Notice")}
           </Btn>
         ))}
         <Btn color={isClient ? "#3b82f6" : "#8b5cf6"} onClick={async () => {
@@ -5401,13 +5405,14 @@ cols={[
   )},
   { label: "Actions", render: r => (
     <div style={{ display: "flex", gap: "6px" }}>
-      {/* Split-payment schedules (e.g. 20% Deposit / 80% Balance) get one PDF
-          button per installment here too, same as the Edit modal — a plain
-          100% schedule still renders as the single original button. */}
+      {/* Split-payment schedules (e.g. 20% Deposit / 80% Balance) get one
+          Payment Notice button per installment here too, same as the Edit
+          modal — a plain 100% schedule still renders as the single
+          original button. Generates an Excel file, not a PDF. */}
       {!isClient && (PAYMENT_SCHEDULES[r.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]).parts.map((part, i) => (
         <Btn key={i} small outline color="#10b981"
-          onClick={() => window.open(authUrl(`${API}/financial/suppliers/${r.id}/payment-notice-pdf${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`), "_blank")}>
-          📄 {part.label ? `${part.label} (${part.pct}%)` : "PDF"}
+          onClick={() => window.open(authUrl(`${API}/financial/suppliers/${r.id}/payment-notice-xlsx${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`), "_blank")}>
+          📊 {part.label ? `${part.label} (${part.pct}%)` : t("Excel")}
         </Btn>
       ))}
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
