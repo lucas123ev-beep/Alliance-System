@@ -1110,6 +1110,36 @@ const perMeterLabel = (item, field, cur) => {
   return `${fmt(parseFloat(rate), cur)}/m`;
 };
 
+// The Products screen's Cost/Sale Price columns used to always show
+// unit_cost/sale_price — correct for Unit/Pair-counted goods, but for
+// Textile/DTF Film that pair only ever holds the derived per-ROLL total
+// (cost_per_meter × registered roll length), and for Chemical it's blank
+// entirely (Chemical is priced per liter or per ton, never as a flat unit
+// price). Picks whichever rate the product was actually registered under —
+// same category/price_basis branching used everywhere else this
+// distinction matters (ProductItemModal, PricingRow, contract.js) — so the
+// column always reads as "the real registered rate", not a derived total or
+// a blank.
+function productRate(product, kind) {
+  const isTextile = product?.category === "Textile" || product?.category === "DTF Film";
+  const isChemical = product?.category === "Chemical";
+  const isTon = isChemical && product?.price_basis === "ton";
+  const currency = kind === "cost" ? product?.cost_currency : product?.sale_currency;
+  if (isTextile) {
+    return { value: product?.[kind === "cost" ? "cost_per_meter" : "sale_per_meter"], currency, suffix: "/m" };
+  }
+  if (isChemical) {
+    return isTon
+      ? { value: product?.[kind === "cost" ? "cost_per_ton" : "sale_per_ton"], currency, suffix: "/ton" }
+      : { value: product?.[kind === "cost" ? "cost_per_liter" : "sale_per_liter"], currency, suffix: "/L" };
+  }
+  return {
+    value: product?.[kind === "cost" ? "unit_cost" : "sale_price"],
+    currency,
+    suffix: product?.unit === "Pair" ? "/pair" : "/unit",
+  };
+}
+
 // Module-level (not React state) so `api()` — called from dozens of places
 // that aren't React components — can always read the current session token
 // without it being threaded through props. Set once on login/logout via
@@ -4983,8 +5013,14 @@ cols={[
   { label: "Height", sortValue: r => r.height, render: r => r.height || "—" },
   { label: "Thickness", sortValue: r => r.thickness, render: r => r.thickness || "—" },
   { label: "Weight", sortValue: r => r.weight, render: r => r.weight || "—" },
-  { label: "Cost", sortValue: r => r.unit_cost, render: r => r.unit_cost ? `${currencyLabel(r.cost_currency || "USD")} ${parseFloat(r.unit_cost).toFixed(2)}` : "—" },
-  { label: "Sale Price", sortValue: r => r.sale_price, render: r => r.sale_price ? `${currencyLabel(r.sale_currency || "USD")} ${parseFloat(r.sale_price).toFixed(2)}` : "—" },
+  { label: "Cost", sortValue: r => productRate(r, "cost").value, render: r => {
+    const { value, currency, suffix } = productRate(r, "cost");
+    return value ? `${currencyLabel(currency || "USD")} ${parseFloat(value).toFixed(2)}${suffix}` : "—";
+  } },
+  { label: "Sale Price", sortValue: r => productRate(r, "sale").value, render: r => {
+    const { value, currency, suffix } = productRate(r, "sale");
+    return value ? `${currencyLabel(currency || "USD")} ${parseFloat(value).toFixed(2)}${suffix}` : "—";
+  } },
   { label: "Actions", render: r => (
     <div style={{ display: "flex", gap: "6px" }}>
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
