@@ -3216,6 +3216,7 @@ setMedia(prev => [...prev, ...validResults]);
 }
 
 function ProformaForm({ onSave, onClose, orders, initial }) {
+  const t = useT();
   const [f, setF] = useState(initial || {
     order_id: "", quotation_id: "", number: "", issue_date: "", validity: "", client: "", total: "", currency: "USD", status: "Draft", notes: "",
     acquisition_company: "", incoterm: "", way_of_shipment: "By Sea", port_of_loading: "", port_of_discharge: "",
