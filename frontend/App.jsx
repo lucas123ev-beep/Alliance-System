@@ -400,6 +400,8 @@ const TRANSLATIONS = {
     "Net Weight (kg)": "净重 (kg)",
     "Informational only — not used in any calculation.": "仅供参考 — 不参与任何计算。",
     "Adds this % on top of the Sale Price — not calculated from Cost.": "在销售价基础上加此百分比 — 不基于成本价计算。",
+    "Trade Name": "商用名称",
+    "English name, e.g. for Chinese suppliers": "英文名称，例如中国供应商的英文名",
   },
 };
 const LanguageContext = createContext({ lang: "en", setLang: () => {} });
@@ -1566,7 +1568,10 @@ function buildPackingListDraft(order, products) {
       _cbmPerRoll,
     };
   });
-  const acq = getAcqCompany(order.acquisition_company || "HK");
+  // Manufacturer is always the Ningbo entity — the real Chinese trading
+  // company that handles procurement/export — regardless of which
+  // Acquisition Company (HK or Ningbo) was picked for invoicing the client.
+  const acq = getAcqCompany("NINGBO");
 
   // Multi-container shipments: split each item's roll count (and,
   // proportionally, its weight/length) across the order's containers, so
@@ -5553,7 +5558,7 @@ function Clients() {
 
 function SupplierForm({ initial, onSave, onClose }) {
   const [f, setF] = useState(initial || {
-    company_name: "", address: "", address2: "", address_number: "", neighborhood: "",
+    company_name: "", trade_name: "", address: "", address2: "", address_number: "", neighborhood: "",
     city: "", state: "", zip_code: "", country: "", email: "",
     phone: "", contact_name: "", payment_terms: "", product_types: "", notes: "",
     beneficiary_name: "", bank_name: "", bank_branch: "", account_number: "", swift_code: "",
@@ -5592,6 +5597,9 @@ function SupplierForm({ initial, onSave, onClose }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Company Name"><Input value={f.company_name} onChange={set("company_name")} /></Field>
+      <Field label="Trade Name">
+        <Input value={f.trade_name || ""} onChange={set("trade_name")} placeholder="English name, e.g. for Chinese suppliers" />
+      </Field>
       <Field label="Contact Name" half><Input value={f.contact_name} onChange={set("contact_name")} /></Field>
       <Field label="Email" half><Input type="email" value={f.email} onChange={set("email")} /></Field>
       <Field label="Phone" half><Input value={f.phone} onChange={e => setF(p => ({ ...p, phone: maskPhone(e.target.value) }))} placeholder="(00) 00000-0000" /></Field>
@@ -5701,12 +5709,11 @@ function Suppliers() {
       <Table
         cols={[
           { label: "Company", sortValue: r => r.company_name, render: r => <span style={{ fontWeight: 600, color: "#a78bfa" }}>{r.company_name}</span> },
+          { label: "Trade Name", key: "trade_name" },
           { label: "Contact", key: "contact_name" },
           { label: "Email", key: "email" },
           { label: "Phone", key: "phone" },
           { label: "Product Types", key: "product_types" },
-          { label: "Payment Terms", key: "payment_terms" },
-          { label: "Bank", sortValue: r => r.bank_name, render: r => r.bank_name ? <span style={{ fontSize: "12px", color: "#94a3b8" }}>{r.bank_name}{r.account_number ? ` • ${r.account_number}` : ""}</span> : <span style={{ color: "#475569" }}>—</span> },
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
               <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>

@@ -8,6 +8,13 @@ const { renderPackingList } = require('./pdf/packingList');
 const { renderContract } = require('./pdf/contract');
 const { renderPaymentNotice } = require('./pdf/paymentNotice');
 const ACQUISITION_COMPANIES = require('./pdf/acquisitionCompanies');
+// The company is a trader with two invoicing entities (HK/Ningbo), but only
+// Ningbo is the real Chinese trading company that actually handles
+// procurement/export — so the "Manufacturer" shown on client-facing docs and
+// the "Buyer" on supplier-facing docs (Contract, Payment Notice) are always
+// Ningbo, regardless of which entity (acquisition_company) was picked to
+// invoice/bank the client on a given deal.
+const NINGBO_ACQ = ACQUISITION_COMPANIES.NINGBO;
 const { parseJsonSafe, contentDisposition } = require('./pdf/helpers');
 const { buildFullReportWorkbook, CATEGORIES: REPORT_CATEGORIES } = require('./xlsx/reportBuilder');
 const { buildProductSupplierReportWorkbook } = require('./xlsx/productSupplierReport');
@@ -853,15 +860,15 @@ app.get('/api/suppliers', (req, res) => {
 });
 
 app.post('/api/suppliers', (req, res) => {
-  const { company_name, address, address2, address_number, neighborhood, city, state, zip_code, country,
+  const { company_name, trade_name, address, address2, address_number, neighborhood, city, state, zip_code, country,
     email, phone, contact_name, payment_terms, product_types, notes,
     beneficiary_name, bank_name, bank_branch, account_number, swift_code } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO suppliers (company_name, address, address2, address_number, neighborhood, city, state, zip_code, country, email, phone, contact_name, payment_terms, product_types, notes,
+      INSERT INTO suppliers (company_name, trade_name, address, address2, address_number, neighborhood, city, state, zip_code, country, email, phone, contact_name, payment_terms, product_types, notes,
         beneficiary_name, bank_name, bank_branch, account_number, swift_code, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(company_name, address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(company_name, trade_name || '', address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
       email, phone, contact_name, payment_terms, product_types, notes,
       beneficiary_name || '', bank_name || '', bank_branch || '', account_number || '', swift_code || '', actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM suppliers WHERE id=?').get(result.lastInsertRowid));
@@ -871,14 +878,14 @@ app.post('/api/suppliers', (req, res) => {
 });
 
 app.put('/api/suppliers/:id', (req, res) => {
-  const { company_name, address, address2, address_number, neighborhood, city, state, zip_code, country,
+  const { company_name, trade_name, address, address2, address_number, neighborhood, city, state, zip_code, country,
     email, phone, contact_name, payment_terms, product_types, notes,
     beneficiary_name, bank_name, bank_branch, account_number, swift_code } = req.body;
   db.prepare(`
-    UPDATE suppliers SET company_name=?, address=?, address2=?, address_number=?, neighborhood=?, city=?, state=?, zip_code=?, country=?, email=?, phone=?, contact_name=?, payment_terms=?, product_types=?, notes=?,
+    UPDATE suppliers SET company_name=?, trade_name=?, address=?, address2=?, address_number=?, neighborhood=?, city=?, state=?, zip_code=?, country=?, email=?, phone=?, contact_name=?, payment_terms=?, product_types=?, notes=?,
       beneficiary_name=?, bank_name=?, bank_branch=?, account_number=?, swift_code=?, updated_by=?
     WHERE id=?
-  `).run(company_name, address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
+  `).run(company_name, trade_name || '', address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
     email, phone, contact_name, payment_terms, product_types, notes,
     beneficiary_name || '', bank_name || '', bank_branch || '', account_number || '', swift_code || '', actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM suppliers WHERE id=?').get(req.params.id));
@@ -1169,10 +1176,13 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
       portOfDestination: pf.port_of_discharge || order?.port_of_discharge,
       incoterm: pf.incoterm || order?.incoterm,
       acq,
-      // The company is a trading company (trader) — the "Manufacturer" shown on
-      // client-facing docs is always the selected Acquisition Company, never
-      // the real factory/supplier.
-      manufacturer: { name: acq.name, address: acq.addressLine, tel: acq.tel },
+      // The company is a trading company (trader) — the "Manufacturer" shown
+      // on client-facing docs is always the Ningbo entity (the real Chinese
+      // trading company that actually handles procurement/export), never
+      // the selected Acquisition Company (which only controls which entity
+      // is invoicing/banking the client on this document) and never the
+      // real factory/supplier.
+      manufacturer: { name: NINGBO_ACQ.name, address: NINGBO_ACQ.addressLine, tel: NINGBO_ACQ.tel },
       items,
       totalLength,
       totalWeight,
@@ -1268,8 +1278,10 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
       portOfDestination: order?.port_of_discharge,
       incoterm: order?.incoterm,
       acq,
-      // Trader company: "Manufacturer" is always the Acquisition Company, not the real supplier.
-      manufacturer: { name: acq.name, address: acq.addressLine, tel: acq.tel },
+      // Trader company: "Manufacturer" is always the Ningbo entity, never the
+      // selected Acquisition Company (see the Proforma PDF route above for
+      // the full reasoning) and never the real supplier.
+      manufacturer: { name: NINGBO_ACQ.name, address: NINGBO_ACQ.addressLine, tel: NINGBO_ACQ.tel },
       items,
       totalLength,
       totalWeight,
@@ -1420,7 +1432,11 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
       };
     });
 
-    const acq = getAcq(order?.acquisition_company || 'NINGBO');
+    // The Buyer on a Supplier Purchase Contract is always the Ningbo entity —
+    // procurement from Chinese suppliers always runs through Ningbo,
+    // regardless of which Acquisition Company (HK or Ningbo) was picked on
+    // the linked Order for invoicing the client.
+    const acq = NINGBO_ACQ;
 
     const html = renderContract({
       contractNumber: contract.contract_number,
@@ -1467,7 +1483,11 @@ app.get('/api/financial/suppliers/:id/payment-notice-pdf', async (req, res) => {
     const purpose = label ? `${fin.description || ''} — ${label} (${pct}%)`.trim() : fin.description;
 
     const html = renderPaymentNotice({
-      payer: fin.payer || (order?.acquisition_company ? getAcq(order.acquisition_company).name : ''),
+      // Supplier payments always run through Ningbo too (same reasoning as
+      // the Contract PDF's Buyer) — the "Payer" field remains a manual
+      // override for the rare case that isn't true, but the default no
+      // longer follows the Order's Acquisition Company.
+      payer: fin.payer || NINGBO_ACQ.name,
       applicationDate: fin.created_at ? fin.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
       paymentMethod: fin.payment_method,
       paymentDeadline: fin.due_date,

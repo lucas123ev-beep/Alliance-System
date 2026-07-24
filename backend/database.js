@@ -270,6 +270,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS suppliers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     company_name TEXT NOT NULL,
+    trade_name TEXT,
     address TEXT,
     address2 TEXT,
     address_number TEXT,
@@ -560,6 +561,10 @@ const migrations = [
   // ready — neither existed before, so Samples had no way to track either.
   ['samples', 'supplier', "TEXT DEFAULT ''"],
   ['samples', 'ready_date', 'TEXT'],
+  // Trade name (English name used for Chinese suppliers) — shown in the
+  // Suppliers list instead of Payment Terms/Bank, which cluttered the
+  // overview and are already visible on the supplier's own Edit screen.
+  ['suppliers', 'trade_name', "TEXT DEFAULT ''"],
 ];
 
 for (const [table, column, definition] of migrations) {
