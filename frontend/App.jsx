@@ -1140,6 +1140,33 @@ function productRate(product, kind) {
   };
 }
 
+// The product search dropdown (Add Product) only ever showed Code + Name +
+// Price — two products legitimately share the same Name constantly (same
+// article, different colorway/spec/supplier batch), so that wasn't enough
+// to tell them apart before picking one. Surfaces whatever spec actually
+// distinguishes products within each category: Gramatura + Thickness for
+// Textile/DTF Film (the two numbers a buyer actually checks first for
+// fabric), Width/Height for physical goods (Machine/Accessory/Packaging/
+// Other) where a size difference is the likely distinguisher, and — for
+// every category, since it applies regardless of category — Color and
+// Supplier whenever registered, since a same-name product from two
+// different suppliers (or in two different colors) is the single most
+// common real-world case of this collision.
+function productDistinguisher(p) {
+  const parts = [];
+  const isTextile = p.category === "Textile" || p.category === "DTF Film";
+  if (isTextile) {
+    if (p.weight) parts.push(`${p.weight}${p.weight_unit || "g/m²"}`);
+    if (p.thickness) parts.push(`${p.thickness}${p.thickness_unit || ""}`);
+  } else if (p.category !== "Chemical") {
+    if (p.width) parts.push(`${p.width}${p.width_unit || ""}`);
+    if (p.height) parts.push(`${p.height}${p.height_unit || ""}`);
+  }
+  if (p.color) parts.push(p.color);
+  if (p.supplier) parts.push(p.supplier);
+  return parts.join(" • ");
+}
+
 // Module-level (not React state) so `api()` — called from dozens of places
 // that aren't React components — can always read the current session token
 // without it being threaded through props. Set once on login/logout via
@@ -2030,15 +2057,24 @@ const handleUnitChange = (e) => {
               placeholder="Search product…" />
             {showList && filtered.length > 0 && (
               <div style={dropdownStyle}>
-                {filtered.map(p => (
-                  <div key={p.id} style={dropItemStyle}
-                    onMouseDown={() => selectProduct(p)}
-                    onMouseEnter={e => e.currentTarget.style.background = "#334155"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{p.code}</span> {p.name}
-                    {p.sale_price ? <span style={{ float: "right", color: "#10b981" }}>{currencyLabel(p.sale_currency || "USD")} {p.sale_price}</span> : null}
-                  </div>
-                ))}
+                {filtered.map(p => {
+                  const rate = productRate(p, "sale");
+                  const distinguisher = productDistinguisher(p);
+                  return (
+                    <div key={p.id} style={dropItemStyle}
+                      onMouseDown={() => selectProduct(p)}
+                      onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      <div>
+                        <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{p.code}</span> {p.name}
+                        {rate.value ? <span style={{ float: "right", color: "#10b981" }}>{currencyLabel(rate.currency || "USD")} {parseFloat(rate.value).toFixed(2)}{rate.suffix}</span> : null}
+                      </div>
+                      {distinguisher && (
+                        <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>{distinguisher}</div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
