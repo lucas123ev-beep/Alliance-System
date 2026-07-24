@@ -250,6 +250,15 @@ const TRANSLATIONS = {
     "Unit": "单位",
     "Weight": "重量",
     "Cost": "成本",
+    "Sale": "销售",
+    "Price": "价格",
+    "📈 Price History": "📈 价格历史",
+    "Price History": "价格历史",
+    "No price changes recorded yet.": "暂无价格变动记录。",
+    "Overall change": "总变化",
+    "since first record": "自首次记录以来",
+    "Changed By": "修改人",
+    "Change": "变化",
     "Requested": "申请日期",
     "Ready": "完成日期",
     "Sent": "寄出日期",
@@ -2516,6 +2525,151 @@ useEffect(() => {
   );
 }
 
+// Shows a product's registered Cost/Sale rate over time (product_price_history
+// rows, written automatically by the backend whenever the registered rate
+// actually changes — see priceFieldFor/recordPriceHistory in server.js).
+// No charting library is available in this project (frontend deps are just
+// react/react-dom), so this is a small hand-rolled inline SVG line chart
+// rather than pulling in a new dependency.
+function PriceHistoryModal({ product, onClose }) {
+  const t = useT();
+  const [rows, setRows] = useState(null); // null = loading
+
+  useEffect(() => {
+    api(`/products/${product.id}/price-history`).then(setRows).catch(() => setRows([]));
+  }, [product.id]);
+
+  if (rows === null) {
+    return (
+      <Modal title={t("Price History")} onClose={onClose}>
+        <div style={{ color: "#64748b", fontSize: "13px", padding: "20px 0" }}>{t("Loading...")}</div>
+      </Modal>
+    );
+  }
+
+  const saleRows = rows.filter(r => r.kind === "sale");
+  const costRows = rows.filter(r => r.kind === "cost");
+  const parseTs = (s) => new Date(String(s).replace(" ", "T")).getTime();
+
+  if (rows.length === 0) {
+    return (
+      <Modal title={t("Price History")} onClose={onClose}>
+        <div style={{ color: "#64748b", fontSize: "13px", padding: "20px 0" }}>{t("No price changes recorded yet.")}</div>
+      </Modal>
+    );
+  }
+
+  // ── Chart geometry ────────────────────────────────────────────────────
+  const W = 760, H = 240, padL = 56, padR = 20, padT = 16, padB = 34;
+  const allPts = [...saleRows, ...costRows];
+  const times = allPts.map(r => parseTs(r.changed_at));
+  const minT = Math.min(...times), maxT = Math.max(...times);
+  const values = allPts.map(r => r.new_value);
+  const minV = Math.min(...values, 0);
+  const maxV = Math.max(...values) * 1.1 || 1;
+  const xFor = (ts) => minT === maxT ? (padL + (W - padL - padR) / 2) : padL + ((ts - minT) / (maxT - minT)) * (W - padL - padR);
+  const yFor = (v) => (H - padB) - ((v - minV) / (maxV - minV || 1)) * (H - padT - padB);
+
+  const buildPath = (series) => series
+    .slice().sort((a, b) => parseTs(a.changed_at) - parseTs(b.changed_at))
+    .map((r, i) => `${i === 0 ? "M" : "L"} ${xFor(parseTs(r.changed_at)).toFixed(1)} ${yFor(r.new_value).toFixed(1)}`)
+    .join(" ");
+
+  const gridLines = 4;
+  const overallFor = (series) => {
+    if (series.length === 0) return null;
+    const sorted = series.slice().sort((a, b) => parseTs(a.changed_at) - parseTs(b.changed_at));
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    const base = first.old_value != null ? first.old_value : first.new_value;
+    const pct = base ? ((last.new_value - base) / base) * 100 : null;
+    return { base, latest: last.new_value, pct, currency: last.currency };
+  };
+  const saleOverall = overallFor(saleRows);
+  const costOverall = overallFor(costRows);
+
+  const tableRows = rows.slice().sort((a, b) => parseTs(b.changed_at) - parseTs(a.changed_at));
+
+  return (
+    <Modal title={`${t("Price History")} — ${product.name}`} onClose={onClose} wide>
+      <div style={{ display: "flex", gap: "20px", marginBottom: "16px", flexWrap: "wrap" }}>
+        {saleOverall && (
+          <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "10px", padding: "12px 16px", flex: 1, minWidth: "180px" }}>
+            <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("Sale")} · {t("Overall change")}</div>
+            <div style={{ fontSize: "20px", fontWeight: 700, color: saleOverall.pct > 0 ? "#ef4444" : saleOverall.pct < 0 ? "#10b981" : "#f1f5f9", marginTop: "4px" }}>
+              {saleOverall.pct == null ? "—" : `${saleOverall.pct > 0 ? "+" : ""}${saleOverall.pct.toFixed(1)}%`}
+            </div>
+            <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+              {currencyLabel(saleOverall.currency)} {parseFloat(saleOverall.base).toFixed(2)} → {parseFloat(saleOverall.latest).toFixed(2)} ({t("since first record")})
+            </div>
+          </div>
+        )}
+        {costOverall && (
+          <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "10px", padding: "12px 16px", flex: 1, minWidth: "180px" }}>
+            <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("Cost")} · {t("Overall change")}</div>
+            <div style={{ fontSize: "20px", fontWeight: 700, color: costOverall.pct > 0 ? "#ef4444" : costOverall.pct < 0 ? "#10b981" : "#f1f5f9", marginTop: "4px" }}>
+              {costOverall.pct == null ? "—" : `${costOverall.pct > 0 ? "+" : ""}${costOverall.pct.toFixed(1)}%`}
+            </div>
+            <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+              {currencyLabel(costOverall.currency)} {parseFloat(costOverall.base).toFixed(2)} → {parseFloat(costOverall.latest).toFixed(2)} ({t("since first record")})
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ background: "#0b1220", border: "1px solid #1e293b", borderRadius: "10px", padding: "10px", marginBottom: "20px" }}>
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
+          {Array.from({ length: gridLines + 1 }).map((_, i) => {
+            const v = minV + ((maxV - minV) * i) / gridLines;
+            const y = yFor(v);
+            return (
+              <g key={i}>
+                <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#1e293b" strokeWidth="1" />
+                <text x={padL - 8} y={y + 3} fontSize="10" fill="#64748b" textAnchor="end">{v.toFixed(0)}</text>
+              </g>
+            );
+          })}
+          {saleRows.length > 0 && <path d={buildPath(saleRows)} fill="none" stroke="#10b981" strokeWidth="2" />}
+          {costRows.length > 0 && <path d={buildPath(costRows)} fill="none" stroke="#f59e0b" strokeWidth="2" strokeDasharray="5,4" />}
+          {saleRows.map((r, i) => (
+            <circle key={`s${i}`} cx={xFor(parseTs(r.changed_at))} cy={yFor(r.new_value)} r="3.5" fill="#10b981">
+              <title>{`${t("Sale")}: ${currencyLabel(r.currency)} ${parseFloat(r.new_value).toFixed(2)} (${String(r.changed_at).slice(0, 10)})`}</title>
+            </circle>
+          ))}
+          {costRows.map((r, i) => (
+            <circle key={`c${i}`} cx={xFor(parseTs(r.changed_at))} cy={yFor(r.new_value)} r="3.5" fill="#f59e0b">
+              <title>{`${t("Cost")}: ${currencyLabel(r.currency)} ${parseFloat(r.new_value).toFixed(2)} (${String(r.changed_at).slice(0, 10)})`}</title>
+            </circle>
+          ))}
+        </svg>
+        <div style={{ display: "flex", gap: "16px", fontSize: "11px", color: "#94a3b8", marginTop: "6px", paddingLeft: `${padL}px` }}>
+          {saleRows.length > 0 && <span><span style={{ display: "inline-block", width: "10px", height: "2px", background: "#10b981", marginRight: "4px", verticalAlign: "middle" }} />{t("Sale")}</span>}
+          {costRows.length > 0 && <span><span style={{ display: "inline-block", width: "10px", height: "2px", background: "#f59e0b", marginRight: "4px", verticalAlign: "middle" }} />{t("Cost")}</span>}
+        </div>
+      </div>
+
+      <Table
+        cols={[
+          { key: "changed_at", label: "Date", render: r => String(r.changed_at).slice(0, 10) },
+          { key: "kind", label: "Type", render: r => r.kind === "sale" ? t("Sale") : t("Cost") },
+          { key: "new_value", label: "Price", render: r => `${currencyLabel(r.currency)} ${parseFloat(r.new_value).toFixed(2)}` },
+          {
+            key: "delta", label: "Change", sortValue: r => r.old_value == null ? null : (r.new_value - r.old_value), render: r => {
+              if (r.old_value == null) return "—";
+              const delta = r.new_value - r.old_value;
+              const pct = r.old_value ? (delta / r.old_value) * 100 : null;
+              const color = delta > 0 ? "#ef4444" : delta < 0 ? "#10b981" : "#94a3b8";
+              return <span style={{ color }}>{delta > 0 ? "+" : ""}{delta.toFixed(2)}{pct != null ? ` (${pct > 0 ? "+" : ""}${pct.toFixed(1)}%)` : ""}</span>;
+            }
+          },
+          { key: "changed_by", label: "Changed By", render: r => r.changed_by || "—" },
+        ]}
+        rows={tableRows}
+      />
+    </Modal>
+  );
+}
+
 function ProductForm({ initial, onSave, onClose }) {
 const t = useT();
 const [f, setF] = useState(initial || {
@@ -2556,6 +2710,7 @@ const [f, setF] = useState(initial || {
 });
 const [uploading, setUploading] = useState(false);
 const [lightbox, setLightbox] = useState(null);
+const [showPriceHistory, setShowPriceHistory] = useState(false);
 
 const handleUpload = async (e) => {
   const files = Array.from(e.target.files);
@@ -3015,6 +3170,12 @@ const handleSalePerLiterChange = (e) => {
 
       <Field label="Description"><Textarea value={f.description} onChange={set("description")} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+        {initial?.id && (
+          <Btn outline color="#8b5cf6" onClick={() => setShowPriceHistory(true)}>📈 Price History</Btn>
+        )}
+        {showPriceHistory && (
+          <PriceHistoryModal product={initial} onClose={() => setShowPriceHistory(false)} />
+        )}
         <Field label="Photos / Files">
   <div>
     <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 16px", cursor: "pointer", fontSize: "13px", color: "#94a3b8", marginBottom: "12px" }}>

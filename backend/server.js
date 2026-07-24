@@ -245,6 +245,42 @@ app.get('/api/products', (req, res) => {
   res.json(db.prepare('SELECT * FROM products ORDER BY id ASC').all());
 });
 
+// The field that actually represents a product's "price" changes by
+// category/basis — mirrors the frontend's productRate() in App.jsx exactly
+// (Textile/DTF Film -> per meter, Chemical -> per ton or per liter
+// depending on price_basis, everything else -> unit_cost/sale_price).
+// Both this and productRate() must stay in sync; if one changes the other
+// needs the same edit.
+function priceFieldFor(category, priceBasis, kind) {
+  const isTextile = category === 'Textile' || category === 'DTF Film';
+  const isChemical = category === 'Chemical';
+  const isTon = isChemical && priceBasis === 'ton';
+  if (isTextile) return kind === 'cost' ? 'cost_per_meter' : 'sale_per_meter';
+  if (isChemical) return isTon
+    ? (kind === 'cost' ? 'cost_per_ton' : 'sale_per_ton')
+    : (kind === 'cost' ? 'cost_per_liter' : 'sale_per_liter');
+  return kind === 'cost' ? 'unit_cost' : 'sale_price';
+}
+
+// Writes a product_price_history row whenever the registered Cost or Sale
+// rate actually changed (or, for a brand-new product with oldRow=null,
+// records the starting price as the first history point). Called from both
+// the create and update routes below — never touched anywhere else.
+function recordPriceHistory(productId, oldRow, newRow, actor) {
+  ['cost', 'sale'].forEach(kind => {
+    const field = priceFieldFor(newRow.category, newRow.price_basis, kind);
+    const newVal = parseFloat(newRow[field]);
+    if (!Number.isFinite(newVal) || newVal === 0) return; // nothing registered yet
+    const oldVal = oldRow ? parseFloat(oldRow[field]) : null;
+    if (oldRow && Number.isFinite(oldVal) && oldVal === newVal) return; // unchanged
+    const currency = kind === 'cost' ? newRow.cost_currency : newRow.sale_currency;
+    db.prepare(`
+      INSERT INTO product_price_history (product_id, kind, field, old_value, new_value, currency, changed_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(productId, kind, field, Number.isFinite(oldVal) ? oldVal : null, newVal, currency || 'USD', actor);
+  });
+}
+
 app.post('/api/products', (req, res) => {
   const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit } = req.body;
   try {
@@ -252,7 +288,9 @@ app.post('/api/products', (req, res) => {
       INSERT INTO products (code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit, updated_by)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `).run(code, name, description, unit || 'unit', ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', net_weight || null, tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost || 0, cost_currency || 'USD', category, supplier, sale_price || 0, sale_currency || 'USD', cost_per_meter || 0, sale_per_meter || 0, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, price_basis || 'liter', cost_per_ton || 0, sale_per_ton || 0, vat_pct || null, units_per_package || null, package_weight || null, selling_unit || null, actorName(req));
-    res.status(201).json(db.prepare('SELECT * FROM products WHERE id=?').get(result.lastInsertRowid));
+    const created = db.prepare('SELECT * FROM products WHERE id=?').get(result.lastInsertRowid);
+    recordPriceHistory(result.lastInsertRowid, null, created, actorName(req));
+    res.status(201).json(created);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -260,16 +298,26 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 
 app.put('/api/products/:id', (req, res) => {
   const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit } = req.body;
+  const oldRow = db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id);
   db.prepare(`
     UPDATE products SET code=?, name=?, description=?, unit=?, ncm=?, hs_code=?, color=?, width=?, width_unit=?, height=?, height_unit=?, thickness=?, thickness_unit=?, weight=?, weight_unit=?, net_weight=?, tube_weight=?, tube_weight_unit=?, roll_diameter=?, roll_diameter_unit=?, volume=?, volume_unit=?, unit_cost=?, cost_currency=?, category=?, supplier=?, sale_price=?, sale_currency=?, cost_per_meter=?, sale_per_meter=?, cost_per_liter=?, sale_per_liter=?, sale_pct=?, media=?, price_basis=?, cost_per_ton=?, sale_per_ton=?, vat_pct=?, units_per_package=?, package_weight=?, selling_unit=?, updated_by=?
 WHERE id=?
 `).run(code, name, description, unit, ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', net_weight || null, tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost, cost_currency || 'USD', category, supplier, sale_price, sale_currency || 'USD', cost_per_meter, sale_per_meter, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, price_basis || 'liter', cost_per_ton || 0, sale_per_ton || 0, vat_pct || null, units_per_package || null, package_weight || null, selling_unit || null, actorName(req), req.params.id);
-  res.json(db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id));
+  const updated = db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id);
+  recordPriceHistory(req.params.id, oldRow, updated, actorName(req));
+  res.json(updated);
 });
 
 app.delete('/api/products/:id', (req, res) => {
   db.prepare('DELETE FROM products WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+app.get('/api/products/:id/price-history', (req, res) => {
+  const rows = db.prepare(`
+    SELECT * FROM product_price_history WHERE product_id=? ORDER BY changed_at ASC, id ASC
+  `).all(req.params.id);
+  res.json(rows);
 });
 
 // ─── SAMPLES ─────────────────────────────────────────────────────────────────

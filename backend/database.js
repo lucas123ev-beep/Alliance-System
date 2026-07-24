@@ -61,6 +61,25 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- One row per detected change to a product's registered Cost or Sale
+  -- rate (the same per-basis figure productRate()/priceFieldFor() compute —
+  -- per meter/liter/ton/unit/pair, never the raw stored column that can be
+  -- a per-roll total for Textile). Written automatically whenever the
+  -- relevant field actually changes on save (see priceFieldFor/
+  -- recordPriceHistory in server.js) — never edited by hand. Powers the
+  -- Price History screen (chart + table) opened from the product form.
+  CREATE TABLE IF NOT EXISTS product_price_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    field TEXT NOT NULL,
+    old_value REAL,
+    new_value REAL NOT NULL,
+    currency TEXT DEFAULT 'USD',
+    changed_by TEXT,
+    changed_at TEXT DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS order_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
