@@ -34,7 +34,7 @@ function renderSalesInvoice(params) {
   const {
     title, number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
     incoterm, acq, manufacturer, items, totalLength, totalWeight, totalQuantity, totalAmount, currency,
-    paymentTerms, productionDays, deliveryDays, importer, extraShipmentLine, extraShipmentLineLabel,
+    paymentTerms, productionDays, deliveryDays, importer, extraShipmentLine, extraShipmentLineLabel, validity,
   } = params;
 
   // Textile/DTF Film rolls are quoted and measured by the meter, so they get
@@ -249,6 +249,11 @@ function renderSalesInvoice(params) {
           <div class="value">${escapeHtml(currencyLabel(currency))} ${fmtNumber(totalAmount, 2)}</div>
           <div class="words">${escapeHtml(amountToWords(totalAmount, currency))}</div>
         </div>
+        ${title === "PROFORMA INVOICE" && validity ? `
+        <div class="card" style="margin-top:8px; flex:none;">
+          <div class="card-title">${icon("calendar")}Quotation Validity</div>
+          <p>This Proforma Invoice is valid until <strong>${escapeHtml(fmtDateLong(validity))}</strong>.</p>
+        </div>` : ""}
       </div>
       <div class="card bank-block">
         <div class="card-title">${icon("bank")}Bank Information</div>

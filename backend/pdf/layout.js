@@ -45,7 +45,7 @@ function baseCss() {
     }
     table { width: 100%; border-collapse: collapse; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-    .header img.logo { height: 50px; }
+    .header img.logo { height: 68px; }
     .header .company { text-align: right; font-size: 8px; line-height: 1.7; color: #333; }
     .header .company div { white-space: nowrap; }
     .title-bar {

@@ -1298,6 +1298,7 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
       productionDays: pf.production_days || order?.production_lead_time,
       deliveryDays: pf.delivery_days || order?.delivery_days,
       importer: { name: pf.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
+      validity: pf.validity,
     });
 
     const pdf = await renderPdfBuffer(html);
