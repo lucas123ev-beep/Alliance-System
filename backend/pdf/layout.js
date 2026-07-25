@@ -45,7 +45,7 @@ function baseCss() {
     }
     table { width: 100%; border-collapse: collapse; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-    .header img.logo { height: 34px; }
+    .header img.logo { height: 50px; }
     .header .company { text-align: right; font-size: 8px; line-height: 1.7; color: #333; }
     .header .company div { white-space: nowrap; }
     .title-bar {
@@ -57,7 +57,6 @@ function baseCss() {
        the whole block by a heavier top/bottom rule. */
     .meta-table { border-top: 1px solid #333; border-bottom: 1px solid #333; margin-bottom: 0; }
     .meta-table td { padding: 5px 10px; font-size: 9px; vertical-align: top; width: 50%; }
-    .meta-table td:first-child { border-right: 1px solid #ccc; }
     .meta-table tr + tr td { border-top: 1px solid #e6e6e6; }
     .meta-table .icon-label { color: ${NAVY}; }
     /* Number/Date row sits directly under the title bar, above the icon
