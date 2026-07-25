@@ -1,4 +1,4 @@
-const { wrapDocument } = require("./layout");
+const { wrapDocument, icon } = require("./layout");
 const { escapeHtml, fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLabel } = require("./helpers");
 
 // production_days/delivery_days are usually a plain day-count ("28"), auto-
@@ -202,61 +202,80 @@ function renderSalesInvoice(params) {
   `;
 
   const body = `
+    <div class="doc-meta-row">
+      <div><strong>Number:</strong> ${escapeHtml(number)}</div>
+      <div><strong>Date:</strong> ${fmtDateLong(date)}</div>
+    </div>
     <table class="meta-table">
-      <tr><td><strong>Number:</strong> ${escapeHtml(number)}</td>
-          <td><strong>Date:</strong> ${fmtDateLong(date)}</td></tr>
-      <tr><td><strong>Way Of Shipment:</strong> ${escapeHtml(wayOfShipment || "By Sea")}.</td>
-          <td><strong>Country Of Origin:</strong> ${escapeHtml(countryOfOrigin || "China")}.</td></tr>
-      <tr><td><strong>Port Of Origin:</strong> ${escapeHtml(portOfOrigin || "—")}.</td>
-          <td><strong>Incoterm:</strong> ${escapeHtml(incoterm || "—")}</td></tr>
-      <tr><td><strong>Port Of Destination:</strong> ${escapeHtml(portOfDestination || "—")}.</td>
-          <td><strong>Manufacturer:</strong> ${escapeHtml(manufacturer.name || "—")}</td></tr>
-      <tr><td colspan="2"><strong>Manufacturer Address:</strong> ${escapeHtml(manufacturer.address || "—")}${manufacturer.tel ? ` | Tel.: ${escapeHtml(manufacturer.tel)}` : ""}</td></tr>
-      <tr><td><strong>Country of origin and provenance:</strong> ${escapeHtml(countryOfOrigin || "China")}.</td>
-          <td><strong>Country of acquisition:</strong> ${escapeHtml(acq.countryOfAcquisition)}.</td></tr>
+      <tr><td>${icon("ship")}<strong>Way Of Shipment:</strong> ${escapeHtml(wayOfShipment || "By Sea")}.</td>
+          <td>${icon("world")}<strong>Country Of Origin:</strong> ${escapeHtml(countryOfOrigin || "China")}.</td></tr>
+      <tr><td>${icon("anchor")}<strong>Port Of Origin:</strong> ${escapeHtml(portOfOrigin || "—")}.</td>
+          <td>${icon("file")}<strong>Incoterm:</strong> ${escapeHtml(incoterm || "—")}</td></tr>
+      <tr><td>${icon("ship")}<strong>Port Of Destination:</strong> ${escapeHtml(portOfDestination || "—")}.</td>
+          <td>${icon("building")}<strong>Manufacturer:</strong> ${escapeHtml(manufacturer.name || "—")}</td></tr>
+      <tr><td colspan="2">${icon("building")}<strong>Manufacturer Address:</strong> ${escapeHtml(manufacturer.address || "—")}${manufacturer.tel ? ` | Tel.: ${escapeHtml(manufacturer.tel)}` : ""}</td></tr>
     </table>
+    <div class="check-band">
+      <div class="col">${icon("check")}<strong>Country of origin and provenance:</strong> ${escapeHtml(countryOfOrigin || "China")}.</div>
+      <div class="col">${icon("check")}<strong>Country of acquisition:</strong> ${escapeHtml(acq.countryOfAcquisition)}.</div>
+    </div>
 
     ${sectionsHtml}
 
-    <div class="two-col">
-      <div class="col">
-        <div class="col-title">Payment Instructions</div>
-        <p><strong>Total Value:</strong> ${escapeHtml(amountToWords(totalAmount, currency))}</p>
-        <p><strong>1. Payment terms:</strong> ${escapeHtml(paymentTerms || "100% on BL copy")}.</p>
-        <p><strong>2. End date of production:</strong> ${escapeHtml(daysOrNote(productionDays, "28"))}</p>
-        <p><strong>3. Goods delivered:</strong> ${escapeHtml(portOfOrigin || "—")}.</p>
-        <p><strong>4. Delivery date at ${escapeHtml((portOfOrigin || "origin port").split(",")[0])}:</strong> ${escapeHtml(daysOrNote(deliveryDays, "33"))}</p>
-        ${extraShipmentLine ? `
-        <p style="margin-bottom:2px;"><strong>5. Packing List Description${extraShipmentLineLabel ? `: ${escapeHtml(extraShipmentLineLabel)}` : ""}</strong></p>
-        ${
-          // Multi-container Packing Lists pass an array (one breakdown line
-          // per container, e.g. "Container 01: OOCU7979442 — Tons: 26.928 |
-          // ..."). Each container gets its own indented line instead of
-          // being run together in one paragraph, so they read as a list
-          // instead of a wall of text. Single-container/legacy callers
-          // still just pass a plain string.
-          Array.isArray(extraShipmentLine)
-            ? extraShipmentLine.map(l => `<p style="margin:2px 0 2px 12px;">${escapeHtml(l)}.</p>`).join("")
-            : `<p style="margin:2px 0 2px 12px;">${escapeHtml(extraShipmentLine)}.</p>`
-        }` : ""}
-        <div class="bank-block" style="margin-top:8px;">
-          <p><strong>Our bank information is as below:</strong></p>
-          <p>Beneficiary Name: ${escapeHtml(acq.bank.beneficiary)}.</p>
-          <p>Address: ${escapeHtml(acq.bank.address)}</p>
-          <p>Account Number: ${escapeHtml(acq.bank.account)}</p>
-          <p>Bank Name: ${escapeHtml(acq.bank.bankName)}.</p>
-          <p>Bank SWIFT: ${escapeHtml(acq.bank.swift)}</p>
+    <div class="footer-grid">
+      <div style="flex:1.2; display:flex; flex-direction:column;">
+        <div class="card" style="flex:1;">
+          <div class="card-title">${icon("file")}Payment and Terms</div>
+          <p><strong>1. Payment terms:</strong> ${escapeHtml(paymentTerms || "100% on BL copy")}.</p>
+          <p><strong>2. End date of production:</strong> ${escapeHtml(daysOrNote(productionDays, "28"))}</p>
+          <p><strong>3. Goods delivered:</strong> ${escapeHtml(portOfOrigin || "—")}.</p>
+          <p><strong>4. Delivery date at ${escapeHtml((portOfOrigin || "origin port").split(",")[0])}:</strong> ${escapeHtml(daysOrNote(deliveryDays, "33"))}</p>
+          ${extraShipmentLine ? `
+          <p style="margin-bottom:2px;"><strong>5. Packing List Description${extraShipmentLineLabel ? `: ${escapeHtml(extraShipmentLineLabel)}` : ""}</strong></p>
+          ${
+            // Multi-container Packing Lists pass an array (one breakdown line
+            // per container, e.g. "Container 01: OOCU7979442 — Tons: 26.928 |
+            // ..."). Each container gets its own indented line instead of
+            // being run together in one paragraph, so they read as a list
+            // instead of a wall of text. Single-container/legacy callers
+            // still just pass a plain string.
+            Array.isArray(extraShipmentLine)
+              ? extraShipmentLine.map(l => `<p style="margin:2px 0 2px 12px;">${escapeHtml(l)}.</p>`).join("")
+              : `<p style="margin:2px 0 2px 12px;">${escapeHtml(extraShipmentLine)}.</p>`
+          }` : ""}
+        </div>
+        <div class="total-box">
+          <div class="label">Total Invoice Value</div>
+          <div class="value">${escapeHtml(currencyLabel(currency))} ${fmtNumber(totalAmount, 2)}</div>
+          <div class="words">${escapeHtml(amountToWords(totalAmount, currency))}</div>
         </div>
       </div>
-      <div class="col">
-        <div class="col-title">Shipment Details</div>
-        <p><strong>Importer | Consignee | Notify Part:</strong></p>
-        <p><strong>${escapeHtml(importer.name || "—")}</strong></p>
-        <p>${escapeHtml(importer.address || "—")}</p>
-        ${importer.taxId ? `<p>Tax ID / CNPJ: ${escapeHtml(importer.taxId)}</p>` : ""}
-        ${importer.tel ? `<p>Tel.: ${escapeHtml(importer.tel)}</p>` : ""}
+      <div class="card bank-block">
+        <div class="card-title">${icon("bank")}Bank Information</div>
+        <p><strong>Beneficiary Name:</strong></p>
+        <p>${escapeHtml(acq.bank.beneficiary)}</p>
+        <p><strong>Address:</strong></p>
+        <p>${escapeHtml(acq.bank.address)}</p>
+        <p><strong>Account Number:</strong> ${escapeHtml(acq.bank.account)}</p>
+        <p><strong>Bank Name:</strong> ${escapeHtml(acq.bank.bankName)}</p>
+        <p><strong>Bank SWIFT:</strong> ${escapeHtml(acq.bank.swift)}</p>
+      </div>
+      <div style="flex:1; display:flex; flex-direction:column;">
+        <div class="card" style="flex:1;">
+          <div class="card-title">${icon("user")}Importer / Consignee</div>
+          <p><strong>${escapeHtml(importer.name || "—")}</strong></p>
+          <p>${escapeHtml(importer.address || "—")}</p>
+          ${importer.taxId ? `<p>Tax ID / CNPJ: ${escapeHtml(importer.taxId)}</p>` : ""}
+          ${importer.tel ? `<p>Tel.: ${escapeHtml(importer.tel)}</p>` : ""}
+        </div>
+        <div class="sig-box">
+          <div class="label">Authorized by</div>
+          <div class="name">${escapeHtml(acq.name)}</div>
+          <div class="line">Authorized signature</div>
+        </div>
       </div>
     </div>
+    ${title === "PROFORMA INVOICE" ? `<div class="footer-note">This Proforma Invoice is issued for quote purpose only and does not constitute a sales contract.</div>` : ""}
   `;
 
   return wrapDocument({ title, acq, body });

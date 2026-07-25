@@ -7,6 +7,8 @@ module.exports = {
     name: "HONG KONG ALLIANCE GLOBAL TRADING CO., LTD",
     addressLine: "Unit 6, 10/Floor, Siu On Plaza. | 482 Jaffe Road, Causeway Bay. | Hong Kong",
     tel: "+ 856 2528 2801",
+    email: "info@hkag.co",
+    website: "www.hkag.co",
     countryOfAcquisition: "Hong Kong",
     bank: {
       beneficiary: "Hong Kong Alliance Global Trading Company Limited",

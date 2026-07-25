@@ -8,14 +8,16 @@ const ExcelJS = require("exceljs");
 const LOGO = require("../pdf/logo");
 const { fmtDateShort, currencyLabel } = require("../pdf/helpers");
 
-// Same rule weight used by the other xlsx reports (reportBuilder.js) so
-// every generated workbook in the app reads as the same document family.
-const HEADER_RULE = { style: "medium", color: { argb: "FF000000" } };
-const LABEL_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF7F7F7" } };
+// Navy (#152C62) brand color, matching the redesigned Proforma/Commercial
+// Invoice/Packing List PDFs (see pdf/layout.js) — every generated workbook
+// in the app now reads as the same document family as the PDFs.
+const NAVY_ARGB = "FF152C62";
+const HEADER_RULE = { style: "medium", color: { argb: NAVY_ARGB } };
+const LABEL_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF2F7" } };
 // Heavier rule used only for the outer edge of the Payer→Purpose block —
 // matches the thick outline the client added by hand to their own copy of
 // this file when asking for this styling.
-const THICK_RULE = { style: "thick", color: { argb: "FF000000" } };
+const THICK_RULE = { style: "thick", color: { argb: NAVY_ARGB } };
 const THIN_SEP = { style: "thin", color: { argb: "FFCCCCCC" } };
 
 function buildPaymentNoticeWorkbook(params) {
@@ -36,7 +38,7 @@ function buildPaymentNoticeWorkbook(params) {
   sheet.mergeCells(1, 1, 1, 2);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = "Payment Request Form 付款申请单";
-  titleCell.font = { bold: true, size: 15, color: { argb: "FF1A1A1A" } };
+  titleCell.font = { bold: true, size: 15, color: { argb: NAVY_ARGB } };
   titleCell.alignment = { vertical: "middle", horizontal: "right" };
   sheet.getRow(1).height = 34;
   sheet.getCell(1, 1).border = { bottom: HEADER_RULE };

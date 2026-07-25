@@ -26,28 +26,35 @@ function renderContract(params) {
     </tr>
   `).join("");
 
+  // Navy (#152C62) accents matching the client-facing Proforma/Commercial
+  // Invoice/Packing List letterhead (logo.js), applied conservatively here
+  // — this is an internal bilingual legal contract with the factory, so it
+  // keeps its plain black/white bordered-table body instead of the sales
+  // documents' card-based layout; only the letterhead rule, title, table
+  // header and totals row pick up the brand color.
+  const NAVY = "#152C62";
   const css = `
     * { box-sizing: border-box; }
     body { margin: 0; padding: 22px 30px; font-family: "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; font-size: 10.5px; color: #1a1a1a; }
     table { width: 100%; border-collapse: collapse; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-    .header img.logo { height: 30px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid ${NAVY}; }
+    .header img.logo { height: 32px; }
     .header .company { text-align: right; font-size: 10px; line-height: 1.5; }
-    .header .company .cn { font-weight: bold; font-size: 12px; }
-    .header .company .en { font-weight: bold; font-size: 10px; }
-    .title-bar { text-align: center; font-weight: bold; font-size: 15px; letter-spacing: 4px; margin: 4px 0 10px; }
+    .header .company .cn { font-weight: bold; font-size: 12px; color: ${NAVY}; }
+    .header .company .en { font-weight: bold; font-size: 10px; color: ${NAVY}; }
+    .title-bar { text-align: center; font-weight: bold; font-size: 15px; letter-spacing: 4px; margin: 4px 0 10px; color: ${NAVY}; }
     .meta-row { display: flex; justify-content: space-between; font-size: 10.5px; margin-bottom: 8px; }
     .items-table td, .items-table th { border: 1px solid #333; padding: 5px 6px; font-size: 9.5px; }
-    .items-table th { background: #eee; font-size: 9px; }
+    .items-table th { background: ${NAVY}; color: #fff; font-size: 9px; }
     .items-table .num { text-align: right; }
-    .totals-row td { font-weight: bold; background: #f2f2f2; }
+    .totals-row td { font-weight: bold; background: #f2f2f2; border-top: 1.5px solid ${NAVY}; }
     .remarks { border: 1px solid #333; border-top: none; padding: 8px 10px; }
     .remarks .req-title { text-align: center; font-weight: bold; background: #eee; margin: -8px -10px 8px; padding: 4px 0; border-bottom: 1px solid #333; }
     .clause { margin: 5px 0; line-height: 1.5; }
     .clause b { font-weight: bold; }
     .sign-block { display: flex; justify-content: space-between; margin-top: 40px; }
     .sign-block .party { width: 46%; font-size: 10px; line-height: 1.8; }
-    .sign-block .party .role { font-weight: bold; margin-bottom: 4px; }
+    .sign-block .party .role { font-weight: bold; margin-bottom: 4px; color: ${NAVY}; }
     .sign-line { border-top: 1px solid #333; margin-top: 30px; padding-top: 4px; }
   `;
 

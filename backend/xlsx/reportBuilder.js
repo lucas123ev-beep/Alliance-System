@@ -21,7 +21,11 @@ const { currencyLabel } = require("../pdf/helpers");
 // sheet — the title's underline, the column-header underline, and the line
 // under every data row all need to read as the same weight, not have the
 // header rule look bold/black while the row-separator lines look fainter.
-const HEADER_RULE = { style: "medium", color: { argb: "FF000000" } };
+// Navy (#152C62) brand color, matching the redesigned Proforma/Commercial
+// Invoice/Packing List/Contract PDFs (see pdf/layout.js) — every generated
+// report now reads as the same document family as the PDFs.
+const NAVY_ARGB = "FF152C62";
+const HEADER_RULE = { style: "medium", color: { argb: NAVY_ARGB } };
 
 // Turns a "YYYY-MM-DD" (or any parseable) date string into a real JS Date
 // for Excel — lets the user sort/filter by date naturally in Excel instead
@@ -80,7 +84,7 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows, t
   sheet.mergeCells(1, 1, 1, columns.length);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = title;
-  titleCell.font = { bold: true, size: 17, color: { argb: "FF1A1A1A" } };
+  titleCell.font = { bold: true, size: 17, color: { argb: NAVY_ARGB } };
   titleCell.alignment = { vertical: "middle", horizontal: "right" };
   sheet.getCell(1, 1).border = { bottom: HEADER_RULE };
   for (let col = 2; col <= columns.length; col++) sheet.getCell(1, col).border = { bottom: HEADER_RULE };

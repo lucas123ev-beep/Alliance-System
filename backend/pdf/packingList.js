@@ -1,4 +1,4 @@
-const { wrapDocument } = require("./layout");
+const { wrapDocument, icon } = require("./layout");
 const { escapeHtml, fmtDateLong, fmtNumber } = require("./helpers");
 
 // Packing List — generated alongside the Commercial Invoice. Items carry
@@ -241,23 +241,27 @@ function renderPackingList(params) {
   `;
 
   const body = `
+    <div class="doc-meta-row">
+      <div><strong>Number:</strong> ${escapeHtml(number)}</div>
+      <div><strong>Date:</strong> ${fmtDateLong(date)}</div>
+    </div>
     <table class="meta-table">
-      <tr><td><strong>Number:</strong> ${escapeHtml(number)}</td>
-          <td><strong>Date:</strong> ${fmtDateLong(date)}</td></tr>
-      <tr><td><strong>Way Of Shipment:</strong> ${escapeHtml(wayOfShipment || "By Sea")}.</td>
-          <td><strong>Country Of Origin:</strong> ${escapeHtml(countryOfOrigin || "China")}.</td></tr>
-      <tr><td><strong>Port Of Origin:</strong> ${escapeHtml(portOfOrigin || "—")}.</td>
-          <td><strong>Incoterm:</strong> ${escapeHtml(incoterm || "—")}</td></tr>
-      <tr><td><strong>Port Of Destination:</strong> ${escapeHtml(portOfDestination || "—")}.</td>
-          <td><strong>Manufacturer:</strong> ${escapeHtml(manufacturer.name || "—")}</td></tr>
-      <tr><td colspan="2"><strong>Manufacturer Address:</strong> ${escapeHtml(manufacturer.address || "—")}${manufacturer.tel ? ` | Tel.: ${escapeHtml(manufacturer.tel)}` : ""}</td></tr>
-      <tr><td><strong>Country of origin and provenance:</strong> ${escapeHtml(countryOfOrigin || "China")}.</td>
-          <td><strong>Country of acquisition:</strong> ${escapeHtml(acq.countryOfAcquisition)}.</td></tr>
+      <tr><td>${icon("ship")}<strong>Way Of Shipment:</strong> ${escapeHtml(wayOfShipment || "By Sea")}.</td>
+          <td>${icon("world")}<strong>Country Of Origin:</strong> ${escapeHtml(countryOfOrigin || "China")}.</td></tr>
+      <tr><td>${icon("anchor")}<strong>Port Of Origin:</strong> ${escapeHtml(portOfOrigin || "—")}.</td>
+          <td>${icon("file")}<strong>Incoterm:</strong> ${escapeHtml(incoterm || "—")}</td></tr>
+      <tr><td>${icon("ship")}<strong>Port Of Destination:</strong> ${escapeHtml(portOfDestination || "—")}.</td>
+          <td>${icon("building")}<strong>Manufacturer:</strong> ${escapeHtml(manufacturer.name || "—")}</td></tr>
+      <tr><td colspan="2">${icon("building")}<strong>Manufacturer Address:</strong> ${escapeHtml(manufacturer.address || "—")}${manufacturer.tel ? ` | Tel.: ${escapeHtml(manufacturer.tel)}` : ""}</td></tr>
     </table>
+    <div class="check-band">
+      <div class="col">${icon("check")}<strong>Country of origin and provenance:</strong> ${escapeHtml(countryOfOrigin || "China")}.</div>
+      <div class="col">${icon("check")}<strong>Country of acquisition:</strong> ${escapeHtml(acq.countryOfAcquisition)}.</div>
+    </div>
 
     ${sectionsHtml}
 
-    <div class="section-bar" style="margin-top:10px;">Shipment Details</div>
+    <div class="section-bar" style="margin-top:10px;">${icon("user", "#fff")}Shipment Details</div>
     <div style="padding:10px 14px;">
       <p style="text-align:center; font-weight:bold; margin:0 0 6px;">Importer | Consignee | Notify Part:</p>
       <p style="text-align:center; font-weight:bold; margin:0 0 2px;">${escapeHtml(importer.name || "—")}</p>
