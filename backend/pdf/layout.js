@@ -48,6 +48,7 @@ function baseCss() {
     .header img.logo { height: 68px; }
     .header .company { text-align: right; font-size: 8px; line-height: 1.7; color: #333; }
     .header .company div { white-space: nowrap; }
+    .header .company .company-name { font-size: 13px; font-weight: bold; color: ${NAVY}; margin-bottom: 3px; }
     .title-bar {
       background: ${NAVY}; color: #fff; text-align: center; font-weight: bold;
       font-size: 12px; letter-spacing: 1.2px; padding: 6px 0; margin-bottom: 8px;
@@ -119,6 +120,7 @@ function renderHeader(acq) {
     <div class="header">
       <img class="logo" src="${LOGO}" alt="${escapeHtml(acq.name)}" />
       <div class="company">
+        <div class="company-name">${escapeHtml(acq.name)}</div>
         ${acq.addressLine ? `<div>${icon("pin", "#333")}${escapeHtml(acq.addressLine)}</div>` : ""}
         ${acq.tel ? `<div>${icon("phone", "#333")}${escapeHtml(acq.tel)}</div>` : ""}
         ${acq.email ? `<div>${icon("mail", "#333")}${escapeHtml(acq.email)}</div>` : ""}
