@@ -75,8 +75,14 @@ function baseCss() {
       background: ${NAVY}; color: #fff; text-align: center; font-weight: bold; font-size: 9.5px;
       padding: 4px 0;
     }
+    /* Fixed line-height (not just padding) is what actually keeps every
+       items-table header the same thickness across a document — with only
+       padding set, a header that happens to wrap onto two lines (long
+       labels like "Total Amount (USD FOB)" in a narrow column) grows taller
+       than a neighboring one-line header, which read as inconsistent
+       between the Textile and Other-goods tables. */
     .items-table th {
-      background: ${NAVY}; color: #fff; padding: 5px 7px; font-size: 8px;
+      background: ${NAVY}; color: #fff; padding: 3px 6px; font-size: 7.5px; line-height: 1.25;
       text-transform: uppercase; text-align: center; font-weight: bold;
     }
     .items-table td { border-bottom: 0.75px solid #ddd; padding: 4px 7px; font-size: 9px; vertical-align: middle; }
