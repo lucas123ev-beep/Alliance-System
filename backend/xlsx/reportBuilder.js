@@ -89,8 +89,10 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows, t
   sheet.getCell(1, 1).border = { bottom: HEADER_RULE };
   for (let col = 2; col <= columns.length; col++) sheet.getCell(1, col).border = { bottom: HEADER_RULE };
 
+  // Real logo artwork is ~900x297px (~3.03:1) — width/height below must
+  // keep that ratio or the logo prints visibly squished/stretched.
   const imageId = workbook.addImage({ base64: LOGO, extension: "png" });
-  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.15 }, ext: { width: 130, height: 29 } });
+  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.15 }, ext: { width: 88, height: 29 } });
 
   // Row 2: thin spacer between the letterhead and the column headers.
   sheet.getRow(2).height = 6;

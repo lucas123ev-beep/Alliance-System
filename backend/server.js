@@ -15,6 +15,16 @@ const ACQUISITION_COMPANIES = require('./pdf/acquisitionCompanies');
 // invoice/bank the client on a given deal.
 const NINGBO_ACQ = ACQUISITION_COMPANIES.NINGBO;
 const { parseJsonSafe, contentDisposition } = require('./pdf/helpers');
+
+// Download filenames for Proforma/Commercial Invoice/Packing List/Payment
+// Notice all key off the Order number (not each document's own internal
+// number, and never a raw DB id) so the file the client saves to disk
+// immediately tells them which order it belongs to. Order numbers can
+// contain slashes/spaces, which would otherwise leak into the filename as
+// stray path separators — stripped down to safe characters here.
+function safeFilenamePart(s) {
+  return String(s || '').replace(/[\/\\:*?"<>|]/g, '-').trim() || 'unknown';
+}
 const { buildFullReportWorkbook, CATEGORIES: REPORT_CATEGORIES } = require('./xlsx/reportBuilder');
 const { buildProductSupplierReportWorkbook } = require('./xlsx/productSupplierReport');
 const { buildPaymentNoticeWorkbook } = require('./xlsx/paymentNotice');
@@ -1264,7 +1274,13 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
     const totalQuantity = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
     const totalAmount = pf.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
 
-    const acqCode = pf.acquisition_company || order?.acquisition_company || 'HK';
+    // Once an Order exists, its acquisition_company is the single source of
+    // truth (Commercial Invoice and Packing List both key off the Order too
+    // — see their routes below), so the header company + bank info stays
+    // identical across every document tied to the same deal. Before an
+    // Order exists (quotation-stage Proforma), fall back to whatever was
+    // picked on the Proforma itself.
+    const acqCode = order?.acquisition_company || pf.acquisition_company || 'HK';
     const acq = getAcq(acqCode);
     const clientRow = findClientByName(pf.client);
 
@@ -1302,7 +1318,8 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
     });
 
     const pdf = await renderPdfBuffer(html);
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(`Proforma-${pf.number}.pdf`) });
+    const pfFilename = `Proforma-${safeFilenamePart(order?.order_number || pf.number)}.pdf`;
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(pfFilename) });
     res.send(pdf);
   } catch (err) {
     console.error('Proforma PDF error:', err);
@@ -1400,7 +1417,8 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
     });
 
     const pdf = await renderPdfBuffer(html);
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(`Commercial-${ci.number}.pdf`) });
+    const ciFilename = `Commercial-${safeFilenamePart(order?.order_number || ci.number)}.pdf`;
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(ciFilename) });
     res.send(pdf);
   } catch (err) {
     console.error('Commercial invoice PDF error:', err);
@@ -1416,7 +1434,12 @@ app.get('/api/packing-lists/:id/pdf', async (req, res) => {
     const items = parseJsonSafe(pl.items_json, []);
     const containers = parseJsonSafe(pl.containers_json, []);
     const clientRow = findClientByName(order?.client);
-    const acq = getAcq(pl.country_of_acquisition === 'Hong Kong' ? 'HK' : (order?.acquisition_company || 'HK'));
+    // Same single source of truth as the Proforma/Commercial Invoice routes
+    // above — order.acquisition_company — instead of pl.country_of_acquisition
+    // (a display-only text field for the "Country of acquisition" line, not
+    // the HK/NINGBO entity code, and a stale/independent value that let this
+    // document drift out of sync with the other two for the same deal).
+    const acq = getAcq(order?.acquisition_company || 'HK');
 
     const html = renderPackingList({
       number: pl.number,
@@ -1438,7 +1461,8 @@ app.get('/api/packing-lists/:id/pdf', async (req, res) => {
     });
 
     const pdf = await renderPdfBuffer(html);
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(`PackingList-${pl.number}.pdf`) });
+    const plFilename = `PackingList-${safeFilenamePart(order?.order_number || pl.number)}.pdf`;
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(plFilename) });
     res.send(pdf);
   } catch (err) {
     console.error('Packing list PDF error:', err);
@@ -1575,6 +1599,7 @@ app.get('/api/financial/suppliers/:id/payment-notice-xlsx', async (req, res) => 
   try {
     const fin = db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(req.params.id);
     if (!fin) return res.status(404).json({ error: 'Payment record not found' });
+    const order = fin.order_id ? db.prepare('SELECT * FROM orders WHERE id=?').get(fin.order_id) : null;
     const supplierRow = findSupplierByName(fin.supplier);
 
     // Split-payment support: ?pct=20&label=Deposit renders just that
@@ -1611,7 +1636,7 @@ app.get('/api/financial/suppliers/:id/payment-notice-xlsx', async (req, res) => 
 
     const buffer = await workbook.xlsx.writeBuffer();
     const suffix = label ? `-${label}` : '';
-    const filename = `PaymentNotice-${fin.id}${suffix}.xlsx`;
+    const filename = `Payment-${safeFilenamePart(order?.order_number || fin.supplier)}${suffix}.xlsx`;
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': contentDisposition(filename),
