@@ -3593,7 +3593,16 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
       )}
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Linked Order" half>
-        <Select value={f.order_id} onChange={set("order_id")}>
+        <Select value={f.order_id} onChange={e => {
+          const orderId = e.target.value;
+          // Once a Proforma is linked to an Order, the PDF's Acquisition
+          // Company (and bank info) always follows the Order — see the
+          // backend route — so the Proforma's own field is kept in sync
+          // here the moment an Order is picked, instead of silently having
+          // no effect when the user edits it below.
+          const linkedOrder = orders.find(o => String(o.id) === String(orderId));
+          setF(p => ({ ...p, order_id: orderId, acquisition_company: linkedOrder ? (linkedOrder.acquisition_company || p.acquisition_company) : p.acquisition_company }));
+        }}>
           <option value="">None</option>
           {orders.map(o => <option key={o.id} value={o.id}>{o.order_number} – {o.client}</option>)}
         </Select>
@@ -3680,11 +3689,16 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
         {t("Shipment Details (for PDF)")}
       </div>
       <Field label="Acquisition Company" half>
-        <Select value={f.acquisition_company} onChange={set("acquisition_company")}>
+        <Select value={f.acquisition_company} onChange={set("acquisition_company")} disabled={!!f.order_id}>
           <option value="">Select...</option>
           <option value="HK">HONG KONG ALLIANCE GLOBAL TRADING CO., LTD</option>
           <option value="NINGBO">NINGBO WORLD ALLIANCE TRADING. CO. LTD.</option>
         </Select>
+        {f.order_id && (
+          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
+            {t("Locked to the linked Order's Acquisition Company — change it on the Order to update this.")}
+          </div>
+        )}
       </Field>
       <Field label="Incoterm" half>
         <Select value={f.incoterm} onChange={set("incoterm")}>
