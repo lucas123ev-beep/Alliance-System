@@ -140,7 +140,7 @@ function renderSalesInvoice(params) {
           <th style="width:9%">Weight</th>
           <th style="width:10%">Total Length</th>
           <th style="width:9%">Unit Price</th>
-          <th style="width:11%">Total Amount (${escapeHtml(currencyLabel(currency))} ${escapeHtml(incoterm || "")})</th>
+          <th style="width:11%">Total Amount</th>
         </tr>
       </thead>
       <tbody>
@@ -168,7 +168,7 @@ function renderSalesInvoice(params) {
           <th style="width:10%">Quantity</th>
           <th style="width:10%">Total Weight</th>
           <th style="width:9%">Unit Price</th>
-          <th style="width:10%">Total Amount (${escapeHtml(currencyLabel(currency))} ${escapeHtml(incoterm || "")})</th>
+          <th style="width:10%">Total Amount</th>
         </tr>
       </thead>
       <tbody>
