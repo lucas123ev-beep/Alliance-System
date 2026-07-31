@@ -29,9 +29,10 @@ const { buildFullReportWorkbook, CATEGORIES: REPORT_CATEGORIES } = require('./xl
 const { buildProductSupplierReportWorkbook } = require('./xlsx/productSupplierReport');
 const { buildPaymentNoticeWorkbook } = require('./xlsx/paymentNotice');
 const {
-  hashPassword, verifyPassword, generateToken, requireAuth, actorName,
+  hashPassword, verifyPassword, generateToken, requireAuth, guardScreen, actorName,
   isLockedOut, lockoutMinutesRemaining, recordFailedLogin, resetFailedLogins,
 } = require('./auth');
+const { permissionsFor } = require('./permissions');
 
 const cloudinary = require('cloudinary').v2;
 cloudinary.config({
@@ -92,6 +93,7 @@ app.post('/api/login', (req, res) => {
   res.json({
     token, name: user.name, username: user.username,
     mustChangePassword: !!user.must_change_password,
+    permissions: permissionsFor(user.username),
   });
 });
 
@@ -139,7 +141,7 @@ app.get('/api/orders/:id', (req, res) => {
   res.json({ ...order, items });
 });
 
-app.post('/api/orders', (req, res) => {
+app.post('/api/orders', guardScreen('orders'), (req, res) => {
   const { order_number, client, supplier, product, value, currency, production_lead_time, delivery_days,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
     port_of_discharge, acquisition_company, container, container_qty, notes, items } = req.body;
@@ -175,7 +177,7 @@ app.post('/api/orders', (req, res) => {
   }
 });
 
-app.put('/api/orders/:id', (req, res) => {
+app.put('/api/orders/:id', guardScreen('orders'), (req, res) => {
   const { order_number, client, supplier, product, value, currency, production_lead_time, delivery_days,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
     port_of_discharge, acquisition_company, container, container_qty, notes, items } = req.body;
@@ -209,7 +211,7 @@ insertItem.run(req.params.id, item.product_id || null, item.product_name,
   res.json({ ...order, items: savedItems });
 });
 
-app.delete('/api/orders/:id', (req, res) => {
+app.delete('/api/orders/:id', guardScreen('orders'), (req, res) => {
   try {
     db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
     // The Proforma is the SOURCE document an Order gets created from — not a
@@ -240,7 +242,7 @@ app.patch('/api/orders/:id/status', (req, res) => {
   res.json(db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id));
 });
 
-app.delete('/api/contracts/:id', (req, res) => {
+app.delete('/api/contracts/:id', guardScreen('contracts'), (req, res) => {
   db.prepare('DELETE FROM supplier_contracts WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -291,7 +293,7 @@ function recordPriceHistory(productId, oldRow, newRow, actor) {
   });
 }
 
-app.post('/api/products', (req, res) => {
+app.post('/api/products', guardScreen('products'), (req, res) => {
   const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit } = req.body;
   try {
     const result = db.prepare(`
@@ -306,7 +308,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
   }
 });
 
-app.put('/api/products/:id', (req, res) => {
+app.put('/api/products/:id', guardScreen('products'), (req, res) => {
   const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit } = req.body;
   const oldRow = db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id);
   db.prepare(`
@@ -372,7 +374,7 @@ app.get('/api/exchange-rates', async (req, res) => {
   }
 });
 
-app.delete('/api/products/:id', (req, res) => {
+app.delete('/api/products/:id', guardScreen('products'), (req, res) => {
   db.prepare('DELETE FROM products WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -390,7 +392,7 @@ app.get('/api/samples', (req, res) => {
   res.json(db.prepare('SELECT * FROM samples ORDER BY created_at DESC').all());
 });
 
-app.post('/api/samples', (req, res) => {
+app.post('/api/samples', guardScreen('samples'), (req, res) => {
   const { code, product_id, product_name, category, client, supplier, requested_date, ready_date, sent_date, feedback_date, status, notes, media } = req.body;
   const result = db.prepare(`
     INSERT INTO samples (code, product_id, product_name, category, client, supplier, requested_date, ready_date, sent_date, feedback_date, status, notes, media, updated_by)
@@ -399,7 +401,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   res.status(201).json(db.prepare('SELECT * FROM samples WHERE id=?').get(result.lastInsertRowid));
 });
 
-app.put('/api/samples/:id', (req, res) => {
+app.put('/api/samples/:id', guardScreen('samples'), (req, res) => {
   const { code, product_name, category, client, supplier, requested_date, ready_date, sent_date, status, notes, media } = req.body;
   db.prepare(`
 UPDATE samples SET code=?, product_name=?, category=?, client=?, supplier=?, requested_date=?, ready_date=?, sent_date=?, status=?, notes=?, media=?, updated_by=?
@@ -414,7 +416,7 @@ app.patch('/api/samples/:id/status', (req, res) => {
   res.json(db.prepare('SELECT * FROM samples WHERE id=?').get(req.params.id));
 });
 
-app.delete('/api/samples/:id', (req, res) => {
+app.delete('/api/samples/:id', guardScreen('samples'), (req, res) => {
   db.prepare('DELETE FROM samples WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -425,6 +427,13 @@ app.get('/api/proformas', (req, res) => {
   res.json(db.prepare('SELECT * FROM proformas ORDER BY created_at DESC').all());
 });
 
+// POST/PUT intentionally NOT guarded by the "proformas" screen: the
+// Quotations screen's "Generate Proforma" / "Edit Proforma" flow calls
+// these same two routes directly (see App.jsx's Quotations() component),
+// and some accounts have "quotations" access without "proformas" — gating
+// these would break that permitted feature for them. DELETE below stays
+// guarded since it's only ever reachable from the dedicated Proformas
+// screen.
 app.post('/api/proformas', (req, res) => {
   const { order_id, quotation_id, number, issue_date, validity, client, total, currency, status, notes,
     acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier,
@@ -459,7 +468,7 @@ app.put('/api/proformas/:id', (req, res) => {
   res.json(db.prepare('SELECT * FROM proformas WHERE id=?').get(req.params.id));
 });
 
-app.delete('/api/proformas/:id', (req, res) => {
+app.delete('/api/proformas/:id', guardScreen('proformas'), (req, res) => {
   db.prepare('DELETE FROM proformas WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -470,7 +479,7 @@ app.get('/api/contracts', (req, res) => {
   res.json(db.prepare('SELECT * FROM supplier_contracts ORDER BY created_at DESC').all());
 });
 
-app.post('/api/contracts', (req, res) => {
+app.post('/api/contracts', guardScreen('contracts'), (req, res) => {
   const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, items_json } = req.body;
   try {
     const result = db.prepare(`
@@ -483,7 +492,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   }
 });
 
-app.put('/api/contracts/:id', (req, res) => {
+app.put('/api/contracts/:id', guardScreen('contracts'), (req, res) => {
   const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes } = req.body;
   db.prepare(`
     UPDATE supplier_contracts SET order_id=?, contract_number=?, supplier=?, sign_date=?, delivery_date=?, total=?, currency=?, status=?, notes=?, updated_by=?
@@ -492,7 +501,7 @@ app.put('/api/contracts/:id', (req, res) => {
   res.json(db.prepare('SELECT * FROM supplier_contracts WHERE id=?').get(req.params.id));
 });
 
-app.delete('/api/contracts/:id', (req, res) => {
+app.delete('/api/contracts/:id', guardScreen('contracts'), (req, res) => {
   db.prepare('DELETE FROM supplier_contracts WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -503,7 +512,7 @@ app.get('/api/financial/clients', (req, res) => {
   res.json(db.prepare('SELECT * FROM financial_clients ORDER BY due_date ASC').all());
 });
 
-app.post('/api/financial/clients', (req, res) => {
+app.post('/api/financial/clients', guardScreen('clients'), (req, res) => {
   const { order_id, client, description, type, amount, currency, due_date, paid_date, status, notes, paid_amount } = req.body;
   const result = db.prepare(`
     INSERT INTO financial_clients (order_id, client, description, type, amount, currency, due_date, paid_date, status, notes, paid_amount, updated_by)
@@ -512,7 +521,7 @@ app.post('/api/financial/clients', (req, res) => {
   res.status(201).json(db.prepare('SELECT * FROM financial_clients WHERE id=?').get(result.lastInsertRowid));
 });
 
-app.put('/api/financial/clients/:id', (req, res) => {
+app.put('/api/financial/clients/:id', guardScreen('clients'), (req, res) => {
   const { order_id, client, description, type, amount, currency, due_date, paid_date, status, notes, paid_amount } = req.body;
   db.prepare(`
     UPDATE financial_clients SET order_id=?, client=?, description=?, type=?, amount=?, currency=?, due_date=?, paid_date=?, status=?, notes=?, paid_amount=?, updated_by=?
@@ -532,7 +541,7 @@ app.patch('/api/financial/clients/:id/status', (req, res) => {
   res.json(db.prepare('SELECT * FROM financial_clients WHERE id=?').get(req.params.id));
 });
 
-app.delete('/api/financial/clients/:id', (req, res) => {
+app.delete('/api/financial/clients/:id', guardScreen('clients'), (req, res) => {
   db.prepare('DELETE FROM financial_clients WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -543,6 +552,14 @@ app.get('/api/financial/suppliers', (req, res) => {
   res.json(db.prepare('SELECT * FROM financial_suppliers ORDER BY due_date ASC').all());
 });
 
+// POST intentionally NOT guarded by "fin-suppliers": generating a Supplier
+// Contract from the Orders screen ("Generate Supplier Contracts") auto-
+// creates the matching payment requirement here as a side effect (see
+// App.jsx's Orders() component) — some accounts have "orders"+"contracts"
+// without "fin-suppliers", and gating this would break that permitted
+// feature for them. PUT/DELETE below stay guarded since editing/deleting
+// an existing payment record is only ever reachable from the dedicated
+// Supplier Flow screen.
 app.post('/api/financial/suppliers', (req, res) => {
   const { order_id, supplier, description, type, amount, currency, due_date, status, notes, contract_id, items_json,
     payer, payment_method, applicant, approved_by, payment_schedule, paid_amount } = req.body;
@@ -559,7 +576,7 @@ app.post('/api/financial/suppliers', (req, res) => {
   }
 });
 
-app.put('/api/financial/suppliers/:id', (req, res) => {
+app.put('/api/financial/suppliers/:id', guardScreen('fin-suppliers'), (req, res) => {
   const { order_id, supplier, description, type, amount, currency, due_date, status, notes, contract_id, items_json,
     payer, payment_method, applicant, approved_by, paid_date, payment_schedule, paid_amount } = req.body;
   try {
@@ -589,7 +606,7 @@ app.patch('/api/financial/suppliers/:id/status', (req, res) => {
   res.json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(req.params.id));
 });
 
-app.delete('/api/financial/suppliers/:id', (req, res) => {
+app.delete('/api/financial/suppliers/:id', guardScreen('fin-suppliers'), (req, res) => {
   db.prepare('DELETE FROM financial_suppliers WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -600,13 +617,25 @@ app.delete('/api/financial/suppliers/:id', (req, res) => {
 // shipment_date/arrival_date on each row. That's what makes editing the date
 // from either screen "just work" without a separate sync step: there's only
 // ever one place the value actually lives.
+// Commercial Invoice status (Pending/Paid) is hidden entirely from accounts
+// with hideCommercialStatus (yukin, max — see permissions.js) — stripped
+// here server-side rather than just hidden by CSS, so it isn't visible via
+// the browser's network tab either. Applied everywhere a Commercial
+// Invoice row goes back to the frontend (list, create, update).
+function redactCommercialStatus(req, row) {
+  if (!row || !(req.user && req.user.permissions && req.user.permissions.hideCommercialStatus)) return row;
+  const { status, ...rest } = row;
+  return rest;
+}
+
 app.get('/api/commercial-invoices', (req, res) => {
-  res.json(db.prepare(`
+  const rows = db.prepare(`
     SELECT ci.*, o.shipment_date AS shipment_date, o.arrival_date AS arrival_date
     FROM commercial_invoices ci
     LEFT JOIN orders o ON o.id = ci.order_id
     ORDER BY ci.created_at DESC
-  `).all());
+  `).all();
+  res.json(rows.map(r => redactCommercialStatus(req, r)));
 });
 
 // Shared by every route that hands a Commercial Invoice back to the
@@ -623,6 +652,14 @@ function getCommercialInvoiceWithDates(id) {
   `).get(id);
 }
 
+// POST/PUT intentionally NOT guarded by "commercial": the Orders screen's
+// "Generate Commercial Invoice" / inline edit flow calls these same two
+// routes directly (see App.jsx's Orders() component), and some accounts
+// have "orders" without "commercial" — gating these would break that
+// permitted feature for them. DELETE below stays guarded since it's only
+// ever reachable from the dedicated Commercial Invoices screen. The
+// hideCommercialStatus redaction further below applies regardless of any
+// of this.
 app.post('/api/commercial-invoices', (req, res) => {
   const { order_id, number, issue_date, client, total, currency, status, notes } = req.body;
   try {
@@ -630,14 +667,24 @@ app.post('/api/commercial-invoices', (req, res) => {
       INSERT INTO commercial_invoices (order_id, number, issue_date, client, total, currency, status, notes, updated_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, number, issue_date, client, total, currency || 'USD', status || 'Pending', notes, actorName(req));
-    res.status(201).json(getCommercialInvoiceWithDates(result.lastInsertRowid));
+    res.status(201).json(redactCommercialStatus(req, getCommercialInvoiceWithDates(result.lastInsertRowid)));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
 app.put('/api/commercial-invoices/:id', (req, res) => {
-  const { order_id, number, issue_date, client, total, currency, status, notes, shipment_date, arrival_date } = req.body;
+  const { order_id, number, issue_date, client, total, currency, notes, shipment_date, arrival_date } = req.body;
+  // Accounts with hideCommercialStatus never see the status field, so they
+  // can't legitimately be submitting a real change to it either — keep
+  // whatever is already in the database instead of trusting req.body.status
+  // here (defense in depth: the frontend already hides this field for
+  // them, this just means a raw API call can't slip a status change
+  // through even if attempted).
+  const hidesStatus = req.user && req.user.permissions && req.user.permissions.hideCommercialStatus;
+  const status = hidesStatus
+    ? db.prepare('SELECT status FROM commercial_invoices WHERE id=?').get(req.params.id)?.status
+    : req.body.status;
   db.prepare(`
     UPDATE commercial_invoices SET order_id=?, number=?, issue_date=?, client=?, total=?, currency=?, status=?, notes=?, updated_by=?
     WHERE id=?
@@ -656,10 +703,10 @@ app.put('/api/commercial-invoices/:id', (req, res) => {
              linkedOrderId);
     }
   }
-  res.json(getCommercialInvoiceWithDates(req.params.id));
+  res.json(redactCommercialStatus(req, getCommercialInvoiceWithDates(req.params.id)));
 });
 
-app.delete('/api/commercial-invoices/:id', (req, res) => {
+app.delete('/api/commercial-invoices/:id', guardScreen('commercial'), (req, res) => {
   db.prepare('DELETE FROM commercial_invoices WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -685,7 +732,7 @@ app.get('/api/packing-lists/:id', (req, res) => {
   res.json(pl);
 });
 
-app.post('/api/packing-lists', (req, res) => {
+app.post('/api/packing-lists', guardScreen('packing-lists'), (req, res) => {
   const { order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
     port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
     total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date,
@@ -710,7 +757,7 @@ app.post('/api/packing-lists', (req, res) => {
   }
 });
 
-app.put('/api/packing-lists/:id', (req, res) => {
+app.put('/api/packing-lists/:id', guardScreen('packing-lists'), (req, res) => {
   const { order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
     port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
     total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date,
@@ -728,7 +775,7 @@ app.put('/api/packing-lists/:id', (req, res) => {
   res.json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(req.params.id));
 });
 
-app.delete('/api/packing-lists/:id', (req, res) => {
+app.delete('/api/packing-lists/:id', guardScreen('packing-lists'), (req, res) => {
   db.prepare('DELETE FROM packing_lists WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -748,7 +795,7 @@ app.get('/api/quotations', (req, res) => {
   res.json(db.prepare('SELECT * FROM quotations ORDER BY created_at DESC').all());
 });
 
-app.post('/api/quotations', (req, res) => {
+app.post('/api/quotations', guardScreen('quotations'), (req, res) => {
  const { number, client, suppliers, currency, deadline, specifications, notes, status, media, items, total, target_price } = req.body;
   try {
     const result = db.prepare(`
@@ -761,7 +808,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   }
 });
 
-app.put('/api/quotations/:id', (req, res) => {
+app.put('/api/quotations/:id', guardScreen('quotations'), (req, res) => {
   const { number, client, suppliers, currency, deadline, specifications, notes, status, media, items, total, target_price } = req.body;
   db.prepare(`
     UPDATE quotations SET number=?, client=?, suppliers=?, currency=?, deadline=?, specifications=?, notes=?, status=?, media=?, items=?, total=?, target_price=?, updated_by=?
@@ -770,7 +817,7 @@ app.put('/api/quotations/:id', (req, res) => {
   res.json(db.prepare('SELECT * FROM quotations WHERE id=?').get(req.params.id));
 });
 
-app.delete('/api/quotations/:id', (req, res) => {
+app.delete('/api/quotations/:id', guardScreen('quotations'), (req, res) => {
   db.prepare('DELETE FROM quotations WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -780,6 +827,12 @@ app.get('/api/inspections', (req, res) => {
   res.json(db.prepare('SELECT * FROM inspections ORDER BY created_at DESC').all());
 });
 
+// POST/PUT intentionally NOT guarded by "inspections": the Orders screen's
+// "Generate Inspection" / inline edit flow calls these same two routes
+// directly (see App.jsx's Orders() component), and some accounts have
+// "orders" without "inspections" — gating these would break that permitted
+// feature for them. DELETE below stays guarded since it's only ever
+// reachable from the dedicated Inspections screen.
 app.post('/api/inspections', (req, res) => {
   const { order_id, number, inspection_date, inspector, result, observations, media } = req.body;
   try {
@@ -800,7 +853,7 @@ app.put('/api/inspections/:id', (req, res) => {
   res.json(db.prepare('SELECT * FROM inspections WHERE id=?').get(req.params.id));
 });
 
-app.delete('/api/inspections/:id', (req, res) => {
+app.delete('/api/inspections/:id', guardScreen('inspections'), (req, res) => {
   db.prepare('DELETE FROM inspections WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -811,11 +864,11 @@ app.delete('/api/inspections/:id', (req, res) => {
 // Samples, Packing Lists), each as a pair of sheets (still open / already
 // completed), filtered from ?since=YYYY-MM-DD onward. See
 // xlsx/reportBuilder.js for the per-category queries and column layouts.
-app.get('/api/reports/categories', (req, res) => {
+app.get('/api/reports/categories', guardScreen('reports'), (req, res) => {
   res.json(REPORT_CATEGORIES);
 });
 
-app.get('/api/reports/full', async (req, res) => {
+app.get('/api/reports/full', guardScreen('reports'), async (req, res) => {
   try {
     const since = req.query.since && /^\d{4}-\d{2}-\d{2}$/.test(req.query.since) ? req.query.since : null;
     // Empty/missing ?categories= means "everything" (buildFullReportWorkbook
@@ -840,7 +893,7 @@ app.get('/api/reports/full', async (req, res) => {
 // with each item's registered specs plus how often/heavily it's actually
 // been ordered, for spotting problematic suppliers (price creep, items that
 // never get reordered...) from the Products screen.
-app.get('/api/reports/products-by-supplier', async (req, res) => {
+app.get('/api/reports/products-by-supplier', guardScreen('reports'), async (req, res) => {
   try {
     const workbook = buildProductSupplierReportWorkbook(db);
     const buffer = await workbook.xlsx.writeBuffer();
@@ -858,7 +911,7 @@ app.get('/api/reports/products-by-supplier', async (req, res) => {
 
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
 
-app.get('/api/dashboard', (req, res) => {
+app.get('/api/dashboard', guardScreen('dashboard'), (req, res) => {
   const orderStats = db.prepare(`
     SELECT status, COUNT(*) as count, SUM(value) as total_value
     FROM orders GROUP BY status
@@ -908,13 +961,19 @@ const supplierPaid = db.prepare(`
     SELECT * FROM financial_suppliers WHERE status != 'Paid' ORDER BY due_date ASC
   `).all();
 
+  // Both clientFinancial (Pending/Paid counts) and pendingCommercials are
+  // derived from Commercial Invoice status, so accounts with
+  // hideCommercialStatus (yukin, max — see permissions.js) get neither: the
+  // counts would leak the same status info the rest of the app hides from
+  // them just in aggregate form instead of per-row.
+  const hidesStatus = req.user && req.user.permissions && req.user.permissions.hideCommercialStatus;
   res.json({
     orderStats,
-    clientFinancial: { pending: commercialPending.count, received: commercialPaid.count },
+    clientFinancial: hidesStatus ? null : { pending: commercialPending.count, received: commercialPaid.count },
     supplierFinancial: { pending: supplierPending.count, paid: supplierPaid.count },
     pendingOrders,
     pendingQuotations,
-    pendingCommercials,
+    pendingCommercials: hidesStatus ? [] : pendingCommercials,
     pendingInspections,
     pendingSamples,
     activeContracts,
@@ -931,7 +990,7 @@ app.get('/api/clients', (req, res) => {
   res.json(db.prepare('SELECT * FROM clients ORDER BY id ASC').all());
 });
 
-app.post('/api/clients', (req, res) => {
+app.post('/api/clients', guardScreen('clients'), (req, res) => {
   const { company_name, address, address2, address_number, neighborhood, city, state, zip_code, country,
     email, phone, contact_name, payment_terms, tax_id, notes } = req.body;
   try {
@@ -946,7 +1005,7 @@ app.post('/api/clients', (req, res) => {
   }
 });
 
-app.put('/api/clients/:id', (req, res) => {
+app.put('/api/clients/:id', guardScreen('clients'), (req, res) => {
   const { company_name, address, address2, address_number, neighborhood, city, state, zip_code, country,
     email, phone, contact_name, payment_terms, tax_id, notes } = req.body;
   db.prepare(`
@@ -957,7 +1016,7 @@ app.put('/api/clients/:id', (req, res) => {
   res.json(db.prepare('SELECT * FROM clients WHERE id=?').get(req.params.id));
 });
 
-app.delete('/api/clients/:id', (req, res) => {
+app.delete('/api/clients/:id', guardScreen('clients'), (req, res) => {
   db.prepare('DELETE FROM clients WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -971,7 +1030,7 @@ app.get('/api/suppliers', (req, res) => {
   res.json(db.prepare('SELECT * FROM suppliers ORDER BY id ASC').all());
 });
 
-app.post('/api/suppliers', (req, res) => {
+app.post('/api/suppliers', guardScreen('suppliers'), (req, res) => {
   const { company_name, trade_name, address, address2, address_number, neighborhood, city, state, zip_code, country,
     email, phone, contact_name, payment_terms, product_types, notes,
     beneficiary_name, bank_name, bank_branch, account_number, swift_code } = req.body;
@@ -989,7 +1048,7 @@ app.post('/api/suppliers', (req, res) => {
   }
 });
 
-app.put('/api/suppliers/:id', (req, res) => {
+app.put('/api/suppliers/:id', guardScreen('suppliers'), (req, res) => {
   const { company_name, trade_name, address, address2, address_number, neighborhood, city, state, zip_code, country,
     email, phone, contact_name, payment_terms, product_types, notes,
     beneficiary_name, bank_name, bank_branch, account_number, swift_code } = req.body;
@@ -1003,7 +1062,7 @@ app.put('/api/suppliers/:id', (req, res) => {
   res.json(db.prepare('SELECT * FROM suppliers WHERE id=?').get(req.params.id));
 });
 
-app.delete('/api/suppliers/:id', (req, res) => {
+app.delete('/api/suppliers/:id', guardScreen('suppliers'), (req, res) => {
   db.prepare('DELETE FROM suppliers WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -1014,7 +1073,7 @@ app.get('/api/freight-agents', (req, res) => {
   res.json(db.prepare('SELECT * FROM freight_agents ORDER BY id ASC').all());
 });
 
-app.post('/api/freight-agents', (req, res) => {
+app.post('/api/freight-agents', guardScreen('freight-agents'), (req, res) => {
   const { company_name, contact_name, email, phone, notes } = req.body;
   try {
     const result = db.prepare(`
@@ -1027,7 +1086,7 @@ app.post('/api/freight-agents', (req, res) => {
   }
 });
 
-app.put('/api/freight-agents/:id', (req, res) => {
+app.put('/api/freight-agents/:id', guardScreen('freight-agents'), (req, res) => {
   const { company_name, contact_name, email, phone, notes } = req.body;
   db.prepare(`
     UPDATE freight_agents SET company_name=?, contact_name=?, email=?, phone=?, notes=?, updated_by=?
@@ -1036,7 +1095,7 @@ app.put('/api/freight-agents/:id', (req, res) => {
   res.json(db.prepare('SELECT * FROM freight_agents WHERE id=?').get(req.params.id));
 });
 
-app.delete('/api/freight-agents/:id', (req, res) => {
+app.delete('/api/freight-agents/:id', guardScreen('freight-agents'), (req, res) => {
   db.prepare('DELETE FROM freight_agents WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });

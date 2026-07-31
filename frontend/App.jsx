@@ -427,6 +427,17 @@ function useT() {
   return (key) => (lang === "zh" && TRANSLATIONS.zh[key]) || key;
 }
 
+// Exposes the logged-in user's permissions (screens list + hideCommercialStatus/
+// hideMargin flags — see backend/permissions.js, the single source of truth
+// this is just a read-only mirror of) to any screen component without prop-
+// drilling `user` through every one of them. Falls back to "full access" when
+// there's no provider in the tree yet (e.g. a component rendered before login
+// finishes) so nothing crashes trying to read .screens off undefined.
+const UserContext = createContext({ permissions: { screens: [], hideCommercialStatus: false, hideMargin: false } });
+function usePermissions() {
+  return useContext(UserContext).permissions || { screens: [], hideCommercialStatus: false, hideMargin: false };
+}
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 // The business calls mainland China's currency "RMB" everywhere client-
@@ -2694,6 +2705,7 @@ function PriceHistoryModal({ product, onClose }) {
 
 function ProductForm({ initial, onSave, onClose }) {
 const t = useT();
+const { hideMargin } = usePermissions();
 const [f, setF] = useState(initial || {
   code: "", name: "", description: "", unit: "unit", ncm: "", hs_code: "", color: "",
   width: "", width_unit: "cm",
@@ -3229,7 +3241,7 @@ const handleSalePerLiterChange = (e) => {
   </div>
 </div>
 
-{costNum > 0 && saleNum > 0 && (
+{!hideMargin && costNum > 0 && saleNum > 0 && (
   <div style={{
     gridColumn: "span 2", background: "#1e293b",
     border: `1px solid ${realMarginPct == null ? "#334155" : realMarginPct < 0 ? "#ef4444" : "#10b981"}`,
@@ -4420,15 +4432,20 @@ function Dashboard() {
         ))}
       </div>
 
-      {/* Financial Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-        <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
-          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>💰 {t("Client Receivables")}</h3>
-          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-            <StatCard label="Pending Invoices" value={data.clientFinancial?.pending || 0} color="#f59e0b" />
-            <StatCard label="Paid Invoices" value={data.clientFinancial?.received || 0} color="#10b981" />
+      {/* Financial Cards — Client Receivables is Commercial Invoice status
+          info in aggregate form, so accounts with hideCommercialStatus (see
+          usePermissions) never get this card at all (the backend already
+          sends clientFinancial: null for them, rather than real numbers). */}
+      <div style={{ display: "grid", gridTemplateColumns: data.clientFinancial ? "1fr 1fr" : "1fr", gap: "16px" }}>
+        {data.clientFinancial && (
+          <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
+            <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>💰 {t("Client Receivables")}</h3>
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+              <StatCard label="Pending Invoices" value={data.clientFinancial?.pending || 0} color="#f59e0b" />
+              <StatCard label="Paid Invoices" value={data.clientFinancial?.received || 0} color="#10b981" />
+            </div>
           </div>
-        </div>
+        )}
         <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
           <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>📦 {t("Supplier Payables")}</h3>
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
@@ -6150,6 +6167,7 @@ function FreightAgents() {
 
 function CommercialInvoices() {
   const t = useT();
+  const { hideCommercialStatus } = usePermissions();
   const [invoices, setInvoices] = useState([]);
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
@@ -6198,11 +6216,13 @@ function CommercialInvoices() {
             <Field label="Issue Date" half><Input type="date" value={editing.issue_date} onChange={e => setEditing(p => ({ ...p, issue_date: e.target.value }))} /></Field>
             <Field label="Total" half><input value={editing.total} readOnly onChange={() => {}} style={{ ...inputStyle, opacity: 0.6, cursor: "not-allowed" }} /></Field>
       <Field label="Currency" half><input value={currencyLabel(editing.currency)} readOnly onChange={() => {}} style={{ ...inputStyle, opacity: 0.6, cursor: "not-allowed" }} /></Field>
-            <Field label="Status" half>
-              <Select value={editing.status} onChange={e => setEditing(p => ({ ...p, status: e.target.value }))}>
-                <option>Pending</option><option>Paid</option>
-              </Select>
-            </Field>
+            {!hideCommercialStatus && (
+              <Field label="Status" half>
+                <Select value={editing.status} onChange={e => setEditing(p => ({ ...p, status: e.target.value }))}>
+                  <option>Pending</option><option>Paid</option>
+                </Select>
+              </Field>
+            )}
             {/* Shipment/Arrival Date live on the linked Order, not on the CI
                 itself — editing them here writes straight to the Order, and
                 editing them on the Order shows up here too, automatically. */}
@@ -6239,20 +6259,20 @@ function CommercialInvoices() {
         </Modal>
       )}
       <Input value={search} onChange={e => setSearch(e.target.value)}
-        placeholder="Search by number, client or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
+        placeholder={hideCommercialStatus ? "Search by number or client…" : "Search by number, client or status…"} style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
         cols={[
           { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
           { label: "Client", key: "client" },
           { label: "Issue Date", sortValue: r => r.issue_date, render: r => fmtDate(r.issue_date) },
           { label: "Total", sortValue: r => r.total, render: r => fmt(r.total, r.currency) },
-          { label: "Status", sortValue: r => r.status, render: r => (
+          ...(hideCommercialStatus ? [] : [{ label: "Status", sortValue: r => r.status, render: r => (
             <Select value={r.status}
               onChange={async e => { await api(`/commercial-invoices/${r.id}`, "PUT", { ...r, status: e.target.value }); load(); }}
               style={{ padding: "4px 8px", fontSize: "12px", width: "auto", color: r.status === "Paid" ? "#10b981" : "#f59e0b" }}>
               <option>Pending</option><option>Paid</option>
             </Select>
-          )},
+          )}]),
           { label: "Actions", render: r => {
             const order = orders.find(o => Number(o.id) === Number(r.order_id));
             const hasPackingList = packingLists.find(p => Number(p.order_id) === Number(r.order_id));
@@ -6661,7 +6681,7 @@ function LoginScreen({ onLoggedIn }) {
         return;
       }
       setAuthToken(data.token);
-      const user = { name: data.name, username: data.username, mustChangePassword: !!data.mustChangePassword };
+      const user = { name: data.name, username: data.username, mustChangePassword: !!data.mustChangePassword, permissions: data.permissions };
       localStorage.setItem("af_user", JSON.stringify(user));
       onLoggedIn(user);
     } catch {
@@ -6825,6 +6845,14 @@ function ForceChangePasswordScreen({ user, onDone }) {
   );
 }
 
+// Tiny helper so the "stale session, no permissions cached" bounce-back can
+// clear state from inside a useEffect (a proper side effect) instead of
+// directly in App's render body.
+function StaleSessionLogout({ onDone }) {
+  useEffect(() => { onDone(); }, []);
+  return null;
+}
+
 export default function App() {
   const [user, setUser] = useState(() => {
     try {
@@ -6832,7 +6860,20 @@ export default function App() {
       return raw ? JSON.parse(raw) : null;
     } catch { return null; }
   });
-  const [tab, setTab] = useState("dashboard");
+  // Lands the person on the first screen they're actually allowed to see
+  // (in sidebar order) instead of a hardcoded "dashboard" — several
+  // accounts don't have Dashboard access at all (see permissions.js), so
+  // defaulting to it would show them a blank/broken tab on first login.
+  const [tab, setTab] = useState(() => {
+    try {
+      const raw = localStorage.getItem("af_user");
+      const screens = JSON.parse(raw || "null")?.permissions?.screens;
+      if (Array.isArray(screens) && screens.length > 0) {
+        return TABS.find(navItem => screens.includes(navItem.id))?.id || screens[0];
+      }
+    } catch { /* fall through to the default below */ }
+    return "dashboard";
+  });
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [lang, setLang] = useState(() => {
     try { return localStorage.getItem("af_lang") || "en"; } catch { return "en"; }
@@ -6868,8 +6909,28 @@ export default function App() {
     );
   }
 
+  // Sessions saved before per-user screen access existed have no
+  // `permissions` in localStorage — rather than let that silently mean
+  // "no screens allowed" (or, worse, accidentally full access), just bounce
+  // back to the login screen once so the next login response fills it in.
+  // Done in an effect (not directly in render) since it's a side effect.
+  if (!user.permissions) {
+    return <StaleSessionLogout onDone={() => { setAuthToken(null); localStorage.removeItem("af_user"); setUser(null); }} />;
+  }
+
+  // Sidebar only ever offers screens this account is allowed to open — and
+  // `tab` itself is always initialized from those same allowed screens (see
+  // the useState above), so in practice `tab` can't drift outside
+  // `allowedScreens` just from clicking around. `effectiveTab` is a cheap
+  // extra guard for the edge case anyway (falls back to this account's
+  // first allowed screen instead of rendering a blank pane) — no separate
+  // effect/redirect needed since this is computed fresh every render.
+  const allowedScreens = user.permissions.screens || [];
+  const visibleTabs = TABS.filter(navItem => allowedScreens.includes(navItem.id));
+  const effectiveTab = allowedScreens.includes(tab) ? tab : (visibleTabs[0]?.id || null);
+
 const renderTab = () => {
-    switch (tab) {
+    switch (effectiveTab) {
       case "dashboard": return <Dashboard />;
       case "orders": return <Orders />;
       case "clients": return <Clients />;
@@ -6922,19 +6983,19 @@ const renderTab = () => {
                 translate function in scope here, and shadowing it inside
                 this callback would silently make every t(...) call below
                 resolve to the tab object instead. */}
-            {TABS.map(navItem => (
+            {visibleTabs.map(navItem => (
               <button key={navItem.id} onClick={() => setTab(navItem.id)}
                 style={{
                   display: "flex", alignItems: "center", gap: "10px",
                   padding: "10px 10px", borderRadius: "8px", border: "none", cursor: "pointer",
-                  background: tab === navItem.id ? "#1e293b" : "transparent",
-                  color: tab === navItem.id ? "#f1f5f9" : "#64748b",
-                  fontFamily: "inherit", fontSize: "13px", fontWeight: tab === navItem.id ? 600 : 400,
+                  background: effectiveTab === navItem.id ? "#1e293b" : "transparent",
+                  color: effectiveTab === navItem.id ? "#f1f5f9" : "#64748b",
+                  fontFamily: "inherit", fontSize: "13px", fontWeight: effectiveTab === navItem.id ? 600 : 400,
                   textAlign: "left", transition: "all 0.1s",
-                  borderLeft: tab === navItem.id ? "2px solid #3b82f6" : "2px solid transparent",
+                  borderLeft: effectiveTab === navItem.id ? "2px solid #3b82f6" : "2px solid transparent",
                 }}
-                onMouseEnter={e => { if (tab !== navItem.id) e.currentTarget.style.color = "#94a3b8"; }}
-                onMouseLeave={e => { if (tab !== navItem.id) e.currentTarget.style.color = "#64748b"; }}
+                onMouseEnter={e => { if (effectiveTab !== navItem.id) e.currentTarget.style.color = "#94a3b8"; }}
+                onMouseLeave={e => { if (effectiveTab !== navItem.id) e.currentTarget.style.color = "#64748b"; }}
               >
                 <span style={{ fontSize: "16px", flexShrink: 0, width: "20px", textAlign: "center" }}>{navItem.icon}</span>
                 {sidebarOpen && <span style={{ overflow: "hidden", whiteSpace: "nowrap" }}>{t(navItem.label)}</span>}
@@ -7007,7 +7068,9 @@ const renderTab = () => {
             padding: "28px", minHeight: "calc(100vh - 64px)",
           }}>
             <LanguageContext.Provider value={{ lang, setLang }}>
-              {renderTab()}
+              <UserContext.Provider value={{ permissions: user.permissions }}>
+                {renderTab()}
+              </UserContext.Provider>
             </LanguageContext.Provider>
           </div>
         </main>

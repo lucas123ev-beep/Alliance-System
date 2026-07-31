@@ -12,6 +12,7 @@
 // username }` for the rest of the route to use (e.g. writing `updated_by`).
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const { permissionsFor } = require("./permissions");
 
 const SALT_ROUNDS = 10;
 
@@ -91,7 +92,31 @@ function requireAuth(db) {
     }
 
     db.prepare(`UPDATE sessions SET last_seen_at = datetime('now') WHERE token = ?`).run(token);
-    req.user = { id: session.id, name: session.name, username: session.username };
+    req.user = {
+      id: session.id, name: session.name, username: session.username,
+      permissions: permissionsFor(session.username),
+    };
+    next();
+  };
+}
+
+// Applied per-route (after requireAuth) to block writes/downloads for a
+// screen the logged-in user isn't allowed to use — see permissions.js for
+// who has what. Read routes are deliberately NOT guarded this way almost
+// everywhere: the app's screens read each other's data constantly (e.g.
+// Quotations reads Orders+Proformas to link/convert, Inspections reads
+// Orders, Financial reads Orders), so blocking GETs per-screen would break
+// legitimate features for people who were explicitly granted a *different*
+// screen that happens to depend on that data. Mutations (POST/PUT/DELETE)
+// are the real boundary — this only ever rejects someone trying to
+// create/edit/delete something outside their own screens, never a
+// read a permitted screen needs to function.
+function guardScreen(screenId) {
+  return (req, res, next) => {
+    const screens = (req.user && req.user.permissions && req.user.permissions.screens) || [];
+    if (!screens.includes(screenId)) {
+      return res.status(403).json({ error: "You don't have access to this section." });
+    }
     next();
   };
 }
@@ -137,6 +162,6 @@ function actorName(req) {
 }
 
 module.exports = {
-  hashPassword, verifyPassword, generateToken, generateTempPassword, requireAuth, actorName,
+  hashPassword, verifyPassword, generateToken, generateTempPassword, requireAuth, guardScreen, actorName,
   isLockedOut, lockoutMinutesRemaining, recordFailedLogin, resetFailedLogins,
 };
