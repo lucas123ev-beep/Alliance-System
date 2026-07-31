@@ -29,10 +29,10 @@ const { buildFullReportWorkbook, CATEGORIES: REPORT_CATEGORIES } = require('./xl
 const { buildProductSupplierReportWorkbook } = require('./xlsx/productSupplierReport');
 const { buildPaymentNoticeWorkbook } = require('./xlsx/paymentNotice');
 const {
-  hashPassword, verifyPassword, generateToken, requireAuth, guardScreen, actorName,
+  hashPassword, verifyPassword, generateToken, generateTempPassword, requireAuth, guardScreen, actorName,
   isLockedOut, lockoutMinutesRemaining, recordFailedLogin, resetFailedLogins,
 } = require('./auth');
-const { permissionsFor } = require('./permissions');
+const { permissionsFor, ALL_SCREENS } = require('./permissions');
 
 const cloudinary = require('cloudinary').v2;
 cloudinary.config({
@@ -117,6 +117,35 @@ app.post('/api/change-password', (req, res) => {
   db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?')
     .run(hashPassword(newPassword), req.user.id);
   res.json({ success: true });
+});
+
+// Lets a full-access account (lucas/martiello/gabriel/juliana — anyone whose
+// own permissions cover every screen) generate a fresh one-time password
+// for anybody else, e.g. after using someone's account to test their
+// restricted view, which consumes their original temp password by forcing
+// a real one to be set. Same shape as the very first seed (see
+// seedUsers.js): a random readable password, must_change_password set back
+// to 1 so the next login forces them to pick their own, and any existing
+// lockout/failed-attempt count cleared. There's no UI for this on purpose —
+// call it once via fetch() from the browser console while logged in as an
+// admin account (see the reply this was requested in for the exact
+// snippet), same "small trusted team, admin hands out credentials
+// directly" reasoning as the initial rollout.
+app.post('/api/admin/users/:username/reset-password', (req, res) => {
+  const isAdmin = req.user.permissions && ALL_SCREENS.every(s => req.user.permissions.screens.includes(s));
+  if (!isAdmin) return res.status(403).json({ error: "You don't have access to this." });
+
+  const target = db.prepare('SELECT * FROM users WHERE username = ?').get(String(req.params.username || '').trim().toLowerCase());
+  if (!target) return res.status(404).json({ error: 'No account with that username.' });
+
+  const password = generateTempPassword();
+  db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1, failed_attempts = 0, locked_until = NULL WHERE id = ?')
+    .run(hashPassword(password), target.id);
+  // Also drop any active sessions for that account so a device that's
+  // already logged in doesn't keep working on the old password indefinitely.
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(target.id);
+
+  res.json({ username: target.username, name: target.name, password });
 });
 
 // ─── ORDERS ──────────────────────────────────────────────────────────────────
