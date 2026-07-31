@@ -1260,7 +1260,22 @@ const FIN_STATUSES = ["Pending", "Partial", "Paid", "Overdue"];
 
 // ─── REUSABLE UI ──────────────────────────────────────────────────────────────
 
+// Pressing Escape closes whatever overlay is currently on screen — every
+// form Modal, plus the few one-off overlays that don't go through the
+// shared Modal component (lightbox, success notifications). `active`
+// gates the listener so it's only ever attached while something is
+// actually open, and re-attaches cleanly if onClose changes.
+function useEscapeToClose(active, onClose) {
+  useEffect(() => {
+    if (!active) return;
+    const handler = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [active, onClose]);
+}
+
 function Modal({ title, onClose, children, wide }) {
+  useEscapeToClose(true, onClose);
   return (
     <div
       style={{
@@ -2717,6 +2732,7 @@ const [f, setF] = useState(initial || {
 });
 const [uploading, setUploading] = useState(false);
 const [lightbox, setLightbox] = useState(null);
+useEscapeToClose(!!lightbox, () => setLightbox(null));
 const [showPriceHistory, setShowPriceHistory] = useState(false);
 // Live exchange rates (USD base) — used only to convert Cost Price into
 // Sale Price's currency so the Real Margin indicator below is accurate
@@ -3368,6 +3384,7 @@ const [media, setMedia] = useState(() => {
 });
 const [uploading, setUploading] = useState(false);
 const [lightbox, setLightbox] = useState(null);
+useEscapeToClose(!!lightbox, () => setLightbox(null));
   
 const handleUpload = async (e) => {
   const files = Array.from(e.target.files);
@@ -3965,6 +3982,7 @@ function QuotationForm({ onSave, onClose, initial }) {
 });
   const [uploading, setUploading] = useState(false);
   const [lightbox, setLightbox] = useState(null);
+  useEscapeToClose(!!lightbox, () => setLightbox(null));
   const [itemModal, setItemModal] = useState(null);
   const [editingItemIdx, setEditingItemIdx] = useState(null);
 
@@ -4856,6 +4874,7 @@ const [orders, setOrders] = useState([]);
   const [contractModal, setContractModal] = useState(null);
   const [savedContracts, setSavedContracts] = useState([]);
   const [ciNotification, setCiNotification] = useState(null);
+  useEscapeToClose(!!ciNotification, () => setCiNotification(null));
   const [inspectionModal, setInspectionModal] = useState(null);
 const [inspections, setInspections] = useState([]);
   const [editInspection, setEditInspection] = useState(null);
@@ -5413,6 +5432,7 @@ const [proformas, setProformas] = useState([]);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(null);
   const [orderNotification, setOrderNotification] = useState(null);
+  useEscapeToClose(!!orderNotification, () => setOrderNotification(null));
   const load = useCallback(() => {
     api("/proformas").then(setProformas);
     api("/orders").then(setOrders);
@@ -6339,6 +6359,7 @@ const [media, setMedia] = useState(() => {
 });
   const [uploading, setUploading] = useState(false);
   const [lightbox, setLightbox] = useState(null);
+  useEscapeToClose(!!lightbox, () => setLightbox(null));
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
   const handleUpload = async (e) => {
