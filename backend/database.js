@@ -312,6 +312,35 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- Supplier quality evaluations -- one row per incident. Every supplier
+  -- starts at 5 stars; each row here nudges that number down (a problem)
+  -- and back up (however that problem got resolved). Both sides are logged
+  -- together on purpose -- "wrong colors delivered" only means something
+  -- once you also know whether the fix was a full reprint or just a small
+  -- discount, so a single incident always carries both a problem and its
+  -- solution, not two separate free-floating logs. problem_points is always
+  -- <= 0, solution_points is always >= 0; the point values themselves come
+  -- from the fixed preset lists in supplierEvaluationOptions.js (never
+  -- trusted from the client) so scoring stays consistent across every
+  -- supplier instead of depending on whatever number someone typed in.
+  -- The current rating is never stored -- it's recomputed on read as
+  -- clamp(5 + SUM(problem_points) + SUM(solution_points), 0, 5) so it can
+  -- never drift out of sync with the incident history.
+  CREATE TABLE IF NOT EXISTS supplier_evaluations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    problem_key TEXT NOT NULL,
+    problem_label TEXT NOT NULL,
+    problem_points REAL NOT NULL,
+    problem_notes TEXT,
+    solution_key TEXT NOT NULL,
+    solution_label TEXT NOT NULL,
+    solution_points REAL NOT NULL,
+    solution_notes TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   -- Freight forwarding agents — a lean registry (just who to contact, not a
   -- full CRM record like Clients/Suppliers) since the only other place they
   -- get used is a searchable picker on the Packing List screen.

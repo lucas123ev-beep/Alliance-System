@@ -1400,6 +1400,27 @@ function LastModifiedBy({ name }) {
   );
 }
 
+// Read-only 5-star rating display, used for Suppliers' quality score (see
+// supplier_evaluations table in database.js). Renders a smooth partial fill
+// (not just whole/half stars) via a clipped overlay — five grey stars
+// underneath, five colored stars on top clipped to `value/5` width — so a
+// rating like 3.75 actually reads as 3.75, not rounded down to a fixed
+// half-star step.
+function StarRating({ value, size = 14, showNumber = true }) {
+  const v = Math.max(0, Math.min(5, Number(value) || 0));
+  const pct = (v / 5) * 100;
+  const color = v >= 4 ? "#22c55e" : v >= 2.5 ? "#f59e0b" : "#ef4444";
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", whiteSpace: "nowrap" }}>
+      <span style={{ position: "relative", display: "inline-block", fontSize: size, lineHeight: 1, letterSpacing: "1px" }}>
+        <span style={{ color: "#334155" }}>★★★★★</span>
+        <span style={{ position: "absolute", top: 0, left: 0, overflow: "hidden", width: `${pct}%`, color }}>★★★★★</span>
+      </span>
+      {showNumber && <span style={{ fontSize: "11px", color: "#64748b" }}>{v.toFixed(1)}/5</span>}
+    </span>
+  );
+}
+
 function Badge({ status }) {
   const c = STATUS_COLORS[status] || { bg: "#1e293b", text: "#94a3b8", dot: "#64748b", border: "#334155" };
   return (
@@ -5920,7 +5941,137 @@ function Clients() {
   );
 }
 
-function SupplierForm({ initial, onSave, onClose }) {
+// Evaluation history + "log a new incident" form for one supplier — opened
+// from a button inside SupplierForm, same idiom as ProductForm's Price
+// History modal. `problem_key`/`solution_key` are the only things sent to
+// the server; the point values shown here are just what the backend will
+// resolve them to (see supplierEvaluationOptions.js — the client never gets
+// to submit an arbitrary point value).
+function SupplierEvaluationModal({ supplier, onClose }) {
+  const t = useT();
+  const [options, setOptions] = useState(null); // { problems, solutions }
+  const [data, setData] = useState(null); // { rating, evaluations }
+  const [problemKey, setProblemKey] = useState("");
+  const [problemNotes, setProblemNotes] = useState("");
+  const [solutionKey, setSolutionKey] = useState("");
+  const [solutionNotes, setSolutionNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(() => api(`/suppliers/${supplier.id}/evaluations`).then(setData), [supplier.id]);
+  useEffect(() => { api("/supplier-evaluation-options").then(setOptions); load(); }, [load]);
+
+  const submit = async () => {
+    if (!problemKey || !solutionKey) return;
+    setSaving(true);
+    try {
+      const result = await api(`/suppliers/${supplier.id}/evaluations`, "POST", {
+        problem_key: problemKey, problem_notes: problemNotes,
+        solution_key: solutionKey, solution_notes: solutionNotes,
+      });
+      setData(result);
+      setProblemKey(""); setProblemNotes(""); setSolutionKey(""); setSolutionNotes("");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeEval = async (id) => {
+    if (!confirm(t("Delete?"))) return;
+    setData(await api(`/suppliers/evaluations/${id}`, "DELETE"));
+  };
+
+  if (!options || !data) {
+    return (
+      <Modal title={`${t("Evaluation")} — ${supplier.company_name}`} onClose={onClose} wide>
+        <div style={{ color: "#64748b", fontSize: "13px", padding: "20px 0" }}>{t("Loading...")}</div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal title={`${t("Evaluation")} — ${supplier.company_name}`} onClose={onClose} wide>
+      <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "20px", background: "#1e293b", border: "1px solid #334155", borderRadius: "10px", padding: "14px 18px" }}>
+        <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("Current Rating")}</div>
+        <StarRating value={data.rating} size={22} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
+        <div style={{ border: "1px solid #334155", borderRadius: "10px", padding: "14px" }}>
+          <div style={{ fontSize: "12px", fontWeight: 700, color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>
+            {t("Problem")}
+          </div>
+          <Field label="What happened">
+            <Select value={problemKey} onChange={e => setProblemKey(e.target.value)}>
+              <option value="">{t("Select...")}</option>
+              {options.problems.map(o => (
+                <option key={o.key} value={o.key}>{o.generic ? "• " : ""}{o.label} ({o.points})</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Details (optional)">
+            <Textarea value={problemNotes} onChange={e => setProblemNotes(e.target.value)} />
+          </Field>
+        </div>
+        <div style={{ border: "1px solid #334155", borderRadius: "10px", padding: "14px" }}>
+          <div style={{ fontSize: "12px", fontWeight: 700, color: "#22c55e", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>
+            {t("Solution")}
+          </div>
+          <Field label="How it was resolved">
+            <Select value={solutionKey} onChange={e => setSolutionKey(e.target.value)}>
+              <option value="">{t("Select...")}</option>
+              {options.solutions.map(o => (
+                <option key={o.key} value={o.key}>{o.generic ? "• " : ""}{o.label} (+{o.points})</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Details (optional)">
+            <Textarea value={solutionNotes} onChange={e => setSolutionNotes(e.target.value)} />
+          </Field>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "26px" }}>
+        <Btn color="#8b5cf6" disabled={!problemKey || !solutionKey || saving} onClick={submit}>
+          {saving ? "Saving..." : "+ Log Evaluation"}
+        </Btn>
+      </div>
+
+      <div style={{ fontSize: "12px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>
+        {t("History")}
+      </div>
+      {data.evaluations.length === 0 ? (
+        <div style={{ color: "#64748b", fontSize: "13px" }}>{t("No evaluations recorded yet.")}</div>
+      ) : (
+        <Table
+          cols={[
+            { label: "Date", sortValue: r => r.created_at, render: r => new Date(String(r.created_at).replace(" ", "T")).toLocaleDateString("en-US") },
+            { label: "Problem", render: r => (
+              <div>
+                <div>{r.problem_label} <span style={{ color: "#ef4444" }}>({r.problem_points})</span></div>
+                {r.problem_notes && <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>{r.problem_notes}</div>}
+              </div>
+            ) },
+            { label: "Solution", render: r => (
+              <div>
+                <div>{r.solution_label} <span style={{ color: "#22c55e" }}>(+{r.solution_points})</span></div>
+                {r.solution_notes && <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>{r.solution_notes}</div>}
+              </div>
+            ) },
+            { label: "Net", sortValue: r => r.problem_points + r.solution_points, render: r => {
+              const net = r.problem_points + r.solution_points;
+              return <span style={{ fontWeight: 700, color: net < 0 ? "#ef4444" : net > 0 ? "#22c55e" : "#64748b" }}>{net > 0 ? "+" : ""}{net.toFixed(2)}</span>;
+            } },
+            { label: "By", key: "created_by" },
+            { label: "Actions", render: r => <Btn small outline color="#ef4444" onClick={() => removeEval(r.id)}>Del</Btn> },
+          ]}
+          rows={data.evaluations}
+        />
+      )}
+    </Modal>
+  );
+}
+
+function SupplierForm({ initial, onSave, onClose, onEvaluationsChanged }) {
   const [f, setF] = useState(initial || {
     company_name: "", trade_name: "", address: "", address2: "", address_number: "", neighborhood: "",
     city: "", state: "", zip_code: "", country: "", email: "",
@@ -5928,6 +6079,7 @@ function SupplierForm({ initial, onSave, onClose }) {
     beneficiary_name: "", bank_name: "", bank_branch: "", account_number: "", swift_code: "",
   });
   const [showPaymentList, setShowPaymentList] = useState(false);
+  const [showEvaluation, setShowEvaluation] = useState(false);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
 
   const paymentOptions = [
@@ -5960,6 +6112,18 @@ function SupplierForm({ initial, onSave, onClose }) {
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+      {initial?.id && (
+        <div style={{ gridColumn: "span 2", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1e293b", border: "1px solid #334155", borderRadius: "10px", padding: "12px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Rating</span>
+            <StarRating value={initial.rating} size={16} />
+          </div>
+          <Btn outline color="#8b5cf6" onClick={() => setShowEvaluation(true)}>⭐ Evaluation</Btn>
+        </div>
+      )}
+      {showEvaluation && (
+        <SupplierEvaluationModal supplier={initial} onClose={() => { setShowEvaluation(false); onEvaluationsChanged?.(); }} />
+      )}
       <Field label="Company Name"><Input value={f.company_name} onChange={set("company_name")} /></Field>
       <Field label="Trade Name">
         <Input value={f.trade_name || ""} onChange={set("trade_name")} placeholder="English name, e.g. for Chinese suppliers" />
@@ -6067,12 +6231,13 @@ function Suppliers() {
       )}
       {editing && (
         <Modal title={t("Edit Supplier")} onClose={() => setEditing(null)}>
-          <SupplierForm initial={editing} onSave={b => api(`/suppliers/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
+          <SupplierForm initial={editing} onSave={b => api(`/suppliers/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} onEvaluationsChanged={load} />
         </Modal>
       )}
       <Table
         cols={[
           { label: "Company", sortValue: r => r.company_name, render: r => <span style={{ fontWeight: 600, color: "#a78bfa" }}>{r.company_name}</span> },
+          { label: "Rating", sortValue: r => r.rating, render: r => <StarRating value={r.rating} size={12} /> },
           { label: "Trade Name", key: "trade_name" },
           { label: "Contact", key: "contact_name" },
           { label: "Email", key: "email" },

@@ -10,6 +10,7 @@
 const ExcelJS = require("exceljs");
 const { addReportSheet, toNumber, toExcelDate } = require("./reportBuilder");
 const { currencyLabel } = require("../pdf/helpers");
+const { computeRating } = require("../supplierEvaluationOptions");
 
 // "120 cm" / "" — pairs a raw value with its unit, blank when there's
 // nothing registered instead of printing a bare unit or "undefined".
@@ -72,6 +73,12 @@ const PRODUCT_COLUMNS = [
 
 const SUMMARY_COLUMNS = [
   { key: "supplier", header: "Supplier", width: 28 },
+  // Best-effort match against the Suppliers registry (see lookupRating()
+  // below) — products.supplier is free text with no foreign key into
+  // suppliers.id, so a supplier registered under a slightly different name
+  // (or not registered at all, e.g. "No Supplier") shows blank here rather
+  // than a guess.
+  { key: "rating", header: "Rating (0-5)", width: 12, type: "decimal" },
   { key: "product_count", header: "Products Registered", width: 16, type: "number" },
   { key: "orders_count", header: "Orders (Distinct)", width: 14, type: "number" },
   { key: "total_qty", header: "Total Qty Ordered", width: 16, type: "decimal" },
@@ -175,12 +182,39 @@ function buildProductSupplierReportWorkbook(db) {
     ORDER BY total_spend DESC, supplier_name COLLATE NOCASE
   `).all();
 
+  // Rating lookup, keyed by normalized supplier name (see the Rating
+  // column comment above for why this is a best-effort text match rather
+  // than a join). Built once here from the Suppliers registry + its
+  // evaluation history, same computeRating() the Suppliers screen and
+  // GET /api/suppliers use, so the number always agrees with what's shown
+  // there.
+  const supplierRows = db.prepare("SELECT id, company_name, trade_name FROM suppliers").all();
+  const evalRows = db.prepare("SELECT supplier_id, problem_points, solution_points FROM supplier_evaluations").all();
+  const evalsById = new Map();
+  evalRows.forEach(row => {
+    if (!evalsById.has(row.supplier_id)) evalsById.set(row.supplier_id, []);
+    evalsById.get(row.supplier_id).push(row);
+  });
+  const ratingByName = new Map();
+  supplierRows.forEach(s => {
+    const rating = computeRating(evalsById.get(s.id));
+    [s.company_name, s.trade_name].forEach(name => {
+      const key = (name || "").trim().toLowerCase();
+      if (key) ratingByName.set(key, rating);
+    });
+  });
+  const lookupRating = name => {
+    const key = (name || "").trim().toLowerCase();
+    return ratingByName.has(key) ? ratingByName.get(key) : null;
+  };
+
   addReportSheet(workbook, {
     sheetName: "Supplier Summary",
     title: "SUPPLIER SUMMARY",
     columns: SUMMARY_COLUMNS,
     rows: summaryRows.map(r => ({
       supplier: r.supplier_name,
+      rating: lookupRating(r.supplier_name),
       product_count: toNumber(r.product_count) || 0,
       orders_count: toNumber(r.orders_count) || 0,
       total_qty: toNumber(r.total_qty),

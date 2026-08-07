@@ -28,6 +28,7 @@ function safeFilenamePart(s) {
 const { buildFullReportWorkbook, CATEGORIES: REPORT_CATEGORIES } = require('./xlsx/reportBuilder');
 const { buildProductSupplierReportWorkbook } = require('./xlsx/productSupplierReport');
 const { buildPaymentNoticeWorkbook } = require('./xlsx/paymentNotice');
+const { PROBLEM_OPTIONS, SOLUTION_OPTIONS, findProblem, findSolution, computeRating } = require('./supplierEvaluationOptions');
 const {
   hashPassword, verifyPassword, generateToken, generateTempPassword, requireAuth, guardScreen, actorName,
   isLockedOut, lockoutMinutesRemaining, recordFailedLogin, resetFailedLogins,
@@ -1062,7 +1063,15 @@ app.get('/api/suppliers', (req, res) => {
   // Addition order, not alphabetical — see the matching comment on
   // GET /api/products. Click any column header on the Suppliers screen to
   // sort by that instead.
-  res.json(db.prepare('SELECT * FROM suppliers ORDER BY id ASC').all());
+  const suppliers = db.prepare('SELECT * FROM suppliers ORDER BY id ASC').all();
+  // One evaluation-rows query for every supplier at once (not N+1) — each
+  // supplier's rating is clamp(5 + its own incidents' points, 0, 5), see
+  // computeRating() in supplierEvaluationOptions.js.
+  const evalRows = db.prepare('SELECT supplier_id, problem_points, solution_points FROM supplier_evaluations').all();
+  const bySupplier = {};
+  for (const row of evalRows) (bySupplier[row.supplier_id] ||= []).push(row);
+  for (const s of suppliers) s.rating = computeRating(bySupplier[s.id]);
+  res.json(suppliers);
 });
 
 app.post('/api/suppliers', guardScreen('suppliers'), (req, res) => {
@@ -1100,6 +1109,61 @@ app.put('/api/suppliers/:id', guardScreen('suppliers'), (req, res) => {
 app.delete('/api/suppliers/:id', guardScreen('suppliers'), (req, res) => {
   db.prepare('DELETE FROM suppliers WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── SUPPLIER EVALUATIONS (5-star rating) ──────────────────────────────────────
+// See the supplier_evaluations table comment in database.js and
+// supplierEvaluationOptions.js for the full model. GET routes are open (same
+// reasoning as every other GET in this file — read access isn't gated per
+// screen, only mutations are); POST/DELETE are guarded the same way
+// suppliers' own POST/PUT/DELETE already are.
+
+// Single source of truth for the preset problem/solution lists + their point
+// values, so the frontend never hardcodes them (mirrors GET
+// /api/reports/categories for the Reports screen's checkbox list).
+app.get('/api/supplier-evaluation-options', (req, res) => {
+  res.json({ problems: PROBLEM_OPTIONS, solutions: SOLUTION_OPTIONS });
+});
+
+app.get('/api/suppliers/:id/evaluations', (req, res) => {
+  const rows = db.prepare('SELECT * FROM supplier_evaluations WHERE supplier_id=? ORDER BY created_at DESC, id DESC').all(req.params.id);
+  res.json({ rating: computeRating(rows), evaluations: rows });
+});
+
+app.post('/api/suppliers/:id/evaluations', guardScreen('suppliers'), (req, res) => {
+  const supplier = db.prepare('SELECT id FROM suppliers WHERE id=?').get(req.params.id);
+  if (!supplier) return res.status(404).json({ error: 'Supplier not found' });
+
+  // Point values are never taken from the request body — only the `key`
+  // is, then re-resolved server-side against the fixed preset lists. This
+  // is what keeps every supplier's score consistent regardless of who's
+  // logging the incident (and stops a tampered request from awarding
+  // arbitrary points).
+  const problem = findProblem(req.body.problem_key);
+  const solution = findSolution(req.body.solution_key);
+  if (!problem) return res.status(400).json({ error: 'Invalid problem_key' });
+  if (!solution) return res.status(400).json({ error: 'Invalid solution_key' });
+
+  const result = db.prepare(`
+    INSERT INTO supplier_evaluations
+      (supplier_id, problem_key, problem_label, problem_points, problem_notes,
+       solution_key, solution_label, solution_points, solution_notes, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    req.params.id, problem.key, problem.label, problem.points, req.body.problem_notes || '',
+    solution.key, solution.label, solution.points, req.body.solution_notes || '', actorName(req)
+  );
+
+  const rows = db.prepare('SELECT * FROM supplier_evaluations WHERE supplier_id=? ORDER BY created_at DESC, id DESC').all(req.params.id);
+  res.status(201).json({ rating: computeRating(rows), evaluations: rows });
+});
+
+app.delete('/api/suppliers/evaluations/:evalId', guardScreen('suppliers'), (req, res) => {
+  const row = db.prepare('SELECT supplier_id FROM supplier_evaluations WHERE id=?').get(req.params.evalId);
+  if (!row) return res.status(404).json({ error: 'Evaluation not found' });
+  db.prepare('DELETE FROM supplier_evaluations WHERE id=?').run(req.params.evalId);
+  const rows = db.prepare('SELECT * FROM supplier_evaluations WHERE supplier_id=? ORDER BY created_at DESC, id DESC').all(row.supplier_id);
+  res.json({ rating: computeRating(rows), evaluations: rows });
 });
 
 // ─── FREIGHT AGENTS ───────────────────────────────────────────────────────────
