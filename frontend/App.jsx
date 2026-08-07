@@ -3660,6 +3660,24 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
     api("/clients").then(setClients);
   }, []);
 
+  // Keeps Acquisition Company synced to the linked Order's current value
+  // any time this form has one — not just the moment the user actively
+  // re-picks a different order in the dropdown below (which used to be the
+  // only place this synced), but also the instant the Edit Proforma modal
+  // opens for a Proforma that already has an order_id. Without this, the
+  // field kept showing whatever was saved on the Proforma itself the last
+  // time it was edited, so changing the Acquisition Company on the Order
+  // afterwards left this "locked" field looking stale here — even though
+  // the actual generated PDF was already reading live from the Order all
+  // along (see the PDF route in server.js).
+  useEffect(() => {
+    if (!f.order_id) return;
+    const linkedOrder = orders.find(o => String(o.id) === String(f.order_id));
+    if (linkedOrder && linkedOrder.acquisition_company && linkedOrder.acquisition_company !== f.acquisition_company) {
+      setF(p => ({ ...p, acquisition_company: linkedOrder.acquisition_company }));
+    }
+  }, [f.order_id, orders]);
+
   const addItem = (item) => setItems(prev => [...prev, item]);
   const updateItem = (idx, item) => setItems(prev => { const u = [...prev]; u[idx] = item; return u; });
   const removeItem = (idx) => setItems(prev => prev.filter((_, i) => i !== idx));
@@ -3699,16 +3717,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
       )}
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Linked Order" half>
-        <Select value={f.order_id} onChange={e => {
-          const orderId = e.target.value;
-          // Once a Proforma is linked to an Order, the PDF's Acquisition
-          // Company (and bank info) always follows the Order — see the
-          // backend route — so the Proforma's own field is kept in sync
-          // here the moment an Order is picked, instead of silently having
-          // no effect when the user edits it below.
-          const linkedOrder = orders.find(o => String(o.id) === String(orderId));
-          setF(p => ({ ...p, order_id: orderId, acquisition_company: linkedOrder ? (linkedOrder.acquisition_company || p.acquisition_company) : p.acquisition_company }));
-        }}>
+        <Select value={f.order_id} onChange={set("order_id")}>
           <option value="">None</option>
           {orders.map(o => <option key={o.id} value={o.id}>{o.order_number} – {o.client}</option>)}
         </Select>
