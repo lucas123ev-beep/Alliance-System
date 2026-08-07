@@ -87,7 +87,7 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows, t
   // which has no text content to re-fit against and a lot of spare height,
   // so it stays clear of the logo regardless of how row 1 itself renders.
   const titleRow = sheet.getRow(1);
-  titleRow.height = 34;
+  titleRow.height = 50;
   sheet.mergeCells(1, 1, 1, columns.length);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = title;
@@ -108,7 +108,7 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows, t
   // enough to give the floated logo generous clearance even if row 1 itself
   // ends up rendered shorter than requested.
   const spacerRow = sheet.getRow(2);
-  spacerRow.height = 40;
+  spacerRow.height = 1;
   for (let col = 1; col <= columns.length; col++) sheet.getCell(2, col).border = { bottom: HEADER_RULE };
 
   // Row 3: column headers — bold, no fill, same rule weight as the title's
