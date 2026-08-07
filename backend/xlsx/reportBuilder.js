@@ -79,8 +79,11 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows, t
   sheet.columns = columns.map(c => ({ key: c.key, width: c.width || 16 }));
 
   // Row 1: logo (floating, doesn't touch cell content) + right-aligned title.
+  // Height must clear the logo's full floated height below (see comment on
+  // the image itself) — otherwise row 1's bottom border rule cuts straight
+  // across the logo instead of sitting under it.
   const titleRow = sheet.getRow(1);
-  titleRow.height = 40;
+  titleRow.height = 72;
   sheet.mergeCells(1, 1, 1, columns.length);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = title;
@@ -92,11 +95,12 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows, t
   // Real logo artwork is ~1800x574px (~3.14:1) — width/height below must
   // keep that ratio or the logo prints visibly squished/stretched. Sized up
   // per client request (Aug 2026) to read clearly at a glance instead of
-  // sitting small in the corner — floats independently of row height, so it
-  // overlaps down past row 1 into the row 2 spacer, same as the reference
-  // the client sent.
+  // sitting small in the corner. Floats independently of row height, so it
+  // must fit entirely inside row 1's own height (see above) — letting it
+  // bleed past row 1 put the header-rule border line across the middle of
+  // the logo instead of below it.
   const imageId = workbook.addImage({ base64: LOGO, extension: "png" });
-  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: 188, height: 60 } });
+  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.08 }, ext: { width: 188, height: 60 } });
 
   // Row 2: thin spacer between the letterhead and the column headers.
   sheet.getRow(2).height = 6;
