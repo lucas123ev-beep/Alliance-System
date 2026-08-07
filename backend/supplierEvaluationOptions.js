@@ -48,6 +48,15 @@ const PROBLEM_OPTIONS = [
 ];
 
 const SOLUTION_OPTIONS = [
+  // Always first and separate from the 3 severity levels below it — this is
+  // the option for logging a problem the moment it happens, before any
+  // resolution exists yet (not "the supplier refused to help," just "not
+  // resolved as of right now"). Zero points: doesn't recover anything, but
+  // doesn't need to since the matching problem already deducted its own
+  // points on its own. The evaluation can always be followed up later with
+  // a second entry once an actual solution happens.
+  { key: "unresolved", label: "No solution yet / not resolved", points: 0 },
+
   { key: "generic_small", label: "Small solution (generic)", points: 0.1, generic: true },
   { key: "generic_medium", label: "Medium solution (generic)", points: 0.5, generic: true },
   { key: "generic_large", label: "Large solution (generic)", points: 1.5, generic: true },
@@ -60,7 +69,7 @@ const SOLUTION_OPTIONS = [
   { key: "credit_note", label: "Credit note for future use", points: 0.5 },
   { key: "discount_next_order", label: "Discount on next order", points: 0.25 },
   { key: "apology_only", label: "Apology only, no concrete action", points: 0.1 },
-  { key: "no_action", label: "No solution offered", points: 0 },
+  { key: "no_action", label: "No solution offered (refused / ignored)", points: 0 },
 ];
 
 function findProblem(key) {

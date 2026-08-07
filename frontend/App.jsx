@@ -473,7 +473,8 @@ const TRANSLATIONS = {
     "Credit note for future use": "留待日后使用的信用凭证",
     "Discount on next order": "下次订单折扣",
     "Apology only, no concrete action": "仅道歉，无实际行动",
-    "No solution offered": "未提供解决方案",
+    "No solution offered (refused / ignored)": "未提供解决方案（拒绝/未理会）",
+    "No solution yet / not resolved": "尚无解决方案 / 未解决",
   },
 };
 const LanguageContext = createContext({ lang: "en", setLang: () => {} });
