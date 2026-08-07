@@ -1,10 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="700" height="700" viewBox="0 0 700 700">
-  <rect width="700" height="700" fill="#132A63"/>
-  <rect x="40" y="40" width="620" height="620" rx="31" fill="white"/>
-  <line x1="350" y1="127" x2="350" y2="573" stroke="#132A63" stroke-width="7"/>
-  <line x1="164" y1="350" x2="536" y2="350" stroke="#132A63" stroke-width="7"/>
-  <text x="201" y="282" font-size="136" font-family="Montserrat, Arial, sans-serif" fill="#132A63">H</text>
-  <text x="400" y="282" font-size="136" font-family="Montserrat, Arial, sans-serif" fill="#132A63">K</text>
-  <text x="201" y="511" font-size="136" font-family="Montserrat, Arial, sans-serif" fill="#132A63">A</text>
-  <text x="400" y="511" font-size="136" font-family="Montserrat, Arial, sans-serif" fill="#132A63">G</text>
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- HKAG favicon: the client's official vector mark (navy-on-white variant,
+     Aug 2026 rebrand), replacing the earlier hand-drawn approximation. Kept
+     as a single self-contained SVG (no external font dependency) so it
+     renders identically in every browser tab. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 5000 5000">
+  <defs>
+    <style type="text/css">
+      <![CDATA[
+        .fil1 {fill:#0D1627}
+        .fil0 {fill:white}
+      ]]>
+    </style>
+  </defs>
+  <g id="Layer_x0020_1">
+    <rect class="fil0" width="5000" height="5000"/>
+    <g id="_1897912304">
+      <polygon class="fil1" points="1842.81,1176.74 2049.16,1176.74 2049.16,2080.12 1842.81,2080.12 1842.81,1715.72 1301.8,1715.72 1301.8,2080.12 1095.45,2080.12 1095.45,1176.74 1301.8,1176.74 1301.8,1541.13 1842.81,1541.13 "/>
+      <polygon class="fil1" points="3388.15,1628.43 3933.05,1176.74 3666.03,1176.74 3181.52,1575.54 3181.52,1176.74 2975.18,1176.74 2975.18,2080.12 3181.52,2080.12 3181.52,1681.33 3666.03,2080.12 3933.05,2080.12 "/>
+      <path class="fil1" d="M1710.53 2905.69l-70.1 0 -136.24 0 -70.1 0 -424.81 903.37 206.34 0 105.54 -224.44 502.28 0 105.54 224.44 206.34 0 -424.81 -903.37zm-138.22 144.87l169.05 359.48 -338.09 0 169.05 -359.48z"/>
+      <path class="fil1" d="M3986.04 3705.45l-0.44 -388.09 -55.57 0 -150.76 0 -262.87 0 0 144.28 262.87 0 3.08 178.42c-61.82,30.35 -138.44,48.74 -220.5,48.74 -234.04,0 -423.77,-149.56 -423.77,-334.04 0,-184.48 189.73,-334.04 423.77,-334.04 118.12,0 224.95,38.1 301.79,99.55l97.43 -134.96c-110.02,-79.27 -257.75,-127.3 -418.46,-124.31 -344.65,6.41 -620.42,222.26 -620.42,496.44 0,274.17 277.77,496.44 620.42,496.44 174.33,0 331.4,-56.05 443.44,-148.43z"/>
+      <polygon class="fil1" points="2451.3,986.3 2548.7,986.3 2548.7,2451.3 4038.06,2451.3 4038.06,2548.7 2548.7,2548.7 2548.7,4013.7 2451.3,4013.7 2451.3,2548.7 961.94,2548.7 961.94,2451.3 2451.3,2451.3 "/>
+    </g>
+  </g>
 </svg>
