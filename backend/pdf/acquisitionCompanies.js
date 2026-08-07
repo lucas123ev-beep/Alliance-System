@@ -30,10 +30,10 @@ module.exports = {
       address: "715, Changxing Road, 501, Jiangbei District, Ningbo - Zhejiang - China, Zip: 315000",
       account: "3996000387571",
       bankName: "CITIBANK, N.A., HONG KONG",
-      // 11-char form (8-char code + "XXX" primary-office suffix) — same bank/
-      // branch as the short "CITIHKHX", just the fuller SWIFT/BIC format some
-      // receiving banks require for international wires.
-      swift: "CITIHKHXXXX",
+      // Both the 8-char code and its 11-char form (8-char + "XXX" primary-
+      // office suffix) are the same bank/branch — shown side by side since
+      // different receiving banks expect one or the other on a wire.
+      swift: "CITIHKHX / CITIHKHXXXX",
       beneficiaryAddress: "26/F., Tower One, Time Square, 1 Matheson Street, Causeway Bay HK",
     },
   },
