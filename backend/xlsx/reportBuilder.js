@@ -79,31 +79,37 @@ function addReportSheet(workbook, { sheetName, title, subtitle, columns, rows, t
   sheet.columns = columns.map(c => ({ key: c.key, width: c.width || 16 }));
 
   // Row 1: logo (floating, doesn't touch cell content) + right-aligned title.
-  // Height must clear the logo's full floated height below (see comment on
-  // the image itself) — otherwise row 1's bottom border rule cuts straight
-  // across the logo instead of sitting under it.
+  // Deliberately NOT carrying the header-rule border anymore — Excel/Numbers
+  // don't reliably honor an explicit row height that's taller than the
+  // font's natural minimum (it gets silently re-fit down on open), so a
+  // border tied to row 1's bottom kept landing across the middle of the
+  // logo instead of under it. The rule now lives on row 2 instead (below),
+  // which has no text content to re-fit against and a lot of spare height,
+  // so it stays clear of the logo regardless of how row 1 itself renders.
   const titleRow = sheet.getRow(1);
-  titleRow.height = 72;
+  titleRow.height = 34;
   sheet.mergeCells(1, 1, 1, columns.length);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = title;
   titleCell.font = { bold: true, size: 17, color: { argb: NAVY_ARGB } };
   titleCell.alignment = { vertical: "middle", horizontal: "right" };
-  sheet.getCell(1, 1).border = { bottom: HEADER_RULE };
-  for (let col = 2; col <= columns.length; col++) sheet.getCell(1, col).border = { bottom: HEADER_RULE };
 
   // Real logo artwork is ~1800x574px (~3.14:1) — width/height below must
   // keep that ratio or the logo prints visibly squished/stretched. Sized up
   // per client request (Aug 2026) to read clearly at a glance instead of
-  // sitting small in the corner. Floats independently of row height, so it
-  // must fit entirely inside row 1's own height (see above) — letting it
-  // bleed past row 1 put the header-rule border line across the middle of
-  // the logo instead of below it.
+  // sitting small in the corner. Floats independently of row height, so its
+  // full 60px height (from a few px into row 1) must clear both row 1 and
+  // row 2 before the rule line — see row 2 below.
   const imageId = workbook.addImage({ base64: LOGO, extension: "png" });
-  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.08 }, ext: { width: 188, height: 60 } });
+  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: 188, height: 60 } });
 
-  // Row 2: thin spacer between the letterhead and the column headers.
-  sheet.getRow(2).height = 6;
+  // Row 2: spacer between the letterhead and the column headers — also
+  // where the header-rule border now lives (see row 1 comment above). Tall
+  // enough to give the floated logo generous clearance even if row 1 itself
+  // ends up rendered shorter than requested.
+  const spacerRow = sheet.getRow(2);
+  spacerRow.height = 40;
+  for (let col = 1; col <= columns.length; col++) sheet.getCell(2, col).border = { bottom: HEADER_RULE };
 
   // Row 3: column headers — bold, no fill, same rule weight as the title's
   // underline above it — this is what the autofilter/freeze anchor to.
