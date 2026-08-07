@@ -48,6 +48,12 @@ app.use(cors({
       "http://localhost:5173",
       "https://alliance-system.vercel.app",
       "https://alliance-system.app",
+      // The iOS app (Capacitor) serves its bundled frontend from these
+      // pseudo-origins instead of a real domain — capacitor://localhost is
+      // the default WKWebView origin, https://localhost is what it becomes
+      // if the app is ever configured with `server.iosScheme: "https"`.
+      "capacitor://localhost",
+      "https://localhost",
     ];
     if (!origin || allowed.includes(origin) || origin.endsWith(".vercel.app")) {
       callback(null, true);

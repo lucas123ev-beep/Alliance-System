@@ -1,0 +1,10 @@
+{
+  "appId": "co.hkag.allianceflow",
+  "appName": "Alliance Flow",
+  "webDir": "dist",
+  "backgroundColor": "#0D1627",
+  "ios": {
+    "backgroundColor": "#0D1627",
+    "contentInset": "always"
+  }
+}

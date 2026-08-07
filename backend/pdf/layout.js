@@ -3,7 +3,7 @@ const { escapeHtml } = require("./helpers");
 
 // Shared page shell used by every English-language template (Proforma,
 // Commercial Invoice, Packing List). Redesigned to match the client's own
-// HKAG-branded reference documents: navy (#152C62) letterhead rule + title
+// HKAG-branded reference documents: navy (#0D1627) letterhead rule + title
 // bar, a full contact block (address/phone/email/website) opposite the
 // logo, small inline icons in front of every meta-info label, a light-grey
 // "Country of origin / acquisition" checkmark band, and a navy items-table
@@ -11,7 +11,7 @@ const { escapeHtml } = require("./helpers");
 // icon library — Puppeteer renders this server-side with no guarantee an
 // external CDN request finishes before the PDF is captured, so nothing
 // here depends on the network).
-const NAVY = "#152C62";
+const NAVY = "#0D1627";
 
 // Minimal Tabler-style outline icons, 14x14, stroke=currentColor. Kept as a
 // lookup so both layout.js and the template files (salesInvoice.js,

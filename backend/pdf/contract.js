@@ -26,13 +26,13 @@ function renderContract(params) {
     </tr>
   `).join("");
 
-  // Navy (#152C62) accents matching the client-facing Proforma/Commercial
+  // Navy (#0D1627) accents matching the client-facing Proforma/Commercial
   // Invoice/Packing List letterhead (logo.js), applied conservatively here
   // — this is an internal bilingual legal contract with the factory, so it
   // keeps its plain black/white bordered-table body instead of the sales
   // documents' card-based layout; only the letterhead rule, title, table
   // header and totals row pick up the brand color.
-  const NAVY = "#152C62";
+  const NAVY = "#0D1627";
   const css = `
     * { box-sizing: border-box; }
     body { margin: 0; padding: 22px 30px; font-family: "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; font-size: 10.5px; color: #1a1a1a; }

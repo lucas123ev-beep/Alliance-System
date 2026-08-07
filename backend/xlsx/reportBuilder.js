@@ -21,10 +21,10 @@ const { currencyLabel } = require("../pdf/helpers");
 // sheet — the title's underline, the column-header underline, and the line
 // under every data row all need to read as the same weight, not have the
 // header rule look bold/black while the row-separator lines look fainter.
-// Navy (#152C62) brand color, matching the redesigned Proforma/Commercial
+// Navy (#0D1627) brand color, matching the redesigned Proforma/Commercial
 // Invoice/Packing List/Contract PDFs (see pdf/layout.js) — every generated
 // report now reads as the same document family as the PDFs.
-const NAVY_ARGB = "FF152C62";
+const NAVY_ARGB = "FF0D1627";
 const HEADER_RULE = { style: "medium", color: { argb: NAVY_ARGB } };
 
 // Turns a "YYYY-MM-DD" (or any parseable) date string into a real JS Date

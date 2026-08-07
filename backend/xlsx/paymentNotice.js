@@ -8,10 +8,10 @@ const ExcelJS = require("exceljs");
 const LOGO = require("../pdf/logo");
 const { fmtDateShort, currencyLabel } = require("../pdf/helpers");
 
-// Navy (#152C62) brand color, matching the redesigned Proforma/Commercial
+// Navy (#0D1627) brand color, matching the redesigned Proforma/Commercial
 // Invoice/Packing List PDFs (see pdf/layout.js) — every generated workbook
 // in the app now reads as the same document family as the PDFs.
-const NAVY_ARGB = "FF152C62";
+const NAVY_ARGB = "FF0D1627";
 const HEADER_RULE = { style: "medium", color: { argb: NAVY_ARGB } };
 const LABEL_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF2F7" } };
 // Heavier rule used only for the outer edge of the Payer→Purpose block —
