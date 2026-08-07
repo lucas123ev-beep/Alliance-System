@@ -419,6 +419,61 @@ const TRANSLATIONS = {
     "Could not load exchange rate.": "无法加载汇率。",
     "Rate date": "汇率日期",
     "cached": "缓存",
+
+    // Supplier Evaluation (5-star rating) — modal UI chrome + the preset
+    // problem/solution option labels themselves (see
+    // backend/supplierEvaluationOptions.js, kept English there on purpose —
+    // this dictionary is what makes them show in Chinese when that toggle
+    // is on, same as every other string in the app).
+    "Rating": "评级",
+    "Rating (0-5)": "评级 (0-5)",
+    "Evaluation": "评估",
+    "⭐ Evaluation": "⭐ 评估",
+    "Current Rating": "当前评级",
+    "Problem": "问题",
+    "Solution": "解决方案",
+    "What happened": "发生了什么",
+    "How it was resolved": "如何解决",
+    "Details (optional)": "详情（可选）",
+    "+ Log Evaluation": "+ 记录评估",
+    "Saving...": "保存中...",
+    "History": "历史记录",
+    "No evaluations recorded yet.": "暂无评估记录。",
+    "Net": "净分",
+    "By": "记录人",
+    "📊 Evaluation Report": "📊 评估报表",
+    "Generate Evaluation Report": "生成评估报表",
+    "All Suppliers": "所有供应商",
+    "Specific Suppliers": "指定供应商",
+    "Select suppliers to include, or leave all unchecked to include every supplier.": "选择要包含的供应商，若全部不选则包含所有供应商。",
+    "Generate Report (.xlsx)": "生成报表 (.xlsx)",
+
+    "Small problem (generic)": "小问题（通用）",
+    "Medium problem (generic)": "中等问题（通用）",
+    "Severe problem (generic)": "严重问题（通用）",
+    "Wrong product / color / specification": "产品/颜色/规格错误",
+    "Below-expected quality / defects": "质量不达标 / 有瑕疵",
+    "Failed inspection": "验货不通过",
+    "Late delivery": "交货延迟",
+    "Wrong / missing quantity": "数量错误 / 缺货",
+    "Goods damaged in transit": "运输途中货物损坏",
+    "Charged outside what was agreed (price/payment)": "收费与约定不符（价格/付款）",
+    "Documentation error (invoice, packing list, certificates)": "单据错误（发票、装箱单、证书）",
+    "Packaging issue": "包装问题",
+    "Poor communication / slow response": "沟通不畅 / 回复缓慢",
+
+    "Small solution (generic)": "小型解决方案（通用）",
+    "Medium solution (generic)": "中型解决方案（通用）",
+    "Large solution (generic)": "大型解决方案（通用）",
+    "Full replacement, free of charge": "全额免费更换",
+    "Full refund": "全额退款",
+    "Fast correction, no impact on the order": "快速纠正，不影响订单",
+    "Partial replacement, free of charge": "部分免费更换",
+    "Partial refund": "部分退款",
+    "Credit note for future use": "留待日后使用的信用凭证",
+    "Discount on next order": "下次订单折扣",
+    "Apology only, no concrete action": "仅道歉，无实际行动",
+    "No solution offered": "未提供解决方案",
   },
 };
 const LanguageContext = createContext({ lang: "en", setLang: () => {} });
@@ -6004,7 +6059,7 @@ function SupplierEvaluationModal({ supplier, onClose }) {
             <Select value={problemKey} onChange={e => setProblemKey(e.target.value)}>
               <option value="">{t("Select...")}</option>
               {options.problems.map(o => (
-                <option key={o.key} value={o.key}>{o.generic ? "• " : ""}{o.label} ({o.points})</option>
+                <option key={o.key} value={o.key}>{o.generic ? "• " : ""}{t(o.label)} ({o.points})</option>
               ))}
             </Select>
           </Field>
@@ -6020,7 +6075,7 @@ function SupplierEvaluationModal({ supplier, onClose }) {
             <Select value={solutionKey} onChange={e => setSolutionKey(e.target.value)}>
               <option value="">{t("Select...")}</option>
               {options.solutions.map(o => (
-                <option key={o.key} value={o.key}>{o.generic ? "• " : ""}{o.label} (+{o.points})</option>
+                <option key={o.key} value={o.key}>{o.generic ? "• " : ""}{t(o.label)} (+{o.points})</option>
               ))}
             </Select>
           </Field>
@@ -6032,7 +6087,7 @@ function SupplierEvaluationModal({ supplier, onClose }) {
 
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "26px" }}>
         <Btn color="#8b5cf6" disabled={!problemKey || !solutionKey || saving} onClick={submit}>
-          {saving ? "Saving..." : "+ Log Evaluation"}
+          {saving ? t("Saving...") : t("+ Log Evaluation")}
         </Btn>
       </div>
 
@@ -6047,13 +6102,13 @@ function SupplierEvaluationModal({ supplier, onClose }) {
             { label: "Date", sortValue: r => r.created_at, render: r => new Date(String(r.created_at).replace(" ", "T")).toLocaleDateString("en-US") },
             { label: "Problem", render: r => (
               <div>
-                <div>{r.problem_label} <span style={{ color: "#ef4444" }}>({r.problem_points})</span></div>
+                <div>{t(r.problem_label)} <span style={{ color: "#ef4444" }}>({r.problem_points})</span></div>
                 {r.problem_notes && <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>{r.problem_notes}</div>}
               </div>
             ) },
             { label: "Solution", render: r => (
               <div>
-                <div>{r.solution_label} <span style={{ color: "#22c55e" }}>(+{r.solution_points})</span></div>
+                <div>{t(r.solution_label)} <span style={{ color: "#22c55e" }}>(+{r.solution_points})</span></div>
                 {r.solution_notes && <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>{r.solution_notes}</div>}
               </div>
             ) },
@@ -6072,6 +6127,7 @@ function SupplierEvaluationModal({ supplier, onClose }) {
 }
 
 function SupplierForm({ initial, onSave, onClose, onEvaluationsChanged }) {
+  const t = useT();
   const [f, setF] = useState(initial || {
     company_name: "", trade_name: "", address: "", address2: "", address_number: "", neighborhood: "",
     city: "", state: "", zip_code: "", country: "", email: "",
@@ -6115,7 +6171,7 @@ function SupplierForm({ initial, onSave, onClose, onEvaluationsChanged }) {
       {initial?.id && (
         <div style={{ gridColumn: "span 2", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1e293b", border: "1px solid #334155", borderRadius: "10px", padding: "12px 16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Rating</span>
+            <span style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("Rating")}</span>
             <StarRating value={initial.rating} size={16} />
           </div>
           <Btn outline color="#8b5cf6" onClick={() => setShowEvaluation(true)}>⭐ Evaluation</Btn>
@@ -6204,12 +6260,69 @@ function SupplierForm({ initial, onSave, onClose, onEvaluationsChanged }) {
   );
 }
 
+// "All Suppliers" vs "Specific Suppliers" (checkbox picker) before
+// downloading the evaluation history workbook — see
+// xlsx/supplierEvaluationReport.js. Opens the file the same way every other
+// report in this app does: window.open() with the session token appended as
+// a query param (authUrl), since a plain browser navigation can't carry the
+// Authorization header a fetch() call would.
+function SupplierEvaluationReportModal({ suppliers, onClose }) {
+  const t = useT();
+  const [mode, setMode] = useState("all"); // "all" | "specific"
+  const [selected, setSelected] = useState(new Set());
+
+  const toggle = (id) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const disabled = mode === "specific" && selected.size === 0;
+
+  const generate = () => {
+    const ids = mode === "specific" ? [...selected] : [];
+    const qs = ids.length ? `?supplier_ids=${ids.join(",")}` : "";
+    window.open(authUrl(`${API}/suppliers/evaluations/report${qs}`), "_blank");
+    onClose();
+  };
+
+  return (
+    <Modal title={t("Generate Evaluation Report")} onClose={onClose}>
+      <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
+        <Btn outline={mode !== "all"} color="#8b5cf6" onClick={() => setMode("all")}>{t("All Suppliers")}</Btn>
+        <Btn outline={mode !== "specific"} color="#8b5cf6" onClick={() => setMode("specific")}>{t("Specific Suppliers")}</Btn>
+      </div>
+      {mode === "specific" && (
+        <div>
+          <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "10px" }}>
+            {t("Select suppliers to include, or leave all unchecked to include every supplier.")}
+          </div>
+          <div style={{ maxHeight: "320px", overflowY: "auto", border: "1px solid #334155", borderRadius: "10px", padding: "6px" }}>
+            {suppliers.map(s => (
+              <label key={s.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 10px", cursor: "pointer", borderRadius: "6px", fontSize: "13px", color: "#cbd5e1" }}>
+                <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggle(s.id)} />
+                <span style={{ flex: 1 }}>{s.company_name}</span>
+                <StarRating value={s.rating} size={11} showNumber={false} />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "20px" }}>
+        <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
+        <Btn color="#8b5cf6" disabled={disabled} onClick={generate}>{t("Generate Report (.xlsx)")}</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 function Suppliers() {
   const t = useT();
   const [suppliers, setSuppliers] = useState([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
+  const [showReport, setShowReport] = useState(false);
   const load = useCallback(() => api("/suppliers").then(setSuppliers), []);
   useEffect(() => { load(); }, [load]);
   const filtered = suppliers.filter(s =>
@@ -6220,8 +6333,14 @@ function Suppliers() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Suppliers")}</h2>
-        <Btn color="#8b5cf6" onClick={() => setModal(true)}>+ New Supplier</Btn>
+        <div style={{ display: "flex", gap: "10px" }}>
+          <Btn outline color="#10b981" onClick={() => setShowReport(true)}>📊 Evaluation Report</Btn>
+          <Btn color="#8b5cf6" onClick={() => setModal(true)}>+ New Supplier</Btn>
+        </div>
       </div>
+      {showReport && (
+        <SupplierEvaluationReportModal suppliers={suppliers} onClose={() => setShowReport(false)} />
+      )}
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by company or product type…" style={{ ...inputStyle, marginBottom: "16px" }} />
       {modal && (

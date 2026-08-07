@@ -8,7 +8,7 @@
 // shares the exact same letterhead/column styling as the main Reports tab
 // instead of re-implementing it.
 const ExcelJS = require("exceljs");
-const { addReportSheet, toNumber, toExcelDate } = require("./reportBuilder");
+const { addReportSheet, toNumber, toExcelDate, safeSheetName } = require("./reportBuilder");
 const { currencyLabel } = require("../pdf/helpers");
 const { computeRating } = require("../supplierEvaluationOptions");
 
@@ -17,27 +17,6 @@ const { computeRating } = require("../supplierEvaluationOptions");
 function dimStr(value, unit) {
   if (value === null || value === undefined || value === "") return "";
   return `${value} ${unit || ""}`.trim();
-}
-
-// Excel forbids \ / ? * [ ] in sheet names and caps them at 31 chars.
-// Supplier company names routinely contain "/" (trading co. names) or run
-// long, and two different suppliers can collide once truncated — dedupe
-// with a "(2)", "(3)"... suffix rather than silently overwriting one sheet
-// with another's data.
-function safeSheetName(name, usedNames) {
-  // Base capped at 25 chars (not 31) so " (2)".." (99)" — up to 5 more
-  // chars — always still fits under Excel's 31-char sheet-name limit
-  // instead of the suffix itself getting clipped off (e.g. "... (2" with no
-  // closing paren) once a collision actually happens.
-  const base = (String(name).replace(/[\\/?*\[\]:]/g, "-").trim() || "Supplier").slice(0, 25);
-  let candidate = base;
-  let n = 2;
-  while (usedNames.has(candidate.toLowerCase())) {
-    candidate = `${base} (${n})`;
-    n++;
-  }
-  usedNames.add(candidate.toLowerCase());
-  return candidate;
 }
 
 const PRODUCT_COLUMNS = [

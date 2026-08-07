@@ -27,6 +27,7 @@ function safeFilenamePart(s) {
 }
 const { buildFullReportWorkbook, CATEGORIES: REPORT_CATEGORIES } = require('./xlsx/reportBuilder');
 const { buildProductSupplierReportWorkbook } = require('./xlsx/productSupplierReport');
+const { buildSupplierEvaluationReportWorkbook } = require('./xlsx/supplierEvaluationReport');
 const { buildPaymentNoticeWorkbook } = require('./xlsx/paymentNotice');
 const { PROBLEM_OPTIONS, SOLUTION_OPTIONS, findProblem, findSolution, computeRating } = require('./supplierEvaluationOptions');
 const {
@@ -1156,6 +1157,30 @@ app.post('/api/suppliers/:id/evaluations', guardScreen('suppliers'), (req, res) 
 
   const rows = db.prepare('SELECT * FROM supplier_evaluations WHERE supplier_id=? ORDER BY created_at DESC, id DESC').all(req.params.id);
   res.status(201).json({ rating: computeRating(rows), evaluations: rows });
+});
+
+// Downloadable Excel version of the evaluation history — one sheet per
+// supplier (see xlsx/supplierEvaluationReport.js). `?supplier_ids=3,7,12`
+// limits it to those suppliers; omitted/empty means every supplier. Guarded
+// like the rest of this section (not guardScreen('reports')) since it's
+// exposed from the Suppliers screen itself, not the general Reports tab —
+// anyone who can manage suppliers can pull their own evaluation history.
+app.get('/api/suppliers/evaluations/report', guardScreen('suppliers'), async (req, res) => {
+  try {
+    const supplierIds = (req.query.supplier_ids || '')
+      .split(',').map(s => parseInt(s.trim(), 10)).filter(n => Number.isFinite(n));
+    const workbook = buildSupplierEvaluationReportWorkbook(db, supplierIds.length ? supplierIds : null);
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `AllianceFlow-SupplierEvaluations-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': contentDisposition(filename),
+    });
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('Supplier evaluation report error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.delete('/api/suppliers/evaluations/:evalId', guardScreen('suppliers'), (req, res) => {

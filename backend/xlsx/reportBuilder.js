@@ -42,6 +42,28 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+// Excel forbids \ / ? * [ ] : in sheet names and caps them at 31 chars.
+// Shared by every "one sheet per X" report (Products-by-Supplier, Supplier
+// Evaluations) since names routinely contain "/" (trading co. names) or run
+// long, and two different rows can collide once truncated — dedupe with a
+// "(2)", "(3)"... suffix rather than silently overwriting one sheet with
+// another's data.
+function safeSheetName(name, usedNames) {
+  // Base capped at 25 chars (not 31) so " (2)".." (99)" — up to 5 more
+  // chars — always still fits under Excel's 31-char sheet-name limit
+  // instead of the suffix itself getting clipped off (e.g. "... (2" with no
+  // closing paren) once a collision actually happens.
+  const base = (String(name).replace(/[\\/?*\[\]:]/g, "-").trim() || "Sheet").slice(0, 25);
+  let candidate = base;
+  let n = 2;
+  while (usedNames.has(candidate.toLowerCase())) {
+    candidate = `${base} (${n})`;
+    n++;
+  }
+  usedNames.add(candidate.toLowerCase());
+  return candidate;
+}
+
 // Adds a day-count (e.g. orders.production_lead_time) onto a base date to
 // turn a duration into an actual target date, matching how the client's own
 // reference spreadsheet shows "Production Lead Time" as a calendar date
@@ -566,4 +588,4 @@ const CATEGORIES = [
 // addReportSheet/toNumber/toExcelDate are also reused by
 // productSupplierReport.js, which mirrors this same letterhead/column
 // styling for its own (differently-shaped) Products-by-Supplier workbook.
-module.exports = { buildFullReportWorkbook, CATEGORIES, addReportSheet, toNumber, toExcelDate };
+module.exports = { buildFullReportWorkbook, CATEGORIES, addReportSheet, toNumber, toExcelDate, safeSheetName };

@@ -19,40 +19,48 @@
 // colors delivered, "fixed" with a discount -- a bad problem barely
 // recovered).
 //
-// Every list also carries 3 generic severity levels (Pequeno/Médio/Grave for
-// problems, Pequena/Média/Grande for solutions) for anything not covered by
+// Every list also carries 3 generic severity levels (Small/Medium/Severe for
+// problems, Small/Medium/Large for solutions) for anything not covered by
 // the specific presets below, per the client's explicit request.
+//
+// Labels are English (the system's base UI language, same as every other
+// hardcoded string in this codebase) -- the frontend runs every label
+// through its existing t() translation dictionary for the Chinese toggle,
+// same as the rest of the app's interface chrome. See TRANSLATIONS.zh in
+// App.jsx for the Chinese text; this file itself stays English-only so it
+// keeps being the single source of truth for what a problem/solution *means*
+// (points, key), not for how it's displayed in each language.
 const PROBLEM_OPTIONS = [
-  { key: "generic_small", label: "Problema pequeno (genérico)", points: -0.25, generic: true },
-  { key: "generic_medium", label: "Problema médio (genérico)", points: -0.75, generic: true },
-  { key: "generic_severe", label: "Problema grave (genérico)", points: -1.5, generic: true },
+  { key: "generic_small", label: "Small problem (generic)", points: -0.25, generic: true },
+  { key: "generic_medium", label: "Medium problem (generic)", points: -0.75, generic: true },
+  { key: "generic_severe", label: "Severe problem (generic)", points: -1.5, generic: true },
 
-  { key: "wrong_spec", label: "Produto / cor / especificação errada", points: -1.5 },
-  { key: "quality_defect", label: "Qualidade abaixo do esperado / defeitos", points: -1.5 },
-  { key: "failed_inspection", label: "Reprovado na inspeção", points: -1.5 },
-  { key: "late_delivery", label: "Atraso na entrega", points: -1.0 },
-  { key: "wrong_quantity", label: "Quantidade errada / faltando", points: -1.0 },
-  { key: "damaged_goods", label: "Mercadoria danificada no transporte", points: -1.0 },
-  { key: "price_dispute", label: "Cobrança fora do combinado (preço/pagamento)", points: -1.0 },
-  { key: "documentation_error", label: "Erro em documentos (fatura, packing list, certificados)", points: -0.5 },
-  { key: "packaging_issue", label: "Problema de embalagem", points: -0.5 },
-  { key: "communication_issue", label: "Falta de comunicação / resposta lenta", points: -0.5 },
+  { key: "wrong_spec", label: "Wrong product / color / specification", points: -1.5 },
+  { key: "quality_defect", label: "Below-expected quality / defects", points: -1.5 },
+  { key: "failed_inspection", label: "Failed inspection", points: -1.5 },
+  { key: "late_delivery", label: "Late delivery", points: -1.0 },
+  { key: "wrong_quantity", label: "Wrong / missing quantity", points: -1.0 },
+  { key: "damaged_goods", label: "Goods damaged in transit", points: -1.0 },
+  { key: "price_dispute", label: "Charged outside what was agreed (price/payment)", points: -1.0 },
+  { key: "documentation_error", label: "Documentation error (invoice, packing list, certificates)", points: -0.5 },
+  { key: "packaging_issue", label: "Packaging issue", points: -0.5 },
+  { key: "communication_issue", label: "Poor communication / slow response", points: -0.5 },
 ];
 
 const SOLUTION_OPTIONS = [
-  { key: "generic_small", label: "Solução pequena (genérico)", points: 0.1, generic: true },
-  { key: "generic_medium", label: "Solução média (genérico)", points: 0.5, generic: true },
-  { key: "generic_large", label: "Solução grande (genérico)", points: 1.5, generic: true },
+  { key: "generic_small", label: "Small solution (generic)", points: 0.1, generic: true },
+  { key: "generic_medium", label: "Medium solution (generic)", points: 0.5, generic: true },
+  { key: "generic_large", label: "Large solution (generic)", points: 1.5, generic: true },
 
-  { key: "full_replacement_free", label: "Substituição total, sem custo", points: 1.5 },
-  { key: "full_refund", label: "Reembolso total", points: 1.5 },
-  { key: "fast_correction", label: "Correção rápida, sem impacto no pedido", points: 1.0 },
-  { key: "partial_replacement_free", label: "Substituição parcial, sem custo", points: 0.75 },
-  { key: "partial_refund", label: "Reembolso parcial", points: 0.75 },
-  { key: "credit_note", label: "Nota de crédito para uso futuro", points: 0.5 },
-  { key: "discount_next_order", label: "Desconto no próximo pedido", points: 0.25 },
-  { key: "apology_only", label: "Só pediu desculpas, sem ação concreta", points: 0.1 },
-  { key: "no_action", label: "Nenhuma solução oferecida", points: 0 },
+  { key: "full_replacement_free", label: "Full replacement, free of charge", points: 1.5 },
+  { key: "full_refund", label: "Full refund", points: 1.5 },
+  { key: "fast_correction", label: "Fast correction, no impact on the order", points: 1.0 },
+  { key: "partial_replacement_free", label: "Partial replacement, free of charge", points: 0.75 },
+  { key: "partial_refund", label: "Partial refund", points: 0.75 },
+  { key: "credit_note", label: "Credit note for future use", points: 0.5 },
+  { key: "discount_next_order", label: "Discount on next order", points: 0.25 },
+  { key: "apology_only", label: "Apology only, no concrete action", points: 0.1 },
+  { key: "no_action", label: "No solution offered", points: 0 },
 ];
 
 function findProblem(key) {
