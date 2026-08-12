@@ -1137,11 +1137,16 @@ const PACKAGE_UNIT_OPTIONS = [
 ];
 
 // What's actually being counted/sold — separate concept from the physical
-// package it ships in (a Unit or a Pair can just as easily go in a Box, a
-// Crate, or a Bag). Only offered for categories that don't already have
-// their own dedicated pricing unit (Chemical prices by liter/ton, Textile/
-// DTF Film by the meter/roll — see the category check where this is used).
-const SELLING_UNIT_OPTIONS = ["Unit", "Pair"];
+// package it ships in (a Unit, a Pair, a Meter, or a Liter can just as
+// easily go in a Box, a Crate, or a Bag). Mostly offered for categories
+// that don't already have their own dedicated pricing unit (Chemical prices
+// by liter/ton via its own package-type flow, Textile/DTF Film by the
+// meter/roll via their own dedicated flow — see the category check where
+// this is used) — Meter and Liter are included here too since plenty of
+// non-Chemical/non-Textile-category items (ribbon, trim, cable, elastic,
+// small volumes of liquid...) are still legitimately sold by length or
+// volume.
+const SELLING_UNIT_OPTIONS = ["Unit", "Pair", "Meter", "Liter"];
 
 // Shared list of product categories — used by Product registration, Sample
 // registration, and the Supplier's Product Types field (so a supplier's
@@ -1884,7 +1889,12 @@ function buildPackingListDraft(order, products) {
 
 function ProductItemModal({ onSave, onClose, initial, products, showTargetPrice }) {
 const t = useT();
-const [item, setItem] = useState(initial || { product_id: "", product_name: "", product_code: "", supplier: "", currency: "USD", cost_currency: "USD", quantity: "", unit: "unit", unit_price: "", cost_price: "", total: "", target_price: "", target_price_unit: "total" });
+// unit defaults to "Unit" (capitalized) to match the actual Sold By
+// dropdown options (SELLING_UNIT_OPTIONS: "Unit"/"Pair"/"Meter") — this
+// value also feeds the Target Price Basis label (`Per ${item.unit}`), so a
+// lowercase default here was showing up as "Per unit" there until the Sold
+// By field was touched.
+const [item, setItem] = useState(initial || { product_id: "", product_name: "", product_code: "", supplier: "", currency: "USD", cost_currency: "USD", quantity: "", unit: "Unit", unit_price: "", cost_price: "", total: "", target_price: "", target_price_unit: "total" });
 const [search, setSearch] = useState(
   initial?.product_code && initial?.product_name
     ? `${initial.product_code} – ${initial.product_name}`
