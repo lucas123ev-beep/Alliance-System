@@ -1018,16 +1018,21 @@ function recalcLiquidItem(item, product, field, rawValue) {
 }
 
 // Options for the "Target Price refers to" selector shown next to each
-// item's Target Price field. Per Meter and Per Liter are always offered
-// (not just for items whose category happens to be Textile/DTF/Chemical) —
-// ad-hoc items typed in without picking a registered product never get a
-// category set at all, but the person may still be quoting them by the
-// meter or by the liter, so the option needs to be there regardless.
+// item's Target Price field. Per Meter, Per Liter, and Per Pair are always
+// offered as fixed entries (not just for items whose category/Sold By
+// happens to match) — ad-hoc items typed in without picking a registered
+// product never get a category set at all, but the person may still be
+// quoting them by the meter, the liter, or the pair, so the option needs to
+// be there regardless of whatever's currently selected in Sold By. The last
+// entry stays dynamic (`Per ${item.unit}`) so a category with its own
+// arbitrary package type (e.g. Chemical's Drum/Tank) still gets a matching
+// option here too.
 function targetPriceUnitOptions(item) {
   return [
     { value: "total", label: "Total" },
     { value: "meter", label: "Per Meter" },
     { value: "liter", label: "Per Liter" },
+    { value: "pair", label: "Per Pair" },
     { value: "unit", label: `Per ${item?.unit || "Unit"}` },
   ];
 }
@@ -1035,6 +1040,7 @@ function targetPriceUnitOptions(item) {
 const targetPriceUnitSuffix = (item) => {
   if (item.target_price_unit === "meter") return "/m";
   if (item.target_price_unit === "liter") return "/L";
+  if (item.target_price_unit === "pair") return "/pr";
   if (item.target_price_unit === "unit") return `/${item.unit || "un"}`;
   return "";
 };
