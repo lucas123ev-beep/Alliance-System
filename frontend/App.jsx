@@ -194,6 +194,9 @@ const TRANSLATIONS = {
     "Inspector": "验货员",
     "Result": "结果",
     "Observations": "备注",
+    "Item": "项目",
+    "Inspection saved.": "验货已保存。",
+    "All inspections saved — Close": "所有验货已保存 — 关闭",
     "Since (optional)": "起始日期（可选）",
     // Buttons
     "Cancel": "取消",
@@ -4994,9 +4997,18 @@ const [orders, setOrders] = useState([]);
   const [savedContracts, setSavedContracts] = useState([]);
   const [ciNotification, setCiNotification] = useState(null);
   useEscapeToClose(!!ciNotification, () => setCiNotification(null));
-  const [inspectionModal, setInspectionModal] = useState(null);
+  // Per-item Inspection generation: mirrors contractModal/savedContracts
+  // below, but keyed per order.items entry instead of per supplier -- even
+  // when several products on an order share a supplier, each one still
+  // needs its own physical inspection. inspectionsModal holds one stub per
+  // item (or the saved record, if that item already has one); savedInspections
+  // tracks which indices are considered "done" (pre-existing when the modal
+  // opened, or just saved in this session); editingInspectionIdx is which
+  // "done" card (if any) has been switched back into edit mode.
+  const [inspectionsModal, setInspectionsModal] = useState(null);
+  const [savedInspections, setSavedInspections] = useState([]);
+  const [editingInspectionIdx, setEditingInspectionIdx] = useState(null);
 const [inspections, setInspections] = useState([]);
-  const [editInspection, setEditInspection] = useState(null);
   const [products, setProducts] = useState([]);
   const [suppliersList, setSuppliersList] = useState([]);
 
@@ -5140,6 +5152,55 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
     }));
   }
 };
+// One inspection per product on the order -- even when several products
+// share the same supplier, each physical item still has to be inspected on
+// its own. Builds one stub per order.items entry, reusing the existing saved
+// inspection for that item (matched via order_item_id) when there is one, so
+// reopening this modal never loses previously-logged results.
+const generateInspections = (order) => {
+  const baseNumber = String(order.order_number || "").replace(/^ORD-/, "");
+  const items = order.items || [];
+  // Fallback for the edge case of an order with no item rows at all (legacy
+  // data, or a manually-created order that skipped the items step) -- keeps
+  // a single order-level inspection available instead of the button doing
+  // nothing, matching how inspections worked before this per-item change.
+  const stubs = items.length > 0 ? items : [null];
+  const doneIdxs = [];
+  const built = stubs.map((item, idx) => {
+    const existing = item
+      ? inspections.find(i => Number(i.order_item_id) === Number(item.id))
+      : inspections.find(i => Number(i.order_id) === Number(order.id) && !i.order_item_id);
+    if (existing) {
+      doneIdxs.push(idx);
+      return { ...existing };
+    }
+    const number = stubs.length > 1 ? `INS-${baseNumber}-${idx + 1}` : `INS-${baseNumber}`;
+    return {
+      order_id: order.id,
+      order_item_id: item ? item.id : null,
+      product_name: item ? (item.product_name || "") : "",
+      number,
+      inspection_date: new Date().toISOString().slice(0, 10),
+      inspector: "",
+      result: "Pending",
+      observations: "",
+    };
+  });
+  setInspectionsModal(built);
+  setSavedInspections(doneIdxs);
+  setEditingInspectionIdx(null);
+};
+// Product count vs. how many of those products already have a saved
+// inspection -- drives the "(done/total)" badge on the Actions button.
+const inspectionStatusFor = (order) => {
+  const items = order.items || [];
+  if (items.length === 0) {
+    const has = inspections.some(i => Number(i.order_id) === Number(order.id));
+    return { done: has ? 1 : 0, total: 1 };
+  }
+  const done = items.filter(item => inspections.some(i => Number(i.order_item_id) === Number(item.id))).length;
+  return { done, total: items.length };
+};
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
@@ -5166,24 +5227,52 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
       onClose={() => setEditContract(null)} />
   </Modal>
 )}
-      {inspectionModal && (
-  <Modal title={t("Generate Inspection")} onClose={() => setInspectionModal(null)} wide>
-    <InspectionForm
-      orders={orders}
-      initial={inspectionModal}
-      onSave={async b => { await api("/inspections", "POST", b); setInspectionModal(null); load(); }}
-      onClose={() => setInspectionModal(null)}
-    />
-  </Modal>
-)}
-      {editInspection && (
-  <Modal title={t("Edit Inspection")} onClose={() => { setEditInspection(null); load(); }} wide>
-    <InspectionForm
-      orders={orders}
-      initial={{ ...editInspection, media: editInspection.media ? (typeof editInspection.media === 'string' ? JSON.parse(editInspection.media) : editInspection.media) : [] }}
-      onSave={async b => { await api(`/inspections/${editInspection.id}`, "PUT", b); setEditInspection(null); load(); }}
-      onClose={() => setEditInspection(null)}
-    />
+      {inspectionsModal && (
+  <Modal title={t("Generate Inspection")} onClose={() => { setInspectionsModal(null); setSavedInspections([]); setEditingInspectionIdx(null); load(); }} wide>
+    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+      {inspectionsModal.map((insp, idx) => {
+        const isDone = savedInspections.includes(idx);
+        const showForm = !isDone || editingInspectionIdx === idx;
+        return (
+          <div key={idx} style={{ background: "#1e293b", borderRadius: "12px", padding: "16px", opacity: isDone && editingInspectionIdx !== idx ? 0.7 : 1 }}>
+            <div style={{ marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontWeight: 700, color: isDone ? "#10b981" : "#f59e0b", fontSize: "14px" }}>
+                {isDone ? "✅" : "🔍"} {insp.product_name || (t("Item") + " " + (idx + 1))}
+              </span>
+              {isDone && editingInspectionIdx !== idx && (
+                <Btn small outline color="#64748b" onClick={() => setEditingInspectionIdx(idx)}>✎ {t("Edit")}</Btn>
+              )}
+            </div>
+            {showForm ? (
+              <InspectionForm
+                orders={orders}
+                initial={{ ...insp, media: insp.media ? (typeof insp.media === 'string' ? JSON.parse(insp.media) : insp.media) : [] }}
+                onSave={async b => {
+                  const saved = insp.id
+                    ? await api(`/inspections/${insp.id}`, "PUT", b)
+                    : await api("/inspections", "POST", b);
+                  setInspectionsModal(prev => prev.map((p, i) => i === idx ? saved : p));
+                  setSavedInspections(prev => prev.includes(idx) ? prev : [...prev, idx]);
+                  load();
+                }}
+                onClose={() => setEditingInspectionIdx(null)}
+              />
+            ) : (
+              <div style={{ textAlign: "center", padding: "12px", color: "#10b981", fontWeight: 600, fontSize: "14px" }}>
+                ✅ {t("Inspection saved.")} {insp.result ? `(${t(insp.result)})` : ""}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {savedInspections.length === inspectionsModal.length && (
+        <div style={{ textAlign: "center" }}>
+          <Btn color="#10b981" onClick={() => { setInspectionsModal(null); setSavedInspections([]); setEditingInspectionIdx(null); load(); }}>
+            ✅ {t("All inspections saved — Close")}
+          </Btn>
+        </div>
+      )}
+    </div>
   </Modal>
 )}
 {editCommercial && (
@@ -5342,7 +5431,7 @@ onSave={async b => {
 { label: "Actions", render: r => {
 const hasContract = contracts.filter(c => Number(c.order_id) === Number(r.id));
 const hasCommercial = commercials.find(c => Number(c.order_id) === Number(r.id));
-  const hasInspection = inspections.find(i => Number(i.order_id) === Number(r.id));
+  const insStatus = inspectionStatusFor(r);
 
   return (
     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
@@ -5354,16 +5443,9 @@ const hasCommercial = commercials.find(c => Number(c.order_id) === Number(r.id))
   onClick={() => hasCommercial ? setEditCommercial(hasCommercial) : generateCommercial(r)}>
   🧾 {hasCommercial ? t("Commercial ✓") : t("Commercial")}
 </Btn>
-      <Btn small outline={!hasInspection} color={hasInspection ? "#f59e0b" : "#64748b"}
-  onClick={() => hasInspection ? setEditInspection(hasInspection) : setInspectionModal({
-    order_id: r.id,
-    number: `INS-${r.order_number}-${Date.now().toString().slice(-4)}`,
-    inspection_date: new Date().toISOString().slice(0, 10),
-    inspector: "",
-    result: "Pending",
-    observations: "",
-  })}>
-  🔍 {hasInspection ? t("Inspection ✓") : t("Inspection")}
+      <Btn small outline={insStatus.done === 0} color={insStatus.total > 0 && insStatus.done === insStatus.total ? "#10b981" : insStatus.done > 0 ? "#f59e0b" : "#64748b"}
+  onClick={() => generateInspections(r)}>
+  🔍 {t("Inspection")}{insStatus.total > 0 ? ` (${insStatus.done}/${insStatus.total})` : ""}
 </Btn>
       <Btn small outline color="#64748b" onClick={() => setEditOrder(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/orders/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
@@ -6704,6 +6786,15 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+      {/* Read-only Product indicator -- only shown when this inspection was
+          generated per-item from the Orders screen (f.product_name set).
+          Inspections logged standalone from the Inspections tab have no item
+          attached, so this field just doesn't render for them. */}
+      {f.product_name && (
+        <Field label="Product" half>
+          <input value={f.product_name} disabled onChange={() => {}} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 12px", color: "#94a3b8", fontSize: "14px", outline: "none", width: "100%", boxSizing: "border-box", cursor: "not-allowed" }} />
+        </Field>
+      )}
       <Field label="Linked Order" half>
         <Select value={f.order_id} onChange={set("order_id")}>
           <option value="">None</option>

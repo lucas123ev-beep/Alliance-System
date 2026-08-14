@@ -871,22 +871,28 @@ app.get('/api/inspections', (req, res) => {
 // feature for them. DELETE below stays guarded since it's only ever
 // reachable from the dedicated Inspections screen.
 app.post('/api/inspections', (req, res) => {
-  const { order_id, number, inspection_date, inspector, result, observations, media } = req.body;
+  // order_item_id/product_name: which specific product on the order this
+  // inspection covers -- the Orders screen now generates one inspection per
+  // item (see generateInspections() in App.jsx's Orders()), since every
+  // product needs its own physical inspection even when several share the
+  // same supplier. Both stay optional (null/blank) for inspections logged
+  // without an item, e.g. straight from the standalone Inspections tab.
+  const { order_id, order_item_id, product_name, number, inspection_date, inspector, result, observations, media } = req.body;
   try {
     const r = db.prepare(`
-      INSERT INTO inspections (order_id, number, inspection_date, inspector, result, observations, media, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(order_id || null, number, inspection_date, inspector, result || 'Pending', observations, media || null, actorName(req));
+      INSERT INTO inspections (order_id, order_item_id, product_name, number, inspection_date, inspector, result, observations, media, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(order_id || null, order_item_id || null, product_name || null, number, inspection_date, inspector, result || 'Pending', observations, media || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM inspections WHERE id=?').get(r.lastInsertRowid));
   } catch(e) { res.status(400).json({ error: e.message }); }
 });
 
 app.put('/api/inspections/:id', (req, res) => {
-  const { order_id, number, inspection_date, inspector, result, observations, media } = req.body;
+  const { order_id, order_item_id, product_name, number, inspection_date, inspector, result, observations, media } = req.body;
   db.prepare(`
-    UPDATE inspections SET order_id=?, number=?, inspection_date=?, inspector=?, result=?, observations=?, media=?, updated_by=?
+    UPDATE inspections SET order_id=?, order_item_id=?, product_name=?, number=?, inspection_date=?, inspector=?, result=?, observations=?, media=?, updated_by=?
     WHERE id=?
-  `).run(order_id || null, number, inspection_date, inspector, result, observations, media || null, actorName(req), req.params.id);
+  `).run(order_id || null, order_item_id || null, product_name || null, number, inspection_date, inspector, result, observations, media || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM inspections WHERE id=?').get(req.params.id));
 });
 

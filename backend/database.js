@@ -197,6 +197,18 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS inspections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+    -- Which specific order_items row this inspection covers. Even when
+    -- several products on the same order share one supplier, each physical
+    -- product still needs its own inspection -- so inspections are generated
+    -- and tracked per item, not per order. NULL is kept possible (ON DELETE
+    -- SET NULL, and also for inspections created before this column existed,
+    -- or logged without an item from the standalone Inspections tab) so
+    -- existing/legacy records don't break.
+    order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+    -- Denormalized copy of the item's product name at generation time, so
+    -- the inspection keeps a readable label even if the order_item is later
+    -- edited/deleted, and so list/report views don't need an extra join.
+    product_name TEXT,
     number TEXT,
     inspection_date TEXT,
     inspector TEXT,
@@ -467,6 +479,18 @@ const migrations = [
   // feeding into the same Total Weight / Total Meterage calculations.
   ['order_items', 'height', 'REAL'],
   ['order_items', 'height_unit', "TEXT DEFAULT 'cm'"],
+  // Per-product inspections: which order_items row an inspection covers, and
+  // a denormalized product name for it. See the CREATE TABLE comment above
+  // for why -- existing databases need these added via migration since
+  // CREATE TABLE IF NOT EXISTS only applies to brand-new tables.
+  // Plain INTEGER here (no REFERENCES clause) matching every other migration
+  // entry in this list -- SQLite's ALTER TABLE ADD COLUMN historically has
+  // rough edges with inline foreign-key clauses, so the FK relationship is
+  // only declared in the CREATE TABLE above (for brand-new databases) and
+  // documented here in comments; it isn't enforced either way since this
+  // app never turns on PRAGMA foreign_keys.
+  ['inspections', 'order_item_id', 'INTEGER'],
+  ['inspections', 'product_name', 'TEXT'],
   ['samples', 'code', "TEXT DEFAULT ''"],
   ['samples', 'product_id', 'INTEGER'],
   ['samples', 'feedback_date', 'TEXT'],
