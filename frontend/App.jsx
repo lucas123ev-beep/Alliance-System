@@ -7444,7 +7444,7 @@ const renderTab = () => {
               onMouseEnter={e => e.currentTarget.style.color = "#f1f5f9"}
               onMouseLeave={e => e.currentTarget.style.color = "#94a3b8"}
             >
-              <span>🌐</span>
+              <span>{lang === "en" ? "🇬🇧" : "🇨🇳"}</span>
               {sidebarOpen && <span>{lang === "en" ? "English" : "简体中文"}</span>}
             </button>
           </div>
