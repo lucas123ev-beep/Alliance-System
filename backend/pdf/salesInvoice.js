@@ -64,14 +64,25 @@ function renderSalesInvoice(params) {
   // Blank consignee/notifyParty (the common case) -> one combined card, same
   // party for all three roles, exactly like before this field existed.
   // Filling either one in -> separate stacked cards, Importer always shown,
-  // Consignee/Notify Party only when that specific one is actually set.
+  // Consignee/Notify Party only when that specific one is actually set —
+  // except when two (or all three) roles resolve to the same client by
+  // name, in which case they're merged back into a single card with a
+  // combined heading (e.g. "Importer / Notify Party") instead of printing
+  // the same address twice.
   let partyBlocksHtml;
   if (consignee || notifyParty) {
-    const parties = [["Importer", importer]];
-    if (consignee) parties.push(["Consignee", consignee]);
-    if (notifyParty) parties.push(["Notify Party", notifyParty]);
-    partyBlocksHtml = parties.map(([heading, party], i) =>
-      partyCard(heading, party, i === parties.length - 1 ? "flex:1;" : "flex:none; margin-bottom:8px;")
+    const roles = [["Importer", importer]];
+    if (consignee) roles.push(["Consignee", consignee]);
+    if (notifyParty) roles.push(["Notify Party", notifyParty]);
+    const groups = [];
+    roles.forEach(([role, party]) => {
+      const key = (party.name || "").trim().toLowerCase();
+      const existing = key && groups.find(g => g.key === key);
+      if (existing) existing.roles.push(role);
+      else groups.push({ key, roles: [role], party });
+    });
+    partyBlocksHtml = groups.map((g, i) =>
+      partyCard(g.roles.join(" / "), g.party, i === groups.length - 1 ? "flex:1;" : "flex:none; margin-bottom:8px;")
     ).join("");
   } else {
     partyBlocksHtml = partyCard("Importer / Consignee / Notify Party", importer, "flex:1;");

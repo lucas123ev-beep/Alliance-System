@@ -3833,13 +3833,14 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
           )}
         </div>
       </Field>
-      <Field label="Issue Date" half><Input type="date" value={f.issue_date} onChange={set("issue_date")} /></Field>
-      <Field label="Validity Date" half><Input type="date" value={f.validity} onChange={set("validity")} /></Field>
-
       {/* Optional — leave both blank to keep the PDF's single combined
           "Importer / Consignee / Notify Party" box (all three = the Client
           above). Filling either one in splits the PDF into separate labeled
-          boxes instead. */}
+          boxes instead — and if two roles end up pointing at the same
+          client, the PDF still merges them back into one box with a
+          combined heading (e.g. "Importer / Notify Party") instead of
+          printing the same address twice. Kept right next to Client so all
+          three "who this document is for" fields read together. */}
       <Field label="Consignee (optional)" half>
         <div style={{ position: "relative" }}>
           <Input value={consigneeSearch}
@@ -3882,6 +3883,8 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
           )}
         </div>
       </Field>
+      <Field label="Issue Date" half><Input type="date" value={f.issue_date} onChange={set("issue_date")} /></Field>
+      <Field label="Validity Date" half><Input type="date" value={f.validity} onChange={set("validity")} /></Field>
 
       <Field label="Products">
         <div style={{ background: "#1e293b", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>
