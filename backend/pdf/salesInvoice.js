@@ -27,7 +27,10 @@ function daysOrNote(value, fallback) {
 //             quantity, unit, metersPerRoll, totalLength, totalWeight, unitPrice, total, currency, ncm }]
 //   totalLength, totalWeight, totalQuantity, totalAmount, currency
 //   paymentTerms, productionDays, deliveryDays
-//   importer: { name, address, taxId, tel }
+//   importer: { name, address, taxId, tel } — also printed as the Notify Party
+//     (heading reads "Importer / Consignee / Notify Party"), same as the
+//     Packing List's existing convention, since there's no separate Notify
+//     Party field captured anywhere upstream.
 //   extraShipmentLine: optional extra line(s) for Shipment Details column (e.g. Packing List summary)
 //   extraShipmentLineLabel: optional short suffix for the "Packing List Description" label (e.g. "2x 40' High Cube")
 function renderSalesInvoice(params) {
@@ -225,7 +228,7 @@ function renderSalesInvoice(params) {
     <div class="footer-grid">
       <div style="flex:1.2; display:flex; flex-direction:column;">
         <div class="card" style="flex:1;">
-          <div class="card-title">${icon("file")}Payment and Terms</div>
+          <div class="card-title">${icon("file")}Order Information</div>
           <p><strong>1. Payment terms:</strong> ${escapeHtml(paymentTerms || "100% on BL copy")}.</p>
           <p><strong>2. End date of production:</strong> ${escapeHtml(daysOrNote(productionDays, "28"))}</p>
           <p><strong>3. Goods delivered:</strong> ${escapeHtml(portOfOrigin || "—")}.</p>
@@ -267,7 +270,7 @@ function renderSalesInvoice(params) {
       </div>
       <div style="flex:1; display:flex; flex-direction:column;">
         <div class="card" style="flex:1;">
-          <div class="card-title">${icon("user")}Importer / Consignee</div>
+          <div class="card-title">${icon("user")}Importer / Consignee / Notify Party</div>
           <p><strong>${escapeHtml(importer.name || "—")}</strong></p>
           <p>${escapeHtml(importer.address || "—")}</p>
           ${importer.taxId ? `<p>Tax ID / CNPJ: ${escapeHtml(importer.taxId)}</p>` : ""}

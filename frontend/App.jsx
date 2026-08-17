@@ -244,6 +244,11 @@ const TRANSLATIONS = {
     "Report": "报表",
     "Qty": "数量",
     "Target Price": "目标价",
+    "Target Price (RMB)": "目标价（人民币）",
+    "Refresh from registered product": "从产品档案刷新",
+    "Not linked to a registered product": "未关联已登记产品",
+    "Update All": "全部更新",
+    "Could not refresh this item — the registered product may have been deleted.": "无法刷新此项目 — 该产品可能已被删除。",
     "Order #": "订单号",
     "Shipment": "发货",
     "Contract #": "合同号",
@@ -1432,7 +1437,7 @@ function Select({ children, style, ...props }) {
 }
 function Textarea(props) { return <textarea style={{ ...inputStyle, resize: "vertical", minHeight: "80px" }} {...props} />; }
 
-function Btn({ children, onClick, color = "#3b82f6", small, outline, disabled }) {
+function Btn({ children, onClick, color = "#3b82f6", small, outline, disabled, title }) {
   // Auto-translates plain-string button labels via the shared dictionary
   // (same safe fallback-to-English pattern as Field) — non-string children
   // (icons, fragments) pass through untouched.
@@ -1444,6 +1449,7 @@ function Btn({ children, onClick, color = "#3b82f6", small, outline, disabled })
     <button
       onClick={onClick}
       disabled={disabled}
+      title={title}
       style={{
         background: bg, border, color: textColor, borderRadius: "8px",
         padding: small ? "6px 12px" : "10px 18px",
@@ -1896,6 +1902,67 @@ function buildPackingListDraft(order, products) {
 
 // ─── FORMS ───────────────────────────────────────────────────────────────────
 
+// Shared product -> item field mapping, used both when a product is picked
+// from the search dropdown (ProductItemModal's selectProduct below) and by
+// the Order/Quotation item list's "refresh from registered product" button
+// (Orders/Quotations PRODUCTS cards) — both need the exact same
+// price/unit/category computation so a refreshed item ends up identical to
+// one freshly re-added from scratch, without actually deleting/re-adding it.
+// `prevItem` supplies quantity (to recompute total) and is otherwise only
+// used as the spread base so unrelated fields (target_price, notes, etc.)
+// are preserved untouched.
+function applyProductToItem(p, prevItem) {
+  const isTextile = p.category === "Textile" || p.category === "DTF Film";
+  const isLiquid = p.category === "Chemical";
+  const isTon = isLiquid && p.price_basis === "ton";
+  const h = parseFloat(p.height) || 0;
+  const heightM = p.height_unit === "cm" ? h * 0.01 : p.height_unit === "mm" ? h * 0.001 : h;
+  const volL = volumeLOf(p);
+
+  const salePrice = isTextile && p.sale_per_meter && heightM
+    ? (parseFloat(p.sale_per_meter) * heightM).toFixed(2)
+    : isTon && p.sale_per_ton
+    ? parseFloat(p.sale_per_ton).toFixed(2)
+    : isLiquid && p.sale_per_liter && volL
+    ? (parseFloat(p.sale_per_liter) * volL).toFixed(2)
+    : p.sale_price || p.unit_cost || "";
+
+  const costPrice = isTextile && p.cost_per_meter && heightM
+    ? (parseFloat(p.cost_per_meter) * heightM).toFixed(2)
+    : isTon && p.cost_per_ton
+    ? parseFloat(p.cost_per_ton).toFixed(2)
+    : isLiquid && p.cost_per_liter && volL
+    ? (parseFloat(p.cost_per_liter) * volL).toFixed(2)
+    : p.unit_cost || "";
+
+  return {
+    ...prevItem,
+    product_id: p.id,
+    product_name: p.name,
+    product_code: p.code,
+    supplier: p.supplier || "",
+    unit: (p.category === "Textile" || p.category === "DTF Film") ? "Rolls"
+      : p.category === "Chemical" ? (p.unit || "unit")
+      : (p.selling_unit || "Unit"),
+    currency: p.sale_currency || p.cost_currency || "USD",
+    unit_price: salePrice,
+    cost_price: costPrice,
+    cost_currency: p.cost_currency || "USD",
+    total: prevItem.quantity && salePrice ? (parseFloat(prevItem.quantity) * parseFloat(salePrice)).toFixed(2) : (prevItem.total || ""),
+    category: p.category || "",
+    sale_per_meter: isTextile ? (p.sale_per_meter || null) : null,
+    cost_per_meter: isTextile ? (p.cost_per_meter || null) : null,
+    sale_per_liter: isLiquid ? (p.sale_per_liter || null) : null,
+    cost_per_liter: isLiquid ? (p.cost_per_liter || null) : null,
+    price_basis: isLiquid ? (p.price_basis || "liter") : null,
+    sale_per_ton: isTon ? (p.sale_per_ton || null) : null,
+    cost_per_ton: isTon ? (p.cost_per_ton || null) : null,
+    sale_pct: p.sale_pct != null && p.sale_pct !== "" ? String(p.sale_pct) : "0",
+    height: (p.category === "Textile" || p.category === "DTF Film") ? (p.height || "") : "",
+    height_unit: p.height_unit || "cm",
+  };
+}
+
 function ProductItemModal({ onSave, onClose, initial, products, showTargetPrice }) {
 const t = useT();
 // unit defaults to "Unit" (capitalized) to match the actual Sold By
@@ -1982,81 +2049,10 @@ const [selectedProduct, setSelectedProduct] = useState(null); // ← adicionar e
 const selectProduct = (p) => {
   setSelectedProduct(p);
   setSearch(`${p.code} – ${p.name}`);
-
-  const isTextile = p.category === "Textile" || p.category === "DTF Film";
-  const isLiquid = p.category === "Chemical";
-  const isTon = isLiquid && p.price_basis === "ton";
-  const h = parseFloat(p.height) || 0;
-  const heightM = p.height_unit === "cm" ? h * 0.01 : p.height_unit === "mm" ? h * 0.001 : h;
-  const volL = volumeLOf(p);
-
-  // Ton-priced Chemical items are quoted/ordered directly in tons (the
-  // Quantity field IS the ton figure, not a drum count — see calcWeight
-  // above and the Quantity field's dynamic label below), so the per-ton
-  // rate registered on the product IS the unit price already. No
-  // per-package conversion here, unlike per-liter (where Quantity really
-  // is a drum count and the rate has to be multiplied by liters/drum first).
-  const salePrice = isTextile && p.sale_per_meter && heightM
-    ? (parseFloat(p.sale_per_meter) * heightM).toFixed(2)
-    : isTon && p.sale_per_ton
-    ? parseFloat(p.sale_per_ton).toFixed(2)
-    : isLiquid && p.sale_per_liter && volL
-    ? (parseFloat(p.sale_per_liter) * volL).toFixed(2)
-    : p.sale_price || p.unit_cost || "";
-
-  const costPrice = isTextile && p.cost_per_meter && heightM
-    ? (parseFloat(p.cost_per_meter) * heightM).toFixed(2)
-    : isTon && p.cost_per_ton
-    ? parseFloat(p.cost_per_ton).toFixed(2)
-    : isLiquid && p.cost_per_liter && volL
-    ? (parseFloat(p.cost_per_liter) * volL).toFixed(2)
-    : p.unit_cost || "";
-
-  setItem(prev => ({
-    ...prev,
-    product_id: p.id,
-    product_name: p.name,
-    product_code: p.code,
-    supplier: p.supplier || "",
-    // Chemical/Textile/DTF Film default to the product's registered package
-    // type (drum size, "Rolls"...) — every other category defaults to the
-    // product's own registered Sold By setting (Unit/Pair), not the
-    // Package field, since that's a physical container type, not what's
-    // being counted/sold.
-    // Textile/DTF Film always default to Rolls (the Unit field here only
-    // ever offers Rolls/Meters for these two categories, unrelated to the
-    // product's own registered Package field) — Chemical still defaults to
-    // its registered package type, everything else to its Sold By setting.
-    unit: (p.category === "Textile" || p.category === "DTF Film") ? "Rolls"
-      : p.category === "Chemical" ? (p.unit || "unit")
-      : (p.selling_unit || "Unit"),
-    currency: p.sale_currency || p.cost_currency || "USD",
-    unit_price: salePrice,
-    cost_price: costPrice,
-    cost_currency: p.cost_currency || "USD",
-    total: prev.quantity && salePrice ? (parseFloat(prev.quantity) * parseFloat(salePrice)).toFixed(2) : "",
-    category: p.category || "",
-    sale_per_meter: isTextile ? (p.sale_per_meter || null) : null,
-    cost_per_meter: isTextile ? (p.cost_per_meter || null) : null,
-    sale_per_liter: isLiquid ? (p.sale_per_liter || null) : null,
-    cost_per_liter: isLiquid ? (p.cost_per_liter || null) : null,
-    // Which rate basis this item was priced under — carried onto the item
-    // itself (not just read from the product) so it keeps rendering
-    // correctly even if the product's own Price Basis is changed later.
-    price_basis: isLiquid ? (p.price_basis || "liter") : null,
-    sale_per_ton: isTon ? (p.sale_per_ton || null) : null,
-    cost_per_ton: isTon ? (p.cost_per_ton || null) : null,
-    // Margin % now applies to every category, not just Textile/DTF — and
-    // starts from whatever default margin is registered on the product
-    // itself (instead of always 0), since it's usually the same standard
-    // margin reused quote after quote.
-    sale_pct: p.sale_pct != null && p.sale_pct !== "" ? String(p.sale_pct) : "0",
-    // Default the per-item length to the product's registered roll length —
-    // editable below for Textile/DTF Film items when this specific quote or
-    // order needs a different meterage.
-    height: (p.category === "Textile" || p.category === "DTF Film") ? (p.height || "") : "",
-    height_unit: p.height_unit || "cm",
-  }));
+  // total starts blank (not carried from prev.total) the first time a
+  // product is picked from the dropdown, same as before this was extracted
+  // into the shared applyProductToItem() helper.
+  setItem(prev => applyProductToItem(p, { ...prev, total: "" }));
   setShowList(false);
 };
 
@@ -2287,10 +2283,14 @@ const handleUnitChange = (e) => {
     whoever's building a quotation record what the client is asking to pay
     right when the item is added, instead of a separate edit step
     afterwards (the Quotation list still shows/edits this too, unchanged —
-    this is purely a convenience shortcut at add-time). */}
+    this is purely a convenience shortcut at add-time). Always in RMB
+    (regardless of item.currency, which is the Sale/Cost Price currency) —
+    Target Price is a negotiation reference against what the supplier in
+    China would charge, so it's always quoted in RMB, not whatever currency
+    the client's own Sale Price happens to be in. */}
 {showTargetPrice && (
   <>
-    <Field label={`Target Price (${currencyLabel(item.currency || "USD")})`} half>
+    <Field label="Target Price (RMB)" half>
       <Input type="text" inputMode="decimal" value={item.target_price ?? ""} onChange={e => {
         setItem(prev => ({ ...prev, target_price: maskMoney(e.target.value) }));
       }} placeholder="0.00" />
@@ -2435,6 +2435,37 @@ useEffect(() => {
     });
   };
 
+  // Pulls the item's linked Product record fresh from the backend and
+  // re-applies its current price/unit/category fields onto the item (via
+  // the shared applyProductToItem() helper) — lets a stale price get
+  // corrected in place instead of deleting and re-adding the whole item.
+  // Only works for items actually linked to a registered product
+  // (item.product_id set) — freehand-typed items have nothing to refresh
+  // from, so the button calling this is disabled for those.
+  const refreshItem = async (idx) => {
+    const item = items[idx];
+    if (!item.product_id) return;
+    try {
+      const fresh = await api(`/products/${item.product_id}`);
+      updateItem(idx, applyProductToItem(fresh, item));
+    } catch {
+      alert(t("Could not refresh this item — the registered product may have been deleted."));
+    }
+  };
+  // "Update All" — refreshes every linked item in one click instead of
+  // clicking the per-item refresh button one at a time. Re-fetches the full
+  // product list once (fresher than whatever was loaded when the form
+  // opened) rather than issuing one request per item.
+  const refreshAllItems = async () => {
+    const freshProducts = await api("/products");
+    setProducts(freshProducts);
+    items.forEach((item, idx) => {
+      if (!item.product_id) return;
+      const fresh = freshProducts.find(p => Number(p.id) === Number(item.product_id));
+      if (fresh) updateItem(idx, applyProductToItem(fresh, item));
+    });
+  };
+
   const removeItem = (idx) => {
     setItems(prev => {
       const removed = parseFloat(prev[idx].total) || 0;
@@ -2541,6 +2572,14 @@ useEffect(() => {
                       <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
                       <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
                     </div>
+                    {/* Pulls the current registered price/spec from the Product
+                        record onto this item — disabled for items never linked
+                        to a real product (typed freehand, no product_id / not
+                        found among registered products), since there's nothing
+                        to refresh from. */}
+                    <Btn small outline color={product ? "#3b82f6" : "#334155"} disabled={!product}
+                      title={product ? t("Refresh from registered product") : t("Not linked to a registered product")}
+                      onClick={() => refreshItem(idx)}>🔄</Btn>
                     <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
                     <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
                   </div>
@@ -2553,8 +2592,11 @@ useEffect(() => {
                 </div>
               );
             })}
-            <div style={{ padding: "10px 14px" }}>
+            <div style={{ padding: "10px 14px", display: "flex", gap: "8px" }}>
               <Btn small color="#3b82f6" onClick={() => { setEditingItemIdx(null); setItemModal("new"); }}>+ Add Product</Btn>
+              {items.some(i => i.product_id) && (
+                <Btn small outline color="#3b82f6" onClick={refreshAllItems}>🔄 {t("Update All")}</Btn>
+              )}
             </div>
           </div>
         </Field>
@@ -4138,6 +4180,29 @@ useEffect(() => {
   const addItem = (item) => setItems(prev => [...prev, item]);
   const updateItem = (idx, item) => setItems(prev => { const u = [...prev]; u[idx] = item; return u; });
   const removeItem = (idx) => setItems(prev => prev.filter((_, i) => i !== idx));
+  // Same "refresh from registered product" pair as OrderForm — see its
+  // comments for the full rationale. Only works for items linked to a real
+  // product (item.product_id set); freehand-typed items have nothing to
+  // refresh from.
+  const refreshItem = async (idx) => {
+    const item = items[idx];
+    if (!item.product_id) return;
+    try {
+      const fresh = await api(`/products/${item.product_id}`);
+      updateItem(idx, applyProductToItem(fresh, item));
+    } catch {
+      alert(t("Could not refresh this item — the registered product may have been deleted."));
+    }
+  };
+  const refreshAllItems = async () => {
+    const freshProducts = await api("/products");
+    setProducts(freshProducts);
+    items.forEach((item, idx) => {
+      if (!item.product_id) return;
+      const fresh = freshProducts.find(p => Number(p.id) === Number(item.product_id));
+      if (fresh) updateItem(idx, applyProductToItem(fresh, item));
+    });
+  };
 
   const filteredClients = clients.filter(c => c.company_name.toLowerCase().includes(clientSearch.toLowerCase()));
 
@@ -4224,13 +4289,19 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
                       <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
                       <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
                     </div>
+                    {/* Pulls the current registered price/spec from the Product
+                        record onto this item — disabled for items never linked
+                        to a real product (typed freehand). */}
+                    <Btn small outline color={product ? "#3b82f6" : "#334155"} disabled={!product}
+                      title={product ? t("Refresh from registered product") : t("Not linked to a registered product")}
+                      onClick={() => refreshItem(idx)}>🔄</Btn>
                     <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
                     <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
                   </div>
                   <PricingRow item={item} product={product} currency={item.currency || f.currency}
                     onChange={updated => updateItem(idx, updated)} />
                   <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", marginTop: "8px" }}>
-                    <label style={{ fontSize: "11px", color: "#64748b" }}>Target Price
+                    <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Target Price (RMB)")}
                       <input type="text" inputMode="decimal" value={item.target_price ?? ""} onChange={onTargetField}
                         placeholder="0,00"
                         style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
@@ -4243,8 +4314,11 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
                 </div>
               );
             })}
-            <div style={{ padding: "10px 14px" }}>
+            <div style={{ padding: "10px 14px", display: "flex", gap: "8px" }}>
               <Btn small color="#3b82f6" onClick={() => { setEditingItemIdx(null); setItemModal("new"); }}>+ Add Product</Btn>
+              {items.some(i => i.product_id) && (
+                <Btn small outline color="#3b82f6" onClick={refreshAllItems}>🔄 {t("Update All")}</Btn>
+              )}
             </div>
           </div>
         </Field>
@@ -4451,7 +4525,9 @@ console.log('quotations set:', quotations?.length);
     const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
     const withTarget = items.filter(i => i.target_price !== "" && i.target_price != null);
     if (withTarget.length === 0) return "—";
-    const label = i => `${fmt(parseFloat(i.target_price), r.currency)}${targetPriceUnitSuffix(i)}`;
+    // Target Price is always RMB (negotiation reference vs. the supplier),
+    // regardless of what currency the rest of the quotation is priced in.
+    const label = i => `${fmt(parseFloat(i.target_price), "CNY")}${targetPriceUnitSuffix(i)}`;
     return withTarget.length > 1 ? `${label(withTarget[0])} +${withTarget.length - 1}` : label(withTarget[0]);
   } catch { return "—"; }
 }},

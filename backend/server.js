@@ -294,6 +294,16 @@ app.get('/api/products', (req, res) => {
   res.json(db.prepare('SELECT * FROM products ORDER BY id ASC').all());
 });
 
+// Single product by id -- used by the Order/Quotation item list's "refresh
+// from registered product" button (App.jsx) to pull the live current price
+// (and every other registered field) for one specific item without having
+// to re-fetch/re-search the whole product list.
+app.get('/api/products/:id', (req, res) => {
+  const row = db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Product not found' });
+  res.json(row);
+});
+
 // The field that actually represents a product's "price" changes by
 // category/basis — mirrors the frontend's productRate() in App.jsx exactly
 // (Textile/DTF Film -> per meter, Chemical -> per ton or per liter
