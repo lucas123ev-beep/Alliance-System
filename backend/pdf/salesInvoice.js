@@ -13,6 +13,21 @@ function daysOrNote(value, fallback) {
   return /^\d+$/.test(String(v).trim()) ? `${v} days after TT payment.` : String(v);
 }
 
+// One "party" card (Importer / Consignee / Notify Party / the combined
+// fallback) — style is passed in explicitly since only the last card in the
+// stack should get flex:1 (fills the column's remaining height, matching
+// the sig-box below it), the rest get flex:none + margin-bottom.
+function partyCard(heading, party, style) {
+  return `
+        <div class="card" style="${style}">
+          <div class="card-title">${icon("user")}${heading}</div>
+          <p><strong>${escapeHtml(party.name || "—")}</strong></p>
+          <p>${escapeHtml(party.address || "—")}</p>
+          ${party.taxId ? `<p>Tax ID / CNPJ: ${escapeHtml(party.taxId)}</p>` : ""}
+          ${party.tel ? `<p>Tel.: ${escapeHtml(party.tel)}</p>` : ""}
+        </div>`;
+}
+
 // Shared layout for Proforma Invoice and Commercial Invoice — the two
 // client-facing sales documents. Structurally identical in the models the
 // client sent, differing only in title and a couple of payment-instruction
@@ -27,18 +42,40 @@ function daysOrNote(value, fallback) {
 //             quantity, unit, metersPerRoll, totalLength, totalWeight, unitPrice, total, currency, ncm }]
 //   totalLength, totalWeight, totalQuantity, totalAmount, currency
 //   paymentTerms, productionDays, deliveryDays
-//   importer: { name, address, taxId, tel } — also printed as the Notify Party
-//     (heading reads "Importer / Consignee / Notify Party"), same as the
-//     Packing List's existing convention, since there's no separate Notify
-//     Party field captured anywhere upstream.
+//   importer: { name, address, taxId, tel }
+//   consignee, notifyParty: optional { name, address, taxId, tel } — when
+//     BOTH are omitted (the common case), importer is also printed as the
+//     Consignee and Notify Party in one combined box (heading reads
+//     "Importer / Consignee / Notify Party"), same as the Packing List's
+//     existing convention. Filling in either one switches to separate
+//     stacked boxes instead, each with its own heading — Importer always
+//     shown, Consignee/Notify Party only shown when that specific one is set
+//     (so e.g. a Consignee-only Proforma shows two boxes, not three).
 //   extraShipmentLine: optional extra line(s) for Shipment Details column (e.g. Packing List summary)
 //   extraShipmentLineLabel: optional short suffix for the "Packing List Description" label (e.g. "2x 40' High Cube")
 function renderSalesInvoice(params) {
   const {
     title, number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
     incoterm, acq, manufacturer, items, totalLength, totalWeight, totalQuantity, totalAmount, currency,
-    paymentTerms, productionDays, deliveryDays, importer, extraShipmentLine, extraShipmentLineLabel, validity,
+    paymentTerms, productionDays, deliveryDays, importer, consignee, notifyParty,
+    extraShipmentLine, extraShipmentLineLabel, validity,
   } = params;
+
+  // Blank consignee/notifyParty (the common case) -> one combined card, same
+  // party for all three roles, exactly like before this field existed.
+  // Filling either one in -> separate stacked cards, Importer always shown,
+  // Consignee/Notify Party only when that specific one is actually set.
+  let partyBlocksHtml;
+  if (consignee || notifyParty) {
+    const parties = [["Importer", importer]];
+    if (consignee) parties.push(["Consignee", consignee]);
+    if (notifyParty) parties.push(["Notify Party", notifyParty]);
+    partyBlocksHtml = parties.map(([heading, party], i) =>
+      partyCard(heading, party, i === parties.length - 1 ? "flex:1;" : "flex:none; margin-bottom:8px;")
+    ).join("");
+  } else {
+    partyBlocksHtml = partyCard("Importer / Consignee / Notify Party", importer, "flex:1;");
+  }
 
   // Textile/DTF Film rolls are quoted and measured by the meter, so they get
   // the original Total Length column. Everything else (machines, chemicals,
@@ -269,13 +306,7 @@ function renderSalesInvoice(params) {
         <p><strong>Bank SWIFT:</strong> ${escapeHtml(acq.bank.swift)}</p>
       </div>
       <div style="flex:1; display:flex; flex-direction:column;">
-        <div class="card" style="flex:1;">
-          <div class="card-title">${icon("user")}Importer / Consignee / Notify Party</div>
-          <p><strong>${escapeHtml(importer.name || "—")}</strong></p>
-          <p>${escapeHtml(importer.address || "—")}</p>
-          ${importer.taxId ? `<p>Tax ID / CNPJ: ${escapeHtml(importer.taxId)}</p>` : ""}
-          ${importer.tel ? `<p>Tel.: ${escapeHtml(importer.tel)}</p>` : ""}
-        </div>
+        ${partyBlocksHtml}
         <div class="sig-box">
           <div class="label">Authorized by</div>
           <div class="name">${escapeHtml(acq.name)}</div>

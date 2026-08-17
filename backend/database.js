@@ -649,6 +649,15 @@ const migrations = [
   // Suppliers list instead of Payment Terms/Bank, which cluttered the
   // overview and are already visible on the supplier's own Edit screen.
   ['suppliers', 'trade_name', "TEXT DEFAULT ''"],
+  // Optional Consignee / Notify Party for a Proforma -- each just a client
+  // company_name string, same lightweight pattern as the Proforma's own
+  // `client` field (no FK, resolved by name lookup at PDF time via
+  // findClientByName() in server.js). Both stay blank by default, in which
+  // case the PDF keeps showing today's single combined "Importer /
+  // Consignee / Notify Party" box (all three roles = the same client) --
+  // filling either one in switches the PDF to separate labeled boxes.
+  ['proformas', 'consignee', 'TEXT'],
+  ['proformas', 'notify_party', 'TEXT'],
 ];
 
 for (const [table, column, definition] of migrations) {

@@ -86,6 +86,8 @@ const TRANSLATIONS = {
     "Total Meterage": "总米数",
     "Order Number": "订单编号",
     "Client": "客户",
+    "Consignee (optional)": "收货人（可选）",
+    "Notify Party (optional)": "通知方（可选）",
     "Acquisition Company": "采购公司",
     "Value": "金额",
     "Currency": "货币",
@@ -3714,7 +3716,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
   const [f, setF] = useState(initial || {
     order_id: "", quotation_id: "", number: "", issue_date: "", validity: "", client: "", total: "", currency: "USD", status: "Draft", notes: "",
     acquisition_company: "", incoterm: "", way_of_shipment: "By Sea", port_of_loading: "", port_of_discharge: "",
-    payment_terms: "", production_days: "", delivery_days: "",
+    payment_terms: "", production_days: "", delivery_days: "", consignee: "", notify_party: "",
   });
   const [items, setItems] = useState(() => {
     if (Array.isArray(initial?.items)) return initial.items;
@@ -3725,6 +3727,15 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
   const [clients, setClients] = useState([]);
   const [clientSearch, setClientSearch] = useState(initial?.client || "");
   const [showClientList, setShowClientList] = useState(false);
+  // Consignee / Notify Party — same "search the registered Clients list"
+  // pattern as Client itself, both entirely optional. Left blank (the
+  // common case), the PDF shows one combined "Importer / Consignee / Notify
+  // Party" box for the Client, same as before this existed; filling either
+  // one in switches the PDF to separate labeled boxes (see salesInvoice.js).
+  const [consigneeSearch, setConsigneeSearch] = useState(initial?.consignee || "");
+  const [showConsigneeList, setShowConsigneeList] = useState(false);
+  const [notifyPartySearch, setNotifyPartySearch] = useState(initial?.notify_party || "");
+  const [showNotifyPartyList, setShowNotifyPartyList] = useState(false);
   const [itemModal, setItemModal] = useState(null);
   const [editingItemIdx, setEditingItemIdx] = useState(null);
   const [showPaymentList, setShowPaymentList] = useState(false);
@@ -3758,6 +3769,8 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
   const updateItem = (idx, item) => setItems(prev => { const u = [...prev]; u[idx] = item; return u; });
   const removeItem = (idx) => setItems(prev => prev.filter((_, i) => i !== idx));
   const filteredClients = clients.filter(c => c.company_name.toLowerCase().includes(clientSearch.toLowerCase()));
+  const filteredConsignees = clients.filter(c => c.company_name.toLowerCase().includes(consigneeSearch.toLowerCase()));
+  const filteredNotifyParties = clients.filter(c => c.company_name.toLowerCase().includes(notifyPartySearch.toLowerCase()));
 
   // Items are the Proforma's own snapshot — its Total stays in sync with
   // them automatically, same pattern as Quotation/Order.
@@ -3822,6 +3835,53 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
       </Field>
       <Field label="Issue Date" half><Input type="date" value={f.issue_date} onChange={set("issue_date")} /></Field>
       <Field label="Validity Date" half><Input type="date" value={f.validity} onChange={set("validity")} /></Field>
+
+      {/* Optional — leave both blank to keep the PDF's single combined
+          "Importer / Consignee / Notify Party" box (all three = the Client
+          above). Filling either one in splits the PDF into separate labeled
+          boxes instead. */}
+      <Field label="Consignee (optional)" half>
+        <div style={{ position: "relative" }}>
+          <Input value={consigneeSearch}
+            onChange={e => { setConsigneeSearch(e.target.value); setF(p => ({ ...p, consignee: e.target.value })); setShowConsigneeList(true); }}
+            onFocus={() => setShowConsigneeList(true)}
+            onBlur={() => setTimeout(() => setShowConsigneeList(false), 200)}
+            placeholder="Search client… (leave blank to reuse Client)" />
+          {showConsigneeList && filteredConsignees.length > 0 && (
+            <div style={dropdownStyle}>
+              {filteredConsignees.map(c => (
+                <div key={c.id} style={dropItemStyle}
+                  onMouseDown={() => { setConsigneeSearch(c.company_name); setF(p => ({ ...p, consignee: c.company_name })); setShowConsigneeList(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  {c.company_name}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Field>
+      <Field label="Notify Party (optional)" half>
+        <div style={{ position: "relative" }}>
+          <Input value={notifyPartySearch}
+            onChange={e => { setNotifyPartySearch(e.target.value); setF(p => ({ ...p, notify_party: e.target.value })); setShowNotifyPartyList(true); }}
+            onFocus={() => setShowNotifyPartyList(true)}
+            onBlur={() => setTimeout(() => setShowNotifyPartyList(false), 200)}
+            placeholder="Search client… (leave blank to reuse Client)" />
+          {showNotifyPartyList && filteredNotifyParties.length > 0 && (
+            <div style={dropdownStyle}>
+              {filteredNotifyParties.map(c => (
+                <div key={c.id} style={dropItemStyle}
+                  onMouseDown={() => { setNotifyPartySearch(c.company_name); setF(p => ({ ...p, notify_party: c.company_name })); setShowNotifyPartyList(false); }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#334155"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  {c.company_name}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Field>
 
       <Field label="Products">
         <div style={{ background: "#1e293b", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>
