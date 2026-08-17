@@ -1437,6 +1437,21 @@ function Select({ children, style, ...props }) {
 }
 function Textarea(props) { return <textarea style={{ ...inputStyle, resize: "vertical", minHeight: "80px" }} {...props} />; }
 
+// "Refresh from registered product" icon — two vertical U-shaped arrows
+// forming a sync/refresh symbol, matching the exact glyph requested for the
+// Order/Quotation item list's refresh buttons. stroke="currentColor" so it
+// automatically follows whatever text color the parent <Btn> is using.
+function RefreshIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", verticalAlign: "middle" }}>
+      <path d="m2 17 4 4 4-4" />
+      <path d="M11 3h-1a4 4 0 0 0-4 4v14" />
+      <path d="m22 7-4-4-4 4" />
+      <path d="M13 21h1a4 4 0 0 0 4-4V3" />
+    </svg>
+  );
+}
+
 function Btn({ children, onClick, color = "#3b82f6", small, outline, disabled, title }) {
   // Auto-translates plain-string button labels via the shared dictionary
   // (same safe fallback-to-English pattern as Field) — non-string children
@@ -2577,9 +2592,9 @@ useEffect(() => {
                         to a real product (typed freehand, no product_id / not
                         found among registered products), since there's nothing
                         to refresh from. */}
-                    <Btn small outline color={product ? "#3b82f6" : "#334155"} disabled={!product}
+                    <Btn small color="#8857F6" disabled={!product}
                       title={product ? t("Refresh from registered product") : t("Not linked to a registered product")}
-                      onClick={() => refreshItem(idx)}>🔄</Btn>
+                      onClick={() => refreshItem(idx)}><RefreshIcon /></Btn>
                     <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
                     <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
                   </div>
@@ -2595,7 +2610,7 @@ useEffect(() => {
             <div style={{ padding: "10px 14px", display: "flex", gap: "8px" }}>
               <Btn small color="#3b82f6" onClick={() => { setEditingItemIdx(null); setItemModal("new"); }}>+ Add Product</Btn>
               {items.some(i => i.product_id) && (
-                <Btn small outline color="#3b82f6" onClick={refreshAllItems}>🔄 {t("Update All")}</Btn>
+                <Btn small color="#8857F6" onClick={refreshAllItems}><RefreshIcon /> {t("Update All")}</Btn>
               )}
             </div>
           </div>
@@ -4292,9 +4307,9 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
                     {/* Pulls the current registered price/spec from the Product
                         record onto this item — disabled for items never linked
                         to a real product (typed freehand). */}
-                    <Btn small outline color={product ? "#3b82f6" : "#334155"} disabled={!product}
+                    <Btn small color="#8857F6" disabled={!product}
                       title={product ? t("Refresh from registered product") : t("Not linked to a registered product")}
-                      onClick={() => refreshItem(idx)}>🔄</Btn>
+                      onClick={() => refreshItem(idx)}><RefreshIcon /></Btn>
                     <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
                     <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
                   </div>
@@ -4317,7 +4332,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
             <div style={{ padding: "10px 14px", display: "flex", gap: "8px" }}>
               <Btn small color="#3b82f6" onClick={() => { setEditingItemIdx(null); setItemModal("new"); }}>+ Add Product</Btn>
               {items.some(i => i.product_id) && (
-                <Btn small outline color="#3b82f6" onClick={refreshAllItems}>🔄 {t("Update All")}</Btn>
+                <Btn small color="#8857F6" onClick={refreshAllItems}><RefreshIcon /> {t("Update All")}</Btn>
               )}
             </div>
           </div>
