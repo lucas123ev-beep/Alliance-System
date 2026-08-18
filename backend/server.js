@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const db = require('./database');
+const { scheduleBackups, runBackup, listBackups } = require('./backup');
 
 const { renderPdfBuffer } = require('./pdf/render');
 const { renderSalesInvoice } = require('./pdf/salesInvoice');
@@ -44,6 +47,49 @@ cloudinary.config({
 });
 
 const app = express();
+
+// Render sits in front of this service as a reverse proxy — without this,
+// Express (and anything that reads req.ip, like the rate limiters below)
+// sees every request as coming from Render's internal proxy IP instead of
+// the real client, which would make IP-based rate limiting useless.
+app.set('trust proxy', 1);
+
+// Adds a standard set of protective HTTP response headers (blocks MIME
+// sniffing, disables framing to prevent clickjacking, forces HTTPS via
+// HSTS, etc.) — cheap, standard hardening with no behavior change for a
+// JSON API like this one.
+app.use(helmet());
+
+// General ceiling on how many requests one IP can make. Set high on purpose:
+// several people on this team share the same office/VPN exit IP, so this
+// counter is really "9 people's traffic combined," not one person's. The
+// goal here is only to catch a runaway script or a leaked token being
+// hammered thousands of times — not to ever get in the way of normal use,
+// even on a busy day.
+app.use('/api/', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 2000,
+  standardHeaders: true,
+  legacyHeaders: false,
+}));
+
+// Tighter limit specifically on /api/login, on top of the per-account
+// lockout in auth.js — that lockout stops one *account* from being
+// guessed, this stops one *IP* from hammering the login endpoint across
+// many different usernames. skipSuccessfulRequests means a normal,
+// successful login never counts against this limit at all — only wrong
+// passwords do — so a shared VPN IP with several people logging in
+// correctly around the same time never gets close to the ceiling; only
+// an actual burst of failed attempts does.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: 'Too many login attempts from this network. Please try again later.' },
+});
+
 app.use(cors({
   origin: (origin, callback) => {
     const allowed = [
@@ -74,7 +120,7 @@ app.use(express.json());
 // this point in the file (Express applies middleware in registration
 // order, so anything defined above this block is NOT covered by it — keep
 // all real routes below this block).
-app.post('/api/login', (req, res) => {
+app.post('/api/login', loginLimiter, (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(String(username).trim().toLowerCase());
@@ -1857,7 +1903,34 @@ app.get('/api/financial/suppliers/:id/payment-notice-xlsx', async (req, res) => 
   }
 });
 
+// ─── DATABASE BACKUPS (see backup.js) ────────────────────────────────────────
+// Manual trigger + listing, restricted to the account holder, so the daily
+// backup routine can be verified from the running app (e.g. right after
+// deploying this) instead of just trusting the 3am schedule blindly.
+app.post('/api/admin/backup-now', requireAuth(db), (req, res) => {
+  if (req.user.username !== 'lucas') return res.status(403).json({ error: "Not allowed" });
+  runBackup(db)
+    .then(() => res.json({ ok: true }))
+    .catch(err => {
+      console.error('Manual backup error:', err);
+      res.status(500).json({ error: 'Backup failed — check server logs.' });
+    });
+});
+
+app.get('/api/admin/backups', requireAuth(db), (req, res) => {
+  if (req.user.username !== 'lucas') return res.status(403).json({ error: "Not allowed" });
+  listBackups()
+    .then(list => res.json(list))
+    .catch(err => {
+      console.error('List backups error:', err);
+      res.status(500).json({ error: 'Could not list backups — check server logs.' });
+    });
+});
+
 // ─── START ────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`✅ Server running on http://localhost:${PORT}`);
+  scheduleBackups(db);
+});
