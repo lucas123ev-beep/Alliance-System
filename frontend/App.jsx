@@ -498,6 +498,11 @@ const TRANSLATIONS = {
     "Send": "发送",
     "Sending…": "发送中…",
     "Notify": "通知",
+    "Message (optional)": "留言（可选）",
+    "Add a note to include in the e-mail…": "添加要包含在邮件中的留言…",
+    "Attachment (optional)": "附件（可选）",
+    "Remove": "移除",
+    "📎 Attach file": "📎 添加附件",
   },
 };
 const LanguageContext = createContext({ lang: "en", setLang: () => {} });
@@ -1506,6 +1511,9 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
   const t = useT();
   const [recipients, setRecipients] = useState(null); // null = still loading
   const [selected, setSelected] = useState(() => new Set());
+  const [message, setMessage] = useState("");
+  const [attachment, setAttachment] = useState(null); // { url, name }
+  const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
 
@@ -1523,6 +1531,18 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
     });
   }
 
+  async function handleAttach(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      setAttachment(await uploadToCloudinary(file));
+    } catch (err) {
+      alert(t("Upload failed: ") + err.message);
+    }
+    setUploading(false);
+  }
+
   async function send() {
     if (selected.size === 0) { onClose(); return; }
     setSending(true);
@@ -1530,6 +1550,9 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
       const res = await api("/notifications/status-change", "POST", {
         entityType, recordLabel, oldStatus, newStatus,
         recipientUsernames: [...selected],
+        message: message.trim() || undefined,
+        attachmentUrl: attachment?.url,
+        attachmentName: attachment?.name,
       });
       setResult(res);
       setTimeout(onClose, 1100);
@@ -1549,15 +1572,39 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
       ) : recipients.length === 0 ? (
         <p style={{ color: "#64748b", fontSize: "13px" }}>{t("No eligible recipients for this record.")}</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px 16px", marginBottom: "20px" }}>
           {recipients.map(u => (
-            <label key={u.username} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "14px", color: "#f1f5f9", cursor: "pointer" }}>
+            <label key={u.username} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", color: "#f1f5f9", cursor: "pointer" }}>
               <input type="checkbox" checked={selected.has(u.username)} onChange={() => toggle(u.username)} />
               {u.name}
             </label>
           ))}
         </div>
       )}
+      <div style={{ marginBottom: "16px" }}>
+        <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "6px" }}>
+          {t("Message (optional)")}
+        </label>
+        <Textarea value={message} onChange={e => setMessage(e.target.value)} placeholder={t("Add a note to include in the e-mail…")} />
+      </div>
+      <div style={{ marginBottom: "20px" }}>
+        <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "6px" }}>
+          {t("Attachment (optional)")}
+        </label>
+        {attachment ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13px", color: "#f1f5f9" }}>
+            📎 {attachment.name}
+            <Btn small outline color="#ef4444" onClick={() => setAttachment(null)}>Remove</Btn>
+          </div>
+        ) : (
+          <>
+            <input id="notify-attach-input" type="file" onChange={handleAttach} style={{ display: "none" }} />
+            <Btn small outline color="#64748b" disabled={uploading} onClick={() => document.getElementById("notify-attach-input").click()}>
+              {uploading ? "Uploading…" : "📎 Attach file"}
+            </Btn>
+          </>
+        )}
+      </div>
       {result && !result.error && (
         <p style={{ fontSize: "13px", color: "#4ade80", margin: "0 0 12px" }}>
           {t("Sent")}: {result.sent.length}{result.skipped.length ? ` — ${t("skipped")}: ${result.skipped.length}` : ""}
@@ -1568,7 +1615,7 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
       )}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose} disabled={sending}>Don't notify</Btn>
-        <Btn onClick={send} disabled={sending || recipients === null || recipients.length === 0}>
+        <Btn onClick={send} disabled={sending || uploading || recipients === null || recipients.length === 0}>
           {sending ? "Sending…" : "Send"}
         </Btn>
       </div>

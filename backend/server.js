@@ -4,7 +4,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const db = require('./database');
 const { scheduleBackups, runBackup, listBackups } = require('./backup');
-const { sendStatusChangeEmail, isRestricted, ENTITY_LABELS } = require('./notifications');
+const { sendStatusChangeEmail, fetchAttachment, isRestricted, ENTITY_LABELS } = require('./notifications');
 
 const { renderPdfBuffer } = require('./pdf/render');
 const { renderSalesInvoice } = require('./pdf/salesInvoice');
@@ -1929,7 +1929,7 @@ app.get('/api/notifications/recipients', requireAuth(db), (req, res) => {
 });
 
 app.post('/api/notifications/status-change', requireAuth(db), async (req, res) => {
-  const { entityType, recordLabel, oldStatus, newStatus, recipientUsernames } = req.body || {};
+  const { entityType, recordLabel, oldStatus, newStatus, recipientUsernames, message, attachmentUrl, attachmentName } = req.body || {};
   if (!ENTITY_LABELS[entityType]) return res.status(400).json({ error: 'Unknown entityType' });
   if (!recordLabel || !newStatus) return res.status(400).json({ error: 'recordLabel and newStatus required' });
 
@@ -1938,6 +1938,10 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
 
   const users = db.prepare('SELECT username, name, email FROM users').all();
   const byUsername = Object.fromEntries(users.map(u => [u.username, u]));
+
+  // Downloaded once here (not inside the per-recipient loop) so N
+  // recipients don't mean N redundant fetches of the same file.
+  const attachment = await fetchAttachment(attachmentUrl, attachmentName);
 
   const sent = [];
   const skipped = [];
@@ -1953,6 +1957,8 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
         oldStatus,
         newStatus,
         changedBy: actorName(req),
+        message,
+        attachment,
       });
       sent.push(username);
     } catch (err) {

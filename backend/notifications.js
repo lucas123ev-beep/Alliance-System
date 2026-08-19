@@ -59,15 +59,38 @@ function isRestricted(entityType) {
   return RESTRICTED_ENTITY_TYPES.has(entityType);
 }
 
+// Downloads the attached file once (from its Cloudinary URL) so every
+// recipient's e-mail can reuse the same in-memory copy instead of each one
+// re-fetching it — called once per request in server.js, not per
+// recipient. Returns null (never throws) on any failure, so a broken/slow
+// attachment link degrades to "no attachment" instead of blocking the
+// whole notification from sending.
+async function fetchAttachment(url, filename) {
+  if (!url) return null;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const base64 = Buffer.from(await res.arrayBuffer()).toString('base64');
+    return { filename: filename || url.split('/').pop() || 'attachment', content: base64 };
+  } catch (err) {
+    console.error('Notification attachment download failed:', err.message);
+    return null;
+  }
+}
+
 // `to` is a single address — the route in server.js calls this once per
 // recipient rather than passing an array, so one bad/missing address for
-// one person can't silently drop the e-mail to everyone else.
-async function sendStatusChangeEmail({ to, entityType, recordLabel, oldStatus, newStatus, changedBy }) {
+// one person can't silently drop the e-mail to everyone else. `attachment`
+// (if any) should already be a resolved { filename, content: Buffer } —
+// see fetchAttachment above, meant to be called once and reused across
+// every recipient of the same notification.
+async function sendStatusChangeEmail({ to, entityType, recordLabel, oldStatus, newStatus, changedBy, message, attachment }) {
   const label = entityLabel(entityType);
   const subject = `[Alliance Flow] ${label} ${recordLabel} — status alterado`;
   const text = `${changedBy} alterou o status de ${label} ${recordLabel}.\n\n` +
-    `De: ${oldStatus || '—'}\nPara: ${newStatus}\n\n` +
-    `Acesse o sistema para mais detalhes.`;
+    `De: ${oldStatus || '—'}\nPara: ${newStatus}\n` +
+    (message ? `\nMensagem de ${changedBy}:\n${message}\n` : '') +
+    `\nAcesse o sistema para mais detalhes.`;
   const html = `
     <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
       <p><strong>${escapeHtml(changedBy)}</strong> alterou o status de <strong>${escapeHtml(label)} ${escapeHtml(recordLabel)}</strong>:</p>
@@ -75,11 +98,18 @@ async function sendStatusChangeEmail({ to, entityType, recordLabel, oldStatus, n
         <tr><td style="padding: 4px 12px 4px 0; color:#666;">De</td><td style="padding:4px 0;">${escapeHtml(oldStatus || '—')}</td></tr>
         <tr><td style="padding: 4px 12px 4px 0; color:#666;">Para</td><td style="padding:4px 0;"><strong>${escapeHtml(newStatus)}</strong></td></tr>
       </table>
+      ${message ? `
+      <p style="margin: 12px 0 4px; color:#666;">Mensagem de ${escapeHtml(changedBy)}:</p>
+      <p style="margin: 0 0 12px; padding: 10px 12px; background: #f5f5f5; border-radius: 6px; white-space: pre-wrap;">${escapeHtml(message)}</p>
+      ` : ''}
       <p style="color:#999; font-size:12px;">Alliance Flow — notificação automática, não responda este e-mail.</p>
     </div>
   `;
-  const { error } = await getResend().emails.send({ from: FROM_ADDRESS, to, subject, text, html });
+  const { error } = await getResend().emails.send({
+    from: FROM_ADDRESS, to, subject, text, html,
+    attachments: attachment ? [attachment] : undefined,
+  });
   if (error) throw new Error(error.message || 'Resend API error');
 }
 
-module.exports = { sendStatusChangeEmail, entityLabel, isRestricted, ENTITY_LABELS };
+module.exports = { sendStatusChangeEmail, fetchAttachment, entityLabel, isRestricted, ENTITY_LABELS };
