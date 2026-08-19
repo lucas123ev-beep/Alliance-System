@@ -485,6 +485,19 @@ const TRANSLATIONS = {
     "Apology only, no concrete action": "仅道歉，无实际行动",
     "No solution offered (refused / ignored)": "未提供解决方案（拒绝/未理会）",
     "No solution yet / not resolved": "尚无解决方案 / 未解决",
+
+    "Notify status change": "通知状态变更",
+    "Status changed to": "状态已变更为",
+    "Who should be notified by e-mail?": "需要用邮件通知谁？",
+    "Loading…": "加载中…",
+    "No eligible recipients for this record.": "此记录没有可通知的收件人。",
+    "Sent": "已发送",
+    "skipped": "已跳过",
+    "Failed to send. Try again.": "发送失败，请重试。",
+    "Don't notify": "不通知",
+    "Send": "发送",
+    "Sending…": "发送中…",
+    "Notify": "通知",
   },
 };
 const LanguageContext = createContext({ lang: "en", setLang: () => {} });
@@ -1477,6 +1490,89 @@ function Btn({ children, onClick, color = "#3b82f6", small, outline, disabled, t
     >
       {typeof children === "string" ? t(children) : children}
     </button>
+  );
+}
+
+// Shown right after a status change goes through, letting whoever made the
+// change decide who to e-mail about it. Nobody is pre-checked on purpose —
+// this is opt-in every time, not an automatic blast to the whole team.
+// `entityType` must match one of the backend's ENTITY_LABELS keys
+// (notifications.js); for "commercial-invoices" the /recipients call below
+// only ever returns people who already have access to that screen — the
+// backend enforces that regardless of what this modal shows, this is just
+// the same list reflected in the UI so nobody sees a name they can't
+// actually pick.
+function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus, onClose }) {
+  const t = useT();
+  const [recipients, setRecipients] = useState(null); // null = still loading
+  const [selected, setSelected] = useState(() => new Set());
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    api(`/notifications/recipients?entityType=${encodeURIComponent(entityType)}`)
+      .then(setRecipients)
+      .catch(() => setRecipients([]));
+  }, [entityType]);
+
+  function toggle(username) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(username)) next.delete(username); else next.add(username);
+      return next;
+    });
+  }
+
+  async function send() {
+    if (selected.size === 0) { onClose(); return; }
+    setSending(true);
+    try {
+      const res = await api("/notifications/status-change", "POST", {
+        entityType, recordLabel, oldStatus, newStatus,
+        recipientUsernames: [...selected],
+      });
+      setResult(res);
+      setTimeout(onClose, 1100);
+    } catch {
+      setResult({ error: true });
+      setSending(false);
+    }
+  }
+
+  return (
+    <Modal title={t("Notify status change")} onClose={onClose}>
+      <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#94a3b8", lineHeight: 1.5 }}>
+        {t("Status changed to")} <strong style={{ color: "#f1f5f9" }}>{newStatus}</strong>. {t("Who should be notified by e-mail?")}
+      </p>
+      {recipients === null ? (
+        <p style={{ color: "#64748b", fontSize: "13px" }}>{t("Loading…")}</p>
+      ) : recipients.length === 0 ? (
+        <p style={{ color: "#64748b", fontSize: "13px" }}>{t("No eligible recipients for this record.")}</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
+          {recipients.map(u => (
+            <label key={u.username} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "14px", color: "#f1f5f9", cursor: "pointer" }}>
+              <input type="checkbox" checked={selected.has(u.username)} onChange={() => toggle(u.username)} />
+              {u.name}
+            </label>
+          ))}
+        </div>
+      )}
+      {result && !result.error && (
+        <p style={{ fontSize: "13px", color: "#4ade80", margin: "0 0 12px" }}>
+          {t("Sent")}: {result.sent.length}{result.skipped.length ? ` — ${t("skipped")}: ${result.skipped.length}` : ""}
+        </p>
+      )}
+      {result && result.error && (
+        <p style={{ fontSize: "13px", color: "#f87171", margin: "0 0 12px" }}>{t("Failed to send. Try again.")}</p>
+      )}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+        <Btn outline color="#64748b" onClick={onClose} disabled={sending}>Don't notify</Btn>
+        <Btn onClick={send} disabled={sending || recipients === null || recipients.length === 0}>
+          {sending ? "Sending…" : "Send"}
+        </Btn>
+      </div>
+    </Modal>
   );
 }
 
@@ -4505,6 +4601,7 @@ const [modal, setModal] = useState(false);
 const [editing, setEditing] = useState(null);
 const [search, setSearch] = useState("");
 const [orders, setOrders] = useState([]);
+const [notify, setNotify] = useState(null);
   const load = useCallback(async () => {
   try {
     console.log('loading quotations...');
@@ -4549,7 +4646,12 @@ console.log('quotations set:', quotations?.length);
       ...editing,
       items: editing.items ? (typeof editing.items === 'string' ? JSON.parse(editing.items) : editing.items) : [],
       media: editing.media ? (typeof editing.media === 'string' ? JSON.parse(editing.media) : editing.media) : [],
-    }} onSave={async b => { await api(`/quotations/${editing.id}`, "PUT", b); load(); }} onClose={() => setEditing(null)} />
+    }} onSave={async b => {
+      const oldStatus = editing.status;
+      await api(`/quotations/${editing.id}`, "PUT", b);
+      load();
+      if (b.status !== oldStatus) setNotify({ entityType: "quotations", recordLabel: b.number || editing.number, oldStatus, newStatus: b.status });
+    }} onClose={() => setEditing(null)} />
   </Modal>
 )}
 
@@ -4568,11 +4670,17 @@ console.log('quotations set:', quotations?.length);
     <ProformaForm
       orders={[]}
       initial={editProforma}
-      onSave={async b => { await api(`/proformas/${editProforma.id}`, "PUT", b); setEditProforma(null); load(); }}
+      onSave={async b => {
+        const oldStatus = editProforma.status;
+        await api(`/proformas/${editProforma.id}`, "PUT", b);
+        setEditProforma(null); load();
+        if (b.status !== oldStatus) setNotify({ entityType: "proformas", recordLabel: b.number || editProforma.number, oldStatus, newStatus: b.status });
+      }}
       onClose={() => setEditProforma(null)}
     />
   </Modal>
 )}
+{notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
       <Table
         cols={[
           { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
@@ -4624,7 +4732,11 @@ console.log('quotations set:', quotations?.length);
           { label: "Deadline", sortValue: r => r.deadline, render: r => fmtDate(r.deadline) },
           { label: "Status", sortValue: r => r.status, render: r => (
             <Select value={r.status}
-              onChange={async e => { await api(`/quotations/${r.id}`, "PUT", { ...r, status: e.target.value }); load(); }}
+              onChange={async e => {
+                const oldStatus = r.status, newStatus = e.target.value;
+                await api(`/quotations/${r.id}`, "PUT", { ...r, status: newStatus }); load();
+                setNotify({ entityType: "quotations", recordLabel: r.number, oldStatus, newStatus });
+              }}
               style={{ padding: "4px 8px", fontSize: "12px", width: "auto" }}>
               {["Pending","Sent","Received","Accepted","Rejected"].map(s => <option key={s}>{s}</option>)}
             </Select>
@@ -5141,7 +5253,13 @@ const [contracts, setContracts] = useState([]);
 const [commercials, setCommercials] = useState([]);
 const [editContract, setEditContract] = useState(null);
 const [editCommercial, setEditCommercial] = useState(null);
+// Pristine snapshot taken the moment editCommercial is opened, kept
+// untouched while editCommercial itself gets mutated field-by-field — lets
+// the Save handler tell whether status actually changed, the same way
+// `initial` does for the separate <XxxForm> components elsewhere.
+const [editCommercialOriginal, setEditCommercialOriginal] = useState(null);
 const [orders, setOrders] = useState([]);
+const [notify, setNotify] = useState(null);
   const [modal, setModal] = useState(null);
   const [editOrder, setEditOrder] = useState(null);
   const [editNumberId, setEditNumberId] = useState(null);
@@ -5235,6 +5353,7 @@ const prevStatus = { "In Production": "Pending", Inspection: "In Production", Co
     notes: "",
   });
   setEditCommercial(ci);
+  setEditCommercialOriginal(ci);
   load();
 };
 const generateContract = (order) => {
@@ -5377,7 +5496,12 @@ const inspectionStatusFor = (order) => {
 {editContract && (
   <Modal title={t("Edit Contract")} onClose={() => { setEditContract(null); load(); }} wide>
     <ContractForm orders={orders} initial={editContract}
-      onSave={async b => { await api(`/contracts/${editContract.id}`, "PUT", b); setEditContract(null); load(); }}
+      onSave={async b => {
+        const oldStatus = editContract.status;
+        await api(`/contracts/${editContract.id}`, "PUT", b);
+        setEditContract(null); load();
+        if (b.status !== oldStatus) setNotify({ entityType: "contracts", recordLabel: b.contract_number || editContract.contract_number, oldStatus, newStatus: b.status });
+      }}
       onClose={() => setEditContract(null)} />
   </Modal>
 )}
@@ -5459,11 +5583,21 @@ const inspectionStatusFor = (order) => {
       <Field label="Notes"><Textarea value={editCommercial.notes || ""} onChange={e => setEditCommercial(p => ({ ...p, notes: e.target.value }))} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={() => setEditCommercial(null)}>Cancel</Btn>
-        <Btn onClick={async () => { await api(`/commercial-invoices/${editCommercial.id}`, "PUT", editCommercial); setEditCommercial(null); load(); }}>Save</Btn>
+        <Btn onClick={async () => {
+          const oldStatus = editCommercialOriginal?.status;
+          const newStatus = editCommercial.status;
+          const label = editCommercial.number;
+          await api(`/commercial-invoices/${editCommercial.id}`, "PUT", editCommercial);
+          setEditCommercial(null); setEditCommercialOriginal(null); load();
+          if (oldStatus !== undefined && newStatus !== oldStatus) {
+            setNotify({ entityType: "commercial-invoices", recordLabel: label, oldStatus, newStatus });
+          }
+        }}>Save</Btn>
       </div>
     </div>
   </Modal>
 )}
+{notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
 {contractModal && (
   <Modal title={t("Generate Supplier Contracts")} onClose={() => { setContractModal(null); setSavedContracts([]); load(); }} wide>
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
@@ -5577,7 +5711,11 @@ onSave={async b => {
           { label: "Arrival", sortValue: r => r.arrival_date, render: r => fmtDate(r.arrival_date) },
           { label: "Status", sortValue: r => r.status, render: r => (
   <Select value={r.status}
-    onChange={async e => { await changeStatus(r.id, e.target.value); }}
+    onChange={async e => {
+      const oldStatus = r.status, newStatus = e.target.value;
+      await changeStatus(r.id, newStatus);
+      setNotify({ entityType: "orders", recordLabel: r.order_number, oldStatus, newStatus });
+    }}
     style={{ padding: "4px 8px", fontSize: "12px", width: "auto" }}>
     {ORDER_STATUSES.map(s => <option key={s}>{s}</option>)}
   </Select>
@@ -5594,7 +5732,10 @@ const hasCommercial = commercials.find(c => Number(c.order_id) === Number(r.id))
   🤝 {hasContract.length > 0 ? t("Contract ✓") : t("Contract")}
 </Btn>
       <Btn small outline={!hasCommercial} color={hasCommercial ? "#10b981" : "#64748b"}
-  onClick={() => hasCommercial ? setEditCommercial(hasCommercial) : generateCommercial(r)}>
+  onClick={() => {
+    if (hasCommercial) { setEditCommercial(hasCommercial); setEditCommercialOriginal(hasCommercial); }
+    else generateCommercial(r);
+  }}>
   🧾 {hasCommercial ? t("Commercial ✓") : t("Commercial")}
 </Btn>
       <Btn small outline={insStatus.done === 0} color={insStatus.total > 0 && insStatus.done === insStatus.total ? "#10b981" : insStatus.done > 0 ? "#f59e0b" : "#64748b"}
@@ -5712,6 +5853,7 @@ function Samples() {
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
+  const [notify, setNotify] = useState(null);
   const load = useCallback(() => api("/samples").then(setSamples), []);
   useEffect(() => { load(); }, [load]);
 
@@ -5742,9 +5884,14 @@ function Samples() {
 
   {editing && (
   <Modal title={t("Edit Sample")} onClose={() => setEditing(null)}>
-    <SampleForm initial={editing} onSave={b => api(`/samples/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
+    <SampleForm initial={editing} onSave={async b => {
+      const oldStatus = editing.status;
+      await api(`/samples/${editing.id}`, "PUT", b); load();
+      if (b.status !== oldStatus) setNotify({ entityType: "samples", recordLabel: b.code || editing.code, oldStatus, newStatus: b.status });
+    }} onClose={() => setEditing(null)} />
   </Modal>
 )}
+{notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
       <Table
         cols={[
   { label: "Code", sortValue: r => r.code, render: r => <span style={{ fontFamily: "monospace", color: "#60a5fa" }}>{r.code || "—"}</span> },
@@ -5757,7 +5904,11 @@ function Samples() {
   { label: "Sent", sortValue: r => r.sent_date, render: r => fmtDate(r.sent_date) },
 { label: "Status", sortValue: r => r.status, render: r => (
   <Select value={r.status}
-    onChange={async e => { await api(`/samples/${r.id}/status`, "PATCH", { status: e.target.value }); load(); }}
+    onChange={async e => {
+      const oldStatus = r.status, newStatus = e.target.value;
+      await api(`/samples/${r.id}/status`, "PATCH", { status: newStatus }); load();
+      setNotify({ entityType: "samples", recordLabel: r.code, oldStatus, newStatus });
+    }}
     style={{ padding: "4px 8px", color: sampleColors[r.status] || "#94a3b8", fontSize: "12px", width: "auto" }}>
     {SAMPLE_STATUSES.map(s => <option key={s}>{s}</option>)}
   </Select>
@@ -5787,6 +5938,7 @@ const [proformas, setProformas] = useState([]);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(null);
   const [orderNotification, setOrderNotification] = useState(null);
+  const [notify, setNotify] = useState(null);
   useEscapeToClose(!!orderNotification, () => setOrderNotification(null));
   const load = useCallback(() => {
     api("/proformas").then(setProformas);
@@ -5854,9 +6006,14 @@ const [proformas, setProformas] = useState([]);
       )}
       {editing && (
         <Modal title={t("Edit Proforma")} onClose={() => setEditing(null)} wide>
-          <ProformaForm orders={orders} initial={editing} onSave={b => api(`/proformas/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
+          <ProformaForm orders={orders} initial={editing} onSave={async b => {
+            const oldStatus = editing.status;
+            await api(`/proformas/${editing.id}`, "PUT", b); load();
+            if (b.status !== oldStatus) setNotify({ entityType: "proformas", recordLabel: b.number || editing.number, oldStatus, newStatus: b.status });
+          }} onClose={() => setEditing(null)} />
         </Modal>
       )}
+      {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
       {orderNotification && (
         <div style={{
           position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)",
@@ -5888,8 +6045,10 @@ cols={[
   { label: "Status", sortValue: r => r.status, render: r => (
     <Select value={r.status}
       onChange={async e => {
-        await api(`/proformas/${r.id}`, "PUT", { ...r, status: e.target.value });
+        const oldStatus = r.status, newStatus = e.target.value;
+        await api(`/proformas/${r.id}`, "PUT", { ...r, status: newStatus });
         load();
+        setNotify({ entityType: "proformas", recordLabel: r.number, oldStatus, newStatus });
       }}
       style={{ padding: "4px 8px", fontSize: "12px", width: "auto" }}>
       {["Draft","Sent","Accepted","Rejected"].map(s => <option key={s}>{s}</option>)}
@@ -5919,6 +6078,7 @@ function Contracts() {
   const [orders, setOrders] = useState([]);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(null);
+  const [notify, setNotify] = useState(null);
   const load = useCallback(() => {
     api("/contracts").then(setContracts);
     api("/orders").then(setOrders);
@@ -5939,10 +6099,16 @@ function Contracts() {
       {editing && (
         <Modal title={t("Edit Contract")} onClose={() => setEditing(null)} wide>
           <ContractForm orders={orders} initial={editing}
-            onSave={async b => { await api(`/contracts/${editing.id}`, "PUT", b).then(load); setEditing(null); }}
+            onSave={async b => {
+              const oldStatus = editing.status;
+              await api(`/contracts/${editing.id}`, "PUT", b).then(load);
+              setEditing(null);
+              if (b.status !== oldStatus) setNotify({ entityType: "contracts", recordLabel: b.contract_number || editing.contract_number, oldStatus, newStatus: b.status });
+            }}
             onClose={() => setEditing(null)} />
         </Modal>
       )}
+      {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by contract #, supplier or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
@@ -5955,8 +6121,10 @@ function Contracts() {
           { label: "Status", sortValue: r => r.status, render: r => (
             <Select value={r.status}
               onChange={async e => {
-                await api(`/contracts/${r.id}`, "PUT", { ...r, status: e.target.value });
+                const oldStatus = r.status, newStatus = e.target.value;
+                await api(`/contracts/${r.id}`, "PUT", { ...r, status: newStatus });
                 load();
+                setNotify({ entityType: "contracts", recordLabel: r.contract_number, oldStatus, newStatus });
               }}
               style={{ padding: "4px 8px", fontSize: "12px", width: "auto" }}>
               {["Draft","Signed","In Force","Completed","Cancelled"].map(s => <option key={s}>{s}</option>)}
@@ -5984,6 +6152,8 @@ function Financial({ type }) {
   const [orders, setOrders] = useState([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [notify, setNotify] = useState(null);
+  const entityType = isClient ? "financial-clients" : "financial-suppliers";
   const endpoint = isClient ? "/financial/clients" : "/financial/suppliers";
   const load = useCallback(() => {
     api(endpoint).then(setRecords);
@@ -6027,9 +6197,14 @@ function Financial({ type }) {
       )}
       {editing && (
         <Modal title={isClient ? t("Edit Client Payment") : t("Edit Supplier Payment")} onClose={() => setEditing(null)}>
-          <FinForm type={type} orders={orders} initial={editing} onSave={b => api(`${endpoint}/${editing.id}`, "PUT", b).then(load)} onClose={() => setEditing(null)} />
+          <FinForm type={type} orders={orders} initial={editing} onSave={async b => {
+            const oldStatus = editing.status;
+            await api(`${endpoint}/${editing.id}`, "PUT", b); load();
+            if (b.status !== oldStatus) setNotify({ entityType, recordLabel: b[party] || editing[party], oldStatus, newStatus: b.status });
+          }} onClose={() => setEditing(null)} />
         </Modal>
       )}
+      {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
       <Table
 cols={[
   { label: isClient ? "Client" : "Supplier", sortValue: r => r[party], render: r => <span style={{ fontWeight: 600 }}>{r[party]}</span> },
@@ -6084,6 +6259,7 @@ cols={[
             paid_amount = parseFloat(input.replace(",", ".")) || 0;
           }
         }
+        const oldStatus = r.status;
         await api(`${endpoint}/${r.id}/status`, "PATCH", {
           status,
           // A "Partial" row means money actually landed too (the deposit/
@@ -6095,6 +6271,7 @@ cols={[
           paid_amount,
         });
         load();
+        setNotify({ entityType, recordLabel: r[party], oldStatus, newStatus: status });
       }}
       style={{ padding: "4px 8px", fontSize: "12px", width: "auto" }}>
       {FIN_STATUSES.map(s => <option key={s}>{s}</option>)}
@@ -6722,6 +6899,12 @@ function CommercialInvoices() {
   const [editPackingList, setEditPackingList] = useState(null);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(null);
+  // Pristine snapshot taken when the edit modal opens (see editCommercial /
+  // editCommercialOriginal in Orders() for the same pattern) — lets Save
+  // tell whether status actually changed, since `editing` itself gets
+  // mutated field-by-field as the form is edited.
+  const [editingOriginal, setEditingOriginal] = useState(null);
+  const [notify, setNotify] = useState(null);
   const load = useCallback(async () => {
     api("/commercial-invoices").then(setInvoices);
     api("/products").then(setProducts);
@@ -6781,7 +6964,16 @@ function CommercialInvoices() {
             <Field label="Notes"><Textarea value={editing.notes || ""} onChange={e => setEditing(p => ({ ...p, notes: e.target.value }))} /></Field>
             <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
               <Btn outline color="#64748b" onClick={() => setEditing(null)}>Cancel</Btn>
-              <Btn onClick={async () => { await api(`/commercial-invoices/${editing.id}`, "PUT", editing).then(load); setEditing(null); }}>Save</Btn>
+              <Btn onClick={async () => {
+                const oldStatus = editingOriginal?.status;
+                const newStatus = editing.status;
+                const label = editing.number;
+                await api(`/commercial-invoices/${editing.id}`, "PUT", editing).then(load);
+                setEditing(null); setEditingOriginal(null);
+                if (oldStatus !== undefined && newStatus !== oldStatus) {
+                  setNotify({ entityType: "commercial-invoices", recordLabel: label, oldStatus, newStatus });
+                }
+              }}>Save</Btn>
             </div>
           </div>
         </Modal>
@@ -6804,6 +6996,7 @@ function CommercialInvoices() {
           />
         </Modal>
       )}
+      {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder={hideCommercialStatus ? "Search by number or client…" : "Search by number, client or status…"} style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
@@ -6814,7 +7007,11 @@ function CommercialInvoices() {
           { label: "Total", sortValue: r => r.total, render: r => fmt(r.total, r.currency) },
           ...(hideCommercialStatus ? [] : [{ label: "Status", sortValue: r => r.status, render: r => (
             <Select value={r.status}
-              onChange={async e => { await api(`/commercial-invoices/${r.id}`, "PUT", { ...r, status: e.target.value }); load(); }}
+              onChange={async e => {
+                const oldStatus = r.status, newStatus = e.target.value;
+                await api(`/commercial-invoices/${r.id}`, "PUT", { ...r, status: newStatus }); load();
+                setNotify({ entityType: "commercial-invoices", recordLabel: r.number, oldStatus, newStatus });
+              }}
               style={{ padding: "4px 8px", fontSize: "12px", width: "auto", color: r.status === "Paid" ? "#10b981" : "#f59e0b" }}>
               <option>Pending</option><option>Paid</option>
             </Select>
@@ -6825,7 +7022,7 @@ function CommercialInvoices() {
             return (
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                 <Btn small outline color="#10b981" onClick={() => window.open(authUrl(`${API}/commercial-invoices/${r.id}/pdf`), "_blank")}>📄 PDF</Btn>
-                <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
+                <Btn small outline color="#64748b" onClick={() => { setEditing(r); setEditingOriginal(r); }}>Edit</Btn>
                 {order && (
                   <Btn small outline={!hasPackingList} color={hasPackingList ? "#06b6d4" : "#64748b"}
                     onClick={() => hasPackingList ? setEditPackingList(hasPackingList) : generatePackingList(order)}>
@@ -7021,6 +7218,7 @@ function Inspections() {
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
+  const [notify, setNotify] = useState(null);
   const load = useCallback(async () => {
     const [inspections, orders] = await Promise.all([api("/inspections"), api("/orders")]);
     setInspections(inspections || []);
@@ -7052,10 +7250,15 @@ function Inspections() {
       {editing && (
         <Modal title={t("Edit Inspection")} onClose={() => setEditing(null)} wide>
           <InspectionForm orders={orders} initial={{ ...editing, media: editing.media ? (typeof editing.media === 'string' ? JSON.parse(editing.media) : editing.media) : [] }}
-            onSave={async b => { await api(`/inspections/${editing.id}`, "PUT", b); load(); }}
+            onSave={async b => {
+              const oldStatus = editing.result;
+              await api(`/inspections/${editing.id}`, "PUT", b); load();
+              if (b.result !== oldStatus) setNotify({ entityType: "inspections", recordLabel: b.number || editing.number, oldStatus, newStatus: b.result });
+            }}
             onClose={() => setEditing(null)} />
         </Modal>
       )}
+      {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
       <Table
         cols={[
           { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
@@ -7064,7 +7267,11 @@ function Inspections() {
           { label: "Inspector", key: "inspector" },
           { label: "Result", sortValue: r => r.result, render: r => (
   <Select value={r.result}
-    onChange={async e => { await api(`/inspections/${r.id}`, "PUT", { ...r, status: r.status, result: e.target.value }); load(); }}
+    onChange={async e => {
+      const oldStatus = r.result, newStatus = e.target.value;
+      await api(`/inspections/${r.id}`, "PUT", { ...r, status: r.status, result: newStatus }); load();
+      setNotify({ entityType: "inspections", recordLabel: r.number, oldStatus, newStatus });
+    }}
     style={{ padding: "4px 8px", fontSize: "12px", width: "auto", color: resultColors[r.result] || "#64748b" }}>
     {["Pending","Approved","Rejected","Conditional"].map(s => <option key={s}>{s}</option>)}
   </Select>

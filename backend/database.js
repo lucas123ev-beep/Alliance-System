@@ -387,6 +387,7 @@ db.exec(`
     name TEXT NOT NULL,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
+    email TEXT,
     must_change_password INTEGER DEFAULT 1,
     -- Login lockout: counts consecutive failed attempts, reset to 0 on a
     -- successful login. Once it hits the threshold (see auth.js), locked_until
@@ -658,6 +659,11 @@ const migrations = [
   // filling either one in switches the PDF to separate labeled boxes.
   ['proformas', 'consignee', 'TEXT'],
   ['proformas', 'notify_party', 'TEXT'],
+  // Lets the backend email a person directly instead of just displaying
+  // their name — needed for the status-change notification feature (see
+  // notifications.js). Existing rows land NULL here and get backfilled by
+  // USER_EMAILS below, keyed by username so it's safe to run every boot.
+  ['users', 'email', 'TEXT'],
 ];
 
 for (const [table, column, definition] of migrations) {
@@ -673,7 +679,29 @@ for (const [table, column, definition] of migrations) {
 // Creates the initial 9 logins from backend/seedUsers.js the first time
 // this runs against an empty `users` table (i.e. right after this deploy
 // goes live) — a no-op on every boot after that. See that file to fill in
-// the actual names before deploying.
+// the actual names before deploying. Must run BEFORE the email backfill
+// below, so a fresh/empty database gets seeded users first, then emails.
 require('./seedUsers').seedInitialUsersIfEmpty(db);
+
+// One-time-per-person backfill of each team member's real email address,
+// used to send status-change notifications (see notifications.js). Keyed
+// by username and only applied when the column is still empty, so it's
+// safe to leave running on every boot -- it never overwrites an email
+// someone later changes for themselves, and self-heals if a user row ever
+// ends up with a blank one again.
+const USER_EMAILS = {
+  amber: 'amber@alliance-nb.com',
+  gabriel: 'gabriel@alliance-nb.com',
+  juliana: 'finance@allianceglobal-hk.com',
+  keke: 'keke@alliance-nb.com',
+  lucas: 'lucas@hkag.co',
+  martiello: 'martiello@alliance-nb.com',
+  max: 'documents@alliance-nb.com',
+  wang: 'wang@alliance-nb.com',
+  yukin: 'yukin@alliance-nb.com',
+};
+for (const [username, email] of Object.entries(USER_EMAILS)) {
+  db.prepare(`UPDATE users SET email = ? WHERE username = ? AND (email IS NULL OR email = '')`).run(email, username);
+}
 
 module.exports = db;

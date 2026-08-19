@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const db = require('./database');
 const { scheduleBackups, runBackup, listBackups } = require('./backup');
+const { sendStatusChangeEmail, isRestricted, ENTITY_LABELS } = require('./notifications');
 
 const { renderPdfBuffer } = require('./pdf/render');
 const { renderSalesInvoice } = require('./pdf/salesInvoice');
@@ -1901,6 +1902,65 @@ app.get('/api/financial/suppliers/:id/payment-notice-xlsx', async (req, res) => 
     console.error('Payment notice xlsx error:', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── STATUS-CHANGE NOTIFICATIONS (see notifications.js) ─────────────────────
+// Manual, not automatic: whoever changes a status picks who to notify from
+// a list the frontend gets from the route below. Commercial Invoice status
+// touches client payment info, so that one entityType is filtered down to
+// only people with access to that screen -- every other entityType has no
+// restriction, any of the 9 accounts can be picked. Re-checked here, not
+// just on the frontend, so a tampered request can't email someone who
+// isn't actually supposed to see that status.
+function isEligibleForEntityType(username, entityType) {
+  if (!isRestricted(entityType)) return true;
+  const perms = permissionsFor(username);
+  return perms.screens.includes('commercial') && !perms.hideCommercialStatus;
+}
+
+app.get('/api/notifications/recipients', requireAuth(db), (req, res) => {
+  const entityType = String(req.query.entityType || '');
+  if (!ENTITY_LABELS[entityType]) return res.status(400).json({ error: 'Unknown entityType' });
+  const users = db.prepare('SELECT username, name, email FROM users ORDER BY name').all();
+  const eligible = users
+    .filter(u => u.email && isEligibleForEntityType(u.username, entityType))
+    .map(u => ({ username: u.username, name: u.name }));
+  res.json(eligible);
+});
+
+app.post('/api/notifications/status-change', requireAuth(db), async (req, res) => {
+  const { entityType, recordLabel, oldStatus, newStatus, recipientUsernames } = req.body || {};
+  if (!ENTITY_LABELS[entityType]) return res.status(400).json({ error: 'Unknown entityType' });
+  if (!recordLabel || !newStatus) return res.status(400).json({ error: 'recordLabel and newStatus required' });
+
+  const requested = Array.isArray(recipientUsernames) ? recipientUsernames : [];
+  if (requested.length === 0) return res.json({ sent: [], skipped: [] });
+
+  const users = db.prepare('SELECT username, name, email FROM users').all();
+  const byUsername = Object.fromEntries(users.map(u => [u.username, u]));
+
+  const sent = [];
+  const skipped = [];
+  for (const username of requested) {
+    const user = byUsername[username];
+    const eligible = user && user.email && isEligibleForEntityType(username, entityType);
+    if (!eligible) { skipped.push(username); continue; }
+    try {
+      await sendStatusChangeEmail({
+        to: user.email,
+        entityType,
+        recordLabel,
+        oldStatus,
+        newStatus,
+        changedBy: actorName(req),
+      });
+      sent.push(username);
+    } catch (err) {
+      console.error(`Notification email to ${username} failed:`, err.message);
+      skipped.push(username);
+    }
+  }
+  res.json({ sent, skipped });
 });
 
 // ─── DATABASE BACKUPS (see backup.js) ────────────────────────────────────────
