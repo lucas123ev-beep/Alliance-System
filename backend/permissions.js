@@ -39,21 +39,26 @@ const PERMISSIONS = {
   // Dashboard card) or the Product Real Margin indicator.
   yukin: { screens: ALL_SCREENS, hideCommercialStatus: true, hideMargin: true },
 
+  // Dashboard added on top of each person's existing screens, restricted
+  // the same way as yukin: hideCommercialStatus hides the "Pending
+  // Commercial Invoices" dashboard card (and the Status field on the
+  // Commercial Invoices screen itself, for max who already has that
+  // screen), hideMargin hides the Real Margin indicator on Products.
   keke: {
-    screens: ["quotations", "samples", "products", "suppliers"],
-    hideCommercialStatus: false, hideMargin: true,
+    screens: ["dashboard", "quotations", "samples", "products", "suppliers"],
+    hideCommercialStatus: true, hideMargin: true,
   },
   amber: {
-    screens: ["suppliers", "products", "contracts", "orders", "fin-suppliers", "samples", "inspections"],
-    hideCommercialStatus: false, hideMargin: true,
+    screens: ["dashboard", "suppliers", "products", "contracts", "orders", "fin-suppliers", "samples", "inspections"],
+    hideCommercialStatus: true, hideMargin: true,
   },
   max: {
-    screens: ["orders", "proformas", "commercial", "packing-lists", "contracts", "products", "suppliers", "freight-agents"],
+    screens: ["dashboard", "orders", "proformas", "commercial", "packing-lists", "contracts", "products", "suppliers", "freight-agents"],
     hideCommercialStatus: true, hideMargin: true,
   },
   wang: {
-    screens: ["quotations", "samples", "products", "suppliers", "inspections"],
-    hideCommercialStatus: false, hideMargin: true,
+    screens: ["dashboard", "quotations", "samples", "products", "suppliers", "inspections"],
+    hideCommercialStatus: true, hideMargin: true,
   },
 };
 
