@@ -1535,10 +1535,24 @@ function Select({ children, style, ...props }) {
   // same safe fallback-to-English pattern as Field/Btn/Table. Codes that
   // aren't in the dictionary (currency codes, unit abbreviations like
   // mm/cm, registered company names) simply fall through unchanged.
+  //
+  // IMPORTANT: the <option>'s `value` must stay the original English string
+  // regardless of language — only the visible label gets translated. Without
+  // an explicit `value`, the browser uses the rendered children as the
+  // option's value, so an earlier version of this component ended up saving
+  // the *translated Chinese text itself* (e.g. "已发送") into the database
+  // whenever someone changed a status while using the Chinese UI — the
+  // English UI would then no longer recognize that value and silently fall
+  // back to displaying its first option instead, and status-change e-mails
+  // went out with Chinese text baked in. Explicitly pinning `value` to the
+  // canonical English string (or whatever `value` was already passed in)
+  // keeps stored data language-independent no matter which UI language was
+  // used to make the change.
   const t = useT();
   const translated = Children.map(children, (child) => {
     if (child && child.type === "option" && typeof child.props.children === "string") {
-      return cloneElement(child, {}, t(child.props.children));
+      const canonicalValue = child.props.value !== undefined ? child.props.value : child.props.children;
+      return cloneElement(child, { value: canonicalValue }, t(child.props.children));
     }
     return child;
   });

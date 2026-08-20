@@ -435,7 +435,6 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_username, created_at);
-  CREATE INDEX IF NOT EXISTS idx_notifications_batch ON notifications(batch_id);
 `);
 
 // ─── Defensive migrations for pre-existing databases (e.g. Render disk) ──────
@@ -711,6 +710,16 @@ for (const [table, column, definition] of migrations) {
     }
   }
 }
+
+// This index has to be created down here, after the migrations loop above,
+// not up in the initial CREATE TABLE block. On a pre-existing Render disk
+// the `notifications` table already existed (from before batch_id was
+// added), so `CREATE TABLE IF NOT EXISTS` was a no-op there and batch_id
+// only exists once the ALTER TABLE migration above has actually run —
+// creating this index earlier, in the same db.exec() as the table
+// definitions, crashed every boot with "no such column: batch_id" before
+// the migration ever got a chance to run.
+db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_batch ON notifications(batch_id);`);
 
 // Creates the initial 9 logins from backend/seedUsers.js the first time
 // this runs against an empty `users` table (i.e. right after this deploy
