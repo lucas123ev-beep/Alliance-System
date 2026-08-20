@@ -17,29 +17,23 @@ const { escapeHtml } = require('./pdf/helpers');
 
 const FROM_ADDRESS = 'Alliance Flow <systemupdates@hkag.co>'; // no real inbox needed — Resend sends via the domain's verified DNS, not a Gmail mailbox
 
-// Which screen/table each entityType corresponds to, in Portuguese for the
-// email itself. Also doubles as the whitelist of valid entityType values —
-// anything not in this list is rejected by the route in server.js.
+// Which screen/table each entityType corresponds to, in English for the
+// e-mail itself (the rest of the app's UI is en/zh, never Portuguese, so
+// these match that instead of the team's own spoken language). Also doubles
+// as the whitelist of valid entityType values — anything not in this list
+// is rejected by the route in server.js.
 const ENTITY_LABELS = {
-  orders: 'Pedido',
-  quotations: 'Cotação',
+  orders: 'Order',
+  quotations: 'Quotation',
   proformas: 'Proforma',
-  'commercial-invoices': 'Fatura Comercial',
-  contracts: 'Contrato',
+  'commercial-invoices': 'Commercial Invoice',
+  contracts: 'Contract',
   'packing-lists': 'Packing List',
-  inspections: 'Inspeção',
-  samples: 'Amostra',
-  'financial-suppliers': 'Pagamento a Fornecedor',
-  'financial-clients': 'Recebimento de Cliente',
+  inspections: 'Inspection',
+  samples: 'Sample',
+  'financial-suppliers': 'Supplier Payment',
+  'financial-clients': 'Client Payment',
 };
-
-// Grammatical gender per entity, for the "um novo"/"uma nova" phrasing in
-// the 'created' e-mail below — not derivable from the label text itself
-// (e.g. "Fatura Comercial" is feminine despite starting with a consonant),
-// so it's just listed explicitly here rather than guessed.
-const ENTITY_FEMININE = new Set([
-  'quotations', 'proformas', 'commercial-invoices', 'inspections', 'samples',
-]);
 
 // Client payment status on Commercial Invoices is the one case the team
 // wants restricted — only people who already have access to that screen
@@ -94,7 +88,7 @@ async function fetchAttachment(url, filename) {
 // every recipient of the same notification.
 //
 // `eventType` distinguishes the three things this can notify about:
-// 'status_change' (the original feature — De/Para line), 'created' (a new
+// 'status_change' (the original feature — From/To line), 'created' (a new
 // record just got made — recordLabel can be a single number or a
 // comma-joined list, for the batch-generate cases like Contracts/
 // Inspections that can produce several records from one action), and
@@ -106,30 +100,29 @@ async function sendStatusChangeEmail({ to, entityType, recordLabel, oldStatus, n
   const label = entityLabel(entityType);
   const isCreated = eventType === 'created';
   const isDocument = eventType === 'document';
-  const article = ENTITY_FEMININE.has(entityType) ? 'uma nova' : 'um novo';
 
   const subject = isDocument
-    ? `[Alliance Flow] ${documentLabel || 'Documento'} — ${label} ${recordLabel}`
+    ? `[Alliance Flow] ${documentLabel || 'Document'} — ${label} ${recordLabel}`
     : isCreated
-    ? `[Alliance Flow] Novo(a) ${label}: ${recordLabel}`
-    : `[Alliance Flow] ${label} ${recordLabel} — status alterado`;
+    ? `[Alliance Flow] New ${label}: ${recordLabel}`
+    : `[Alliance Flow] ${label} ${recordLabel} — status changed`;
 
   const text = (isDocument
-    ? `${changedBy} enviou o documento "${documentLabel || 'Documento'}" referente a ${label} ${recordLabel}. Veja o anexo.\n`
+    ? `${changedBy} sent the document "${documentLabel || 'Document'}" for ${label} ${recordLabel}. See the attachment.\n`
     : isCreated
-    ? `${changedBy} criou ${article} ${label}: ${recordLabel}.\n`
-    : `${changedBy} alterou o status de ${label} ${recordLabel}.\n\nDe: ${oldStatus || '—'}\nPara: ${newStatus}\n`
-  ) + (message ? `\nMensagem de ${changedBy}:\n${message}\n` : '') + `\nAcesse o sistema para mais detalhes.`;
+    ? `${changedBy} created a new ${label}: ${recordLabel}.\n`
+    : `${changedBy} changed the status of ${label} ${recordLabel}.\n\nFrom: ${oldStatus || '—'}\nTo: ${newStatus}\n`
+  ) + (message ? `\nMessage from ${changedBy}:\n${message}\n` : '') + `\nOpen the system for more details.`;
 
   const bodyHtml = isDocument
-    ? `<p><strong>${escapeHtml(changedBy)}</strong> enviou o documento <strong>${escapeHtml(documentLabel || 'Documento')}</strong> referente a <strong>${escapeHtml(label)} ${escapeHtml(recordLabel)}</strong>. Veja o anexo.</p>`
+    ? `<p><strong>${escapeHtml(changedBy)}</strong> sent the document <strong>${escapeHtml(documentLabel || 'Document')}</strong> for <strong>${escapeHtml(label)} ${escapeHtml(recordLabel)}</strong>. See the attachment.</p>`
     : isCreated
-    ? `<p><strong>${escapeHtml(changedBy)}</strong> criou ${article} <strong>${escapeHtml(label)}: ${escapeHtml(recordLabel)}</strong>.</p>`
+    ? `<p><strong>${escapeHtml(changedBy)}</strong> created a new <strong>${escapeHtml(label)}: ${escapeHtml(recordLabel)}</strong>.</p>`
     : `
-      <p><strong>${escapeHtml(changedBy)}</strong> alterou o status de <strong>${escapeHtml(label)} ${escapeHtml(recordLabel)}</strong>:</p>
+      <p><strong>${escapeHtml(changedBy)}</strong> changed the status of <strong>${escapeHtml(label)} ${escapeHtml(recordLabel)}</strong>:</p>
       <table style="border-collapse: collapse; margin: 12px 0;">
-        <tr><td style="padding: 4px 12px 4px 0; color:#666;">De</td><td style="padding:4px 0;">${escapeHtml(oldStatus || '—')}</td></tr>
-        <tr><td style="padding: 4px 12px 4px 0; color:#666;">Para</td><td style="padding:4px 0;"><strong>${escapeHtml(newStatus)}</strong></td></tr>
+        <tr><td style="padding: 4px 12px 4px 0; color:#666;">From</td><td style="padding:4px 0;">${escapeHtml(oldStatus || '—')}</td></tr>
+        <tr><td style="padding: 4px 12px 4px 0; color:#666;">To</td><td style="padding:4px 0;"><strong>${escapeHtml(newStatus)}</strong></td></tr>
       </table>
     `;
 
@@ -137,10 +130,10 @@ async function sendStatusChangeEmail({ to, entityType, recordLabel, oldStatus, n
     <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
       ${bodyHtml}
       ${message ? `
-      <p style="margin: 12px 0 4px; color:#666;">Mensagem de ${escapeHtml(changedBy)}:</p>
+      <p style="margin: 12px 0 4px; color:#666;">Message from ${escapeHtml(changedBy)}:</p>
       <p style="margin: 0 0 12px; padding: 10px 12px; background: #f5f5f5; border-radius: 6px; white-space: pre-wrap;">${escapeHtml(message)}</p>
       ` : ''}
-      <p style="color:#999; font-size:12px;">Alliance Flow — notificação automática, não responda este e-mail.</p>
+      <p style="color:#999; font-size:12px;">Alliance Flow — automatic notification, please do not reply to this e-mail.</p>
     </div>
   `;
   const { error } = await getResend().emails.send({
