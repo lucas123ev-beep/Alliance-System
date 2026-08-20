@@ -160,6 +160,7 @@ const TRANSLATIONS = {
     "Payment Schedule": "付款计划",
     "Number": "编号",
     "Deadline": "截止日期",
+    "Price Validity": "价格有效期",
     "Specifications": "规格",
     "Date": "日期",
     "Loading Date": "装货日期",
@@ -4947,7 +4948,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
 function QuotationForm({ onSave, onClose, initial }) {
   const t = useT();
   const [f, setF] = useState(initial || {
-  number: "", client: "", currency: "USD", deadline: "",
+  number: "", client: "", currency: "USD", deadline: "", price_validity: "",
   total: "",
   specifications: "", notes: "", status: "Pending",
 });
@@ -5098,6 +5099,8 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
         </Field>
 
         <Field label="Deadline" half><Input type="date" value={f.deadline} onChange={set("deadline")} /></Field>
+        <div />
+        <Field label="Price Validity" half><Input type="date" value={f.price_validity || ""} onChange={set("price_validity")} /></Field>
 
         <Field label="Products">
           <div style={{ background: "#1e293b", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>

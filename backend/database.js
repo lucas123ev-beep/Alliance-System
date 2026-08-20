@@ -131,6 +131,11 @@ db.exec(`
     suppliers TEXT,
     currency TEXT DEFAULT 'USD',
     deadline TEXT,
+    -- When the supplier's quoted price itself expires — separate from the
+    -- deadline column (which is when a reply/decision is due). A quotation
+    -- can need an answer by one date while the price it's quoting is only
+    -- firm until an earlier or later one, depending on the supplier's terms.
+    price_validity TEXT,
     specifications TEXT,
     notes TEXT,
     status TEXT DEFAULT 'Open',
@@ -532,6 +537,7 @@ const migrations = [
   ['samples', 'feedback_date', 'TEXT'],
   ['samples', 'media', 'TEXT'],
   ['proformas', 'quotation_id', 'INTEGER'],
+  ['quotations', 'price_validity', 'TEXT'],
   ['supplier_contracts', 'items_json', 'TEXT'],
   ['financial_suppliers', 'contract_id', 'INTEGER'],
   ['financial_suppliers', 'items_json', 'TEXT'],
