@@ -523,6 +523,9 @@ const TRANSLATIONS = {
     "Open attachment": "打开附件",
     "Sent to": "发送给",
     "📎 Attach file": "📎 添加附件",
+    "Desktop pop-ups are blocked for this site. Enable notifications for this site in your browser's settings to receive them when this tab is in the background.": "此网站的桌面通知已被屏蔽。请在浏览器设置中为此网站启用通知，以便在此标签页处于后台时也能收到提醒。",
+    "Enable desktop pop-ups to get notified even when this tab is minimized or in the background.": "启用桌面通知，即使此标签页最小化或在后台运行时也能收到提醒。",
+    "Enable desktop pop-ups": "启用桌面通知",
   },
 };
 const LanguageContext = createContext({ lang: "en", setLang: () => {} });
@@ -1880,6 +1883,16 @@ function NotificationBell({ sidebarOpen }) {
   const [detail, setDetail] = useState(null); // full notification being viewed, or null
   const [detailRecipients, setDetailRecipients] = useState(null); // who else got the same notification, or null while loading
   const [toasts, setToasts] = useState([]);
+  // Tracks the browser's actual notification permission so the dropdown can
+  // show the person whether desktop pop-ups (for when the tab is minimized/
+  // in the background) are actually active — this used to fail completely
+  // silently: if the permission prompt was dismissed/blocked, or the person
+  // never happened to trigger it, nothing ever told them why no pop-up was
+  // showing up. "unsupported" covers browsers without the Notification API
+  // at all (e.g. some in-app webviews).
+  const [notifPermission, setNotifPermission] = useState(
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
+  );
   // null until the first poll resolves — tracks which notification ids have
   // already been seen (toasted/dinged for), so a fresh page load never
   // toasts for everything already sitting unread from before, only for
@@ -1984,9 +1997,24 @@ function NotificationBell({ sidebarOpen }) {
   // just for opening the system.
   function toggleOpen() {
     if (typeof Notification !== "undefined" && Notification.permission === "default") {
-      Notification.requestPermission();
+      Notification.requestPermission().then(setNotifPermission);
     }
     setOpen(o => !o);
+  }
+
+  // Lets someone retry after dismissing/blocking the prompt by mistake —
+  // browsers only show the actual "Allow?" popup again while permission is
+  // still "default"; once it's "denied" the browser refuses to re-prompt
+  // and the person has to flip it back on in their own browser's site
+  // settings, so this button also doubles as a way to re-check that state
+  // without reloading the page.
+  function requestDesktopPermission() {
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "default") {
+      Notification.requestPermission().then(setNotifPermission);
+    } else {
+      setNotifPermission(Notification.permission);
+    }
   }
 
   return (
@@ -2027,6 +2055,23 @@ function NotificationBell({ sidebarOpen }) {
               </button>
             )}
           </div>
+          {notifPermission !== "granted" && notifPermission !== "unsupported" && (
+            <div style={{ padding: "10px 12px", borderBottom: "1px solid #1e293b", background: "#1e293b" }}>
+              <div style={{ fontSize: "11.5px", color: "#cbd5e1", marginBottom: "6px" }}>
+                {notifPermission === "denied"
+                  ? t("Desktop pop-ups are blocked for this site. Enable notifications for this site in your browser's settings to receive them when this tab is in the background.")
+                  : t("Enable desktop pop-ups to get notified even when this tab is minimized or in the background.")}
+              </div>
+              {notifPermission === "default" && (
+                <button onClick={requestDesktopPermission} style={{
+                  background: "#2563eb", border: "none", borderRadius: "6px", color: "#fff",
+                  fontSize: "11.5px", fontWeight: 600, padding: "5px 10px", cursor: "pointer",
+                }}>
+                  {t("Enable desktop pop-ups")}
+                </button>
+              )}
+            </div>
+          )}
           {items.length === 0 ? (
             <p style={{ padding: "20px 12px", textAlign: "center", color: "#64748b", fontSize: "12.5px" }}>{t("No notifications yet.")}</p>
           ) : (
