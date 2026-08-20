@@ -520,6 +520,7 @@ const TRANSLATIONS = {
     "Notifications": "通知",
     "Mark all as read": "全部标为已读",
     "No notifications yet.": "暂无通知。",
+    "Open attachment": "打开附件",
     "📎 Attach file": "📎 添加附件",
   },
 };
@@ -617,7 +618,7 @@ function playNotificationSound() {
     osc.frequency.setValueAtTime(880, now);
     osc.frequency.exponentialRampToValueAtTime(660, now + 0.15);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.2, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.55, now + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
     osc.connect(gain).connect(ctx.destination);
     osc.start(now);
@@ -1861,6 +1862,7 @@ function NotificationBell({ sidebarOpen }) {
   const [items, setItems] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState(null); // full notification being viewed, or null
   const prevUnreadRef = useRef(0);
   const firstLoadRef = useRef(true);
   const boxRef = useRef(null);
@@ -1909,6 +1911,15 @@ function NotificationBell({ sidebarOpen }) {
     try { await api("/notifications/inbox/read-all", "POST"); } catch { /* next poll reconciles */ }
   }
 
+  // Opens the full-message/attachment view for one notification — closes the
+  // dropdown panel first (it shares screen space and a lower z-index with the
+  // shared Modal component, so leaving both open at once would stack wrong).
+  function openDetail(n) {
+    setOpen(false);
+    setDetail(n);
+    if (!n.is_read) markRead(n.id);
+  }
+
   return (
     <div ref={boxRef} style={{ position: "relative" }}>
       <button onClick={() => setOpen(o => !o)} title={t("Notifications")}
@@ -1951,9 +1962,9 @@ function NotificationBell({ sidebarOpen }) {
             <p style={{ padding: "20px 12px", textAlign: "center", color: "#64748b", fontSize: "12.5px" }}>{t("No notifications yet.")}</p>
           ) : (
             items.map(n => (
-              <div key={n.id} onClick={() => !n.is_read && markRead(n.id)}
+              <div key={n.id} onClick={() => openDetail(n)}
                 style={{
-                  padding: "10px 12px", borderBottom: "1px solid #1e293b", cursor: n.is_read ? "default" : "pointer",
+                  padding: "10px 12px", borderBottom: "1px solid #1e293b", cursor: "pointer",
                   background: n.is_read ? "transparent" : "rgba(59,130,246,0.08)",
                 }}
               >
@@ -1971,6 +1982,29 @@ function NotificationBell({ sidebarOpen }) {
             ))
           )}
         </div>
+      )}
+      {detail && (
+        <Modal title={t("Notifications")} onClose={() => setDetail(null)}>
+          <div style={{ fontSize: "14.5px", fontWeight: 700, color: "#f1f5f9", marginBottom: "6px" }}>
+            {notificationSummary(detail, t)}
+          </div>
+          <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "16px" }}>
+            {detail.sender_name} · {timeAgo(detail.created_at)}
+          </div>
+          {detail.message && (
+            <div style={{
+              background: "#1e293b", borderRadius: "8px", padding: "12px", fontSize: "13px",
+              color: "#e2e8f0", whiteSpace: "pre-wrap", marginBottom: "16px",
+            }}>
+              {detail.message}
+            </div>
+          )}
+          {detail.attachment_url && (
+            <Btn onClick={() => window.open(detail.attachment_url, "_blank")}>
+              📎 {detail.attachment_name || t("Open attachment")}
+            </Btn>
+          )}
+        </Modal>
       )}
     </div>
   );

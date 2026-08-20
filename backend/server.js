@@ -1951,8 +1951,8 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
 
   const changedBy = actorName(req);
   const insertInboxRow = db.prepare(`
-    INSERT INTO notifications (recipient_username, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO notifications (recipient_username, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name, attachment_url, attachment_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const sent = [];
@@ -1965,7 +1965,7 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
     // actually succeeds — the inbox is the reliable channel, e-mail is a
     // best-effort extra, so a Resend hiccup shouldn't also hide this from
     // the person inside the system.
-    insertInboxRow.run(username, entityType, recordLabel || null, eventType || 'status_change', oldStatus || null, newStatus || null, documentLabel || null, message || null, changedBy);
+    insertInboxRow.run(username, entityType, recordLabel || null, eventType || 'status_change', oldStatus || null, newStatus || null, documentLabel || null, message || null, changedBy, attachmentUrl || null, attachmentName || null);
     try {
       await sendStatusChangeEmail({
         to: user.email,
@@ -1995,7 +1995,7 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
 // correct even once older read items fall off that 50-row window.
 app.get('/api/notifications/inbox', requireAuth(db), (req, res) => {
   const items = db.prepare(`
-    SELECT id, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name, is_read, created_at
+    SELECT id, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name, attachment_url, attachment_name, is_read, created_at
     FROM notifications WHERE recipient_username = ? ORDER BY created_at DESC, id DESC LIMIT 50
   `).all(req.user.username);
   const { unreadCount } = db.prepare(`SELECT COUNT(*) AS unreadCount FROM notifications WHERE recipient_username = ? AND is_read = 0`).get(req.user.username);

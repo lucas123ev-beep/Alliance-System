@@ -424,6 +424,8 @@ db.exec(`
     document_label TEXT,
     message TEXT,
     sender_name TEXT,
+    attachment_url TEXT,
+    attachment_name TEXT,
     is_read INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
   );
@@ -437,6 +439,12 @@ db.exec(`
 // already-present column ("duplicate column name") is silently ignored —
 // this file can be run safely against both a fresh DB and the live one.
 const migrations = [
+  // The notifications table itself is brand new (created above), but this
+  // exact deploy already went live once without these two columns — so
+  // whoever's Render disk created the table in that brief window needs them
+  // added the normal migration way, same as any other pre-existing table.
+  ['notifications', 'attachment_url', 'TEXT'],
+  ['notifications', 'attachment_name', 'TEXT'],
   ['orders', 'acquisition_company', "TEXT DEFAULT ''"],
   ['orders', 'container', "TEXT DEFAULT ''"],
   ['orders', 'container_qty', 'REAL'],
