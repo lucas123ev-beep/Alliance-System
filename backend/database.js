@@ -407,6 +407,27 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now')),
     last_seen_at TEXT DEFAULT (datetime('now'))
   );
+
+  -- In-app notification inbox — one row per recipient, written alongside
+  -- (not instead of) the e-mail sent via Resend (see backend/notifications.js
+  -- and the /api/notifications/status-change route). Written regardless of
+  -- whether the e-mail itself succeeds, so a bounced/slow e-mail never hides
+  -- the notification from the person's in-app inbox.
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recipient_username TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    record_label TEXT,
+    event_type TEXT NOT NULL DEFAULT 'status_change',
+    old_status TEXT,
+    new_status TEXT,
+    document_label TEXT,
+    message TEXT,
+    sender_name TEXT,
+    is_read INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_username, created_at);
 `);
 
 // ─── Defensive migrations for pre-existing databases (e.g. Render disk) ──────

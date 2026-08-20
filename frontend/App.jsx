@@ -241,6 +241,11 @@ const TRANSLATIONS = {
     "Create Order": "创建订单",
     "Packing List ✓": "装箱单 ✓",
     "Packing List": "装箱单",
+    "Quotation": "报价单",
+    "Sample": "样品",
+    "Commercial Invoice": "商业发票",
+    "Supplier Payment": "供应商付款",
+    "Client Payment": "客户收款",
     // Table headers
     "Actions": "操作",
     "Report": "报表",
@@ -509,6 +514,12 @@ const TRANSLATIONS = {
     "Who should receive it by e-mail?": "谁应该通过邮件收到？",
     "Failed to prepare document: ": "准备文档失败：",
     "Download": "下载",
+    "was created": "已创建",
+    "sent": "已发送",
+    "Document": "文档",
+    "Notifications": "通知",
+    "Mark all as read": "全部标为已读",
+    "No notifications yet.": "暂无通知。",
     "📎 Attach file": "📎 添加附件",
   },
 };
@@ -545,6 +556,75 @@ const fmt = (n, cur = "USD") => {
 };
 
 const fmtDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-US") : "—");
+
+// ─── IN-APP NOTIFICATION INBOX (bell icon) ─────────────────────────────────
+// English labels for the same entityType keys used throughout the
+// notify-by-e-mail feature (backend/notifications.js has its own Portuguese
+// versions for the e-mail text) — the in-app bell follows the rest of the
+// UI's en/zh toggle instead.
+const ENTITY_LABELS_EN = {
+  orders: "Order",
+  quotations: "Quotation",
+  proformas: "Proforma",
+  "commercial-invoices": "Commercial Invoice",
+  contracts: "Contract",
+  "packing-lists": "Packing List",
+  inspections: "Inspection",
+  samples: "Sample",
+  "financial-suppliers": "Supplier Payment",
+  "financial-clients": "Client Payment",
+};
+
+// One-line summary for a notification row — mirrors the three eventTypes
+// sendStatusChangeEmail branches on backend-side, just in whichever UI
+// language is active instead of always Portuguese.
+function notificationSummary(n, t) {
+  const label = t(ENTITY_LABELS_EN[n.entity_type] || n.entity_type);
+  const record = n.record_label || "";
+  if (n.event_type === "created") return `${label} ${t("was created")}: ${record}`;
+  if (n.event_type === "document") return `${n.document_label || t("Document")} ${t("sent")} — ${label} ${record}`;
+  return `${label} ${record} — ${t("Status changed to")} ${n.new_status || ""}`;
+}
+
+// SQLite's datetime('now') is UTC with no offset marker — appending "Z"
+// (after swapping the space for "T") is what makes `new Date(...)` parse it
+// as UTC instead of silently treating it as local time.
+function timeAgo(sqliteUTC) {
+  if (!sqliteUTC) return "";
+  const then = new Date(sqliteUTC.replace(" ", "T") + "Z").getTime();
+  const mins = Math.max(0, Math.floor((Date.now() - then) / 60000));
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+// A short two-tone "ding" synthesized with the Web Audio API instead of
+// shipping/hosting an audio file — just for the moment a poll detects the
+// unread count went up. Wrapped in try/catch because some browsers refuse
+// to run an AudioContext before the page has had any user gesture at all;
+// failing silently there is better than throwing into a setInterval callback.
+function playNotificationSound() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, now);
+    osc.frequency.exponentialRampToValueAtTime(660, now + 0.15);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.2, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.4);
+    osc.onended = () => ctx.close();
+  } catch { /* audio unavailable/blocked — notification still shows visually */ }
+}
 
 // ─── INPUT MASKS ────────────────────────────────────────────────────────────
 // Auto-format the punctuation into these fields as the person types (instead
@@ -1766,6 +1846,133 @@ function DocButtons({ url, filename, entityType, recordLabel, documentLabel = "P
         />
       )}
     </>
+  );
+}
+
+// Bell icon in the sidebar footer — polls the logged-in user's own inbox
+// (see GET /api/notifications/inbox) every 20s, badges the unread count, and
+// plays a short synthesized "ding" (playNotificationSound, defined up near
+// fmtDate) the moment a poll finds MORE unread than the previous poll did —
+// comparing against a ref rather than state so this only fires once per new
+// arrival, not on every re-render. Rendered once in the App() shell, so it
+// keeps polling no matter which tab is open.
+function NotificationBell({ sidebarOpen }) {
+  const t = useT();
+  const [items, setItems] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [open, setOpen] = useState(false);
+  const prevUnreadRef = useRef(0);
+  const firstLoadRef = useRef(true);
+  const boxRef = useRef(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api("/notifications/inbox");
+      setItems(res.items || []);
+      const newCount = res.unreadCount || 0;
+      // Skipped on the very first load after page open/refresh — otherwise
+      // everyone would hear a "ding" just for having unread notifications
+      // from before, not because anything new just arrived.
+      if (!firstLoadRef.current && newCount > prevUnreadRef.current) playNotificationSound();
+      firstLoadRef.current = false;
+      prevUnreadRef.current = newCount;
+      setUnreadCount(newCount);
+    } catch { /* polling — a failed check silently retries next cycle */ }
+  }, []);
+
+  useEffect(() => {
+    load();
+    const iv = setInterval(load, 20000);
+    return () => clearInterval(iv);
+  }, [load]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e) {
+      if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [open]);
+
+  async function markRead(id) {
+    setItems(prev => prev.map(n => (n.id === id ? { ...n, is_read: 1 } : n)));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+    prevUnreadRef.current = Math.max(0, prevUnreadRef.current - 1);
+    try { await api(`/notifications/inbox/${id}/read`, "POST"); } catch { /* next poll reconciles */ }
+  }
+
+  async function markAllRead() {
+    setItems(prev => prev.map(n => ({ ...n, is_read: 1 })));
+    setUnreadCount(0);
+    prevUnreadRef.current = 0;
+    try { await api("/notifications/inbox/read-all", "POST"); } catch { /* next poll reconciles */ }
+  }
+
+  return (
+    <div ref={boxRef} style={{ position: "relative" }}>
+      <button onClick={() => setOpen(o => !o)} title={t("Notifications")}
+        style={{
+          width: "100%", display: "flex", alignItems: "center",
+          justifyContent: sidebarOpen ? "space-between" : "center", gap: "6px",
+          padding: "8px", background: "#1e293b", border: "1px solid #334155", borderRadius: "6px",
+          color: "#94a3b8", cursor: "pointer", fontSize: "12px", fontWeight: 600, position: "relative",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <span style={{ fontSize: "14px" }}>🔔</span>
+          {sidebarOpen && <span>{t("Notifications")}</span>}
+        </span>
+        {unreadCount > 0 && (
+          <span style={{
+            background: "#ef4444", color: "#fff", fontSize: "10px", fontWeight: 700,
+            borderRadius: "999px", padding: "1px 6px", minWidth: "16px", textAlign: "center", lineHeight: "14px",
+            ...(sidebarOpen ? {} : { position: "absolute", top: "2px", right: "2px" }),
+          }}>
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 6px)", left: sidebarOpen ? 0 : "-8px", width: "320px",
+          maxHeight: "420px", overflowY: "auto", background: "#0f172a", border: "1px solid #1e293b",
+          borderRadius: "10px", boxShadow: "0 20px 50px rgba(0,0,0,0.6)", zIndex: 1500,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: "1px solid #1e293b" }}>
+            <span style={{ fontSize: "13px", fontWeight: 700, color: "#f1f5f9" }}>{t("Notifications")}</span>
+            {unreadCount > 0 && (
+              <button onClick={markAllRead} style={{ background: "none", border: "none", color: "#60a5fa", fontSize: "11px", cursor: "pointer" }}>
+                {t("Mark all as read")}
+              </button>
+            )}
+          </div>
+          {items.length === 0 ? (
+            <p style={{ padding: "20px 12px", textAlign: "center", color: "#64748b", fontSize: "12.5px" }}>{t("No notifications yet.")}</p>
+          ) : (
+            items.map(n => (
+              <div key={n.id} onClick={() => !n.is_read && markRead(n.id)}
+                style={{
+                  padding: "10px 12px", borderBottom: "1px solid #1e293b", cursor: n.is_read ? "default" : "pointer",
+                  background: n.is_read ? "transparent" : "rgba(59,130,246,0.08)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                  {!n.is_read && <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#3b82f6", marginTop: "5px", flexShrink: 0 }} />}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "12.5px", color: "#e2e8f0", lineHeight: 1.4 }}>{notificationSummary(n, t)}</div>
+                    {n.message && <div style={{ fontSize: "11.5px", color: "#94a3b8", marginTop: "3px", whiteSpace: "pre-wrap" }}>{n.message}</div>}
+                    <div style={{ fontSize: "10.5px", color: "#475569", marginTop: "4px" }}>
+                      {n.sender_name} · {timeAgo(n.created_at)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -8035,6 +8242,13 @@ const renderTab = () => {
                 onMouseLeave={e => e.currentTarget.style.color = "#64748b"}
               >⏻</button>
             )}
+          </div>
+          {/* In-app notification bell — same recipients as the e-mail
+              notify-picker (see NotifyStatusChangeModal/SendDocumentModal),
+              just also visible without leaving the system, with a badge and
+              a sound when a poll finds something new. */}
+          <div style={{ padding: "10px 12px", borderTop: "1px solid #1e293b" }}>
+            <NotificationBell sidebarOpen={sidebarOpen} />
           </div>
           {/* Interface language toggle — only switches the system's own UI
               text (nav, buttons, labels), never PDFs or any registered

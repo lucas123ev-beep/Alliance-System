@@ -1949,12 +1949,23 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
   // recipients don't mean N redundant fetches of the same file.
   const attachment = await fetchAttachment(attachmentUrl, attachmentName);
 
+  const changedBy = actorName(req);
+  const insertInboxRow = db.prepare(`
+    INSERT INTO notifications (recipient_username, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
   const sent = [];
   const skipped = [];
   for (const username of requested) {
     const user = byUsername[username];
     const eligible = user && user.email && isEligibleForEntityType(username, entityType);
     if (!eligible) { skipped.push(username); continue; }
+    // Written to the in-app inbox regardless of whether the e-mail below
+    // actually succeeds — the inbox is the reliable channel, e-mail is a
+    // best-effort extra, so a Resend hiccup shouldn't also hide this from
+    // the person inside the system.
+    insertInboxRow.run(username, entityType, recordLabel || null, eventType || 'status_change', oldStatus || null, newStatus || null, documentLabel || null, message || null, changedBy);
     try {
       await sendStatusChangeEmail({
         to: user.email,
@@ -1962,7 +1973,7 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
         recordLabel,
         oldStatus,
         newStatus,
-        changedBy: actorName(req),
+        changedBy,
         message,
         attachment,
         eventType,
@@ -1975,6 +1986,31 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
     }
   }
   res.json({ sent, skipped });
+});
+
+// In-app notification inbox — the rows written above, read back for the
+// logged-in user's own bell icon (frontend polls this every ~15s). Newest
+// first, capped at 50 so the panel never has to render an unbounded list;
+// unreadCount is computed separately (not just items.length) so it stays
+// correct even once older read items fall off that 50-row window.
+app.get('/api/notifications/inbox', requireAuth(db), (req, res) => {
+  const items = db.prepare(`
+    SELECT id, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name, is_read, created_at
+    FROM notifications WHERE recipient_username = ? ORDER BY created_at DESC, id DESC LIMIT 50
+  `).all(req.user.username);
+  const { unreadCount } = db.prepare(`SELECT COUNT(*) AS unreadCount FROM notifications WHERE recipient_username = ? AND is_read = 0`).get(req.user.username);
+  res.json({ items, unreadCount });
+});
+
+app.post('/api/notifications/inbox/:id/read', requireAuth(db), (req, res) => {
+  const result = db.prepare(`UPDATE notifications SET is_read = 1 WHERE id = ? AND recipient_username = ?`).run(req.params.id, req.user.username);
+  if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
+  res.json({ ok: true });
+});
+
+app.post('/api/notifications/inbox/read-all', requireAuth(db), (req, res) => {
+  db.prepare(`UPDATE notifications SET is_read = 1 WHERE recipient_username = ? AND is_read = 0`).run(req.user.username);
+  res.json({ ok: true });
 });
 
 // ─── DATABASE BACKUPS (see backup.js) ────────────────────────────────────────
