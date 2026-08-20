@@ -33,6 +33,14 @@ const ENTITY_LABELS = {
   'financial-clients': 'Recebimento de Cliente',
 };
 
+// Grammatical gender per entity, for the "um novo"/"uma nova" phrasing in
+// the 'created' e-mail below — not derivable from the label text itself
+// (e.g. "Fatura Comercial" is feminine despite starting with a consonant),
+// so it's just listed explicitly here rather than guessed.
+const ENTITY_FEMININE = new Set([
+  'quotations', 'proformas', 'commercial-invoices', 'inspections', 'samples',
+]);
+
 // Client payment status on Commercial Invoices is the one case the team
 // wants restricted — only people who already have access to that screen
 // AND aren't on the hideCommercialStatus list can be picked as recipients
@@ -84,20 +92,50 @@ async function fetchAttachment(url, filename) {
 // (if any) should already be a resolved { filename, content: Buffer } —
 // see fetchAttachment above, meant to be called once and reused across
 // every recipient of the same notification.
-async function sendStatusChangeEmail({ to, entityType, recordLabel, oldStatus, newStatus, changedBy, message, attachment }) {
+//
+// `eventType` distinguishes the three things this can notify about:
+// 'status_change' (the original feature — De/Para line), 'created' (a new
+// record just got made — recordLabel can be a single number or a
+// comma-joined list, for the batch-generate cases like Contracts/
+// Inspections that can produce several records from one action), and
+// 'document' (someone generated a PDF/Excel for a record and chose to send
+// it by e-mail instead of/as well as downloading it — always carries an
+// `attachment`, and `documentLabel` says which document, e.g. "PDF" or
+// "Payment Notice (20% Deposit)").
+async function sendStatusChangeEmail({ to, entityType, recordLabel, oldStatus, newStatus, changedBy, message, attachment, eventType = 'status_change', documentLabel }) {
   const label = entityLabel(entityType);
-  const subject = `[Alliance Flow] ${label} ${recordLabel} — status alterado`;
-  const text = `${changedBy} alterou o status de ${label} ${recordLabel}.\n\n` +
-    `De: ${oldStatus || '—'}\nPara: ${newStatus}\n` +
-    (message ? `\nMensagem de ${changedBy}:\n${message}\n` : '') +
-    `\nAcesse o sistema para mais detalhes.`;
-  const html = `
-    <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
+  const isCreated = eventType === 'created';
+  const isDocument = eventType === 'document';
+  const article = ENTITY_FEMININE.has(entityType) ? 'uma nova' : 'um novo';
+
+  const subject = isDocument
+    ? `[Alliance Flow] ${documentLabel || 'Documento'} — ${label} ${recordLabel}`
+    : isCreated
+    ? `[Alliance Flow] Novo(a) ${label}: ${recordLabel}`
+    : `[Alliance Flow] ${label} ${recordLabel} — status alterado`;
+
+  const text = (isDocument
+    ? `${changedBy} enviou o documento "${documentLabel || 'Documento'}" referente a ${label} ${recordLabel}. Veja o anexo.\n`
+    : isCreated
+    ? `${changedBy} criou ${article} ${label}: ${recordLabel}.\n`
+    : `${changedBy} alterou o status de ${label} ${recordLabel}.\n\nDe: ${oldStatus || '—'}\nPara: ${newStatus}\n`
+  ) + (message ? `\nMensagem de ${changedBy}:\n${message}\n` : '') + `\nAcesse o sistema para mais detalhes.`;
+
+  const bodyHtml = isDocument
+    ? `<p><strong>${escapeHtml(changedBy)}</strong> enviou o documento <strong>${escapeHtml(documentLabel || 'Documento')}</strong> referente a <strong>${escapeHtml(label)} ${escapeHtml(recordLabel)}</strong>. Veja o anexo.</p>`
+    : isCreated
+    ? `<p><strong>${escapeHtml(changedBy)}</strong> criou ${article} <strong>${escapeHtml(label)}: ${escapeHtml(recordLabel)}</strong>.</p>`
+    : `
       <p><strong>${escapeHtml(changedBy)}</strong> alterou o status de <strong>${escapeHtml(label)} ${escapeHtml(recordLabel)}</strong>:</p>
       <table style="border-collapse: collapse; margin: 12px 0;">
         <tr><td style="padding: 4px 12px 4px 0; color:#666;">De</td><td style="padding:4px 0;">${escapeHtml(oldStatus || '—')}</td></tr>
         <tr><td style="padding: 4px 12px 4px 0; color:#666;">Para</td><td style="padding:4px 0;"><strong>${escapeHtml(newStatus)}</strong></td></tr>
       </table>
+    `;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
+      ${bodyHtml}
       ${message ? `
       <p style="margin: 12px 0 4px; color:#666;">Mensagem de ${escapeHtml(changedBy)}:</p>
       <p style="margin: 0 0 12px; padding: 10px 12px; background: #f5f5f5; border-radius: 6px; white-space: pre-wrap;">${escapeHtml(message)}</p>

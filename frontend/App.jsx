@@ -487,6 +487,8 @@ const TRANSLATIONS = {
     "No solution yet / not resolved": "尚无解决方案 / 未解决",
 
     "Notify status change": "通知状态变更",
+    "Notify record created": "通知新记录创建",
+    "Record created:": "已创建：",
     "Status changed to": "状态已变更为",
     "Who should be notified by e-mail?": "需要用邮件通知谁？",
     "Loading…": "加载中…",
@@ -502,6 +504,11 @@ const TRANSLATIONS = {
     "Add a note to include in the e-mail…": "添加要包含在邮件中的留言…",
     "Attachment (optional)": "附件（可选）",
     "Remove": "移除",
+    "Send by e-mail": "通过邮件发送",
+    "Sending": "发送内容",
+    "Who should receive it by e-mail?": "谁应该通过邮件收到？",
+    "Failed to prepare document: ": "准备文档失败：",
+    "Download": "下载",
     "📎 Attach file": "📎 添加附件",
   },
 };
@@ -1507,7 +1514,8 @@ function Btn({ children, onClick, color = "#3b82f6", small, outline, disabled, t
 // backend enforces that regardless of what this modal shows, this is just
 // the same list reflected in the UI so nobody sees a name they can't
 // actually pick.
-function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus, onClose }) {
+function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus, eventType = "status_change", onClose }) {
+  const isCreated = eventType === "created";
   const t = useT();
   const [recipients, setRecipients] = useState(null); // null = still loading
   const [selected, setSelected] = useState(() => new Set());
@@ -1548,7 +1556,7 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
     setSending(true);
     try {
       const res = await api("/notifications/status-change", "POST", {
-        entityType, recordLabel, oldStatus, newStatus,
+        entityType, recordLabel, oldStatus, newStatus, eventType,
         recipientUsernames: [...selected],
         message: message.trim() || undefined,
         attachmentUrl: attachment?.url,
@@ -1563,9 +1571,11 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
   }
 
   return (
-    <Modal title={t("Notify status change")} onClose={onClose}>
+    <Modal title={isCreated ? t("Notify record created") : t("Notify status change")} onClose={onClose}>
       <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#94a3b8", lineHeight: 1.5 }}>
-        {t("Status changed to")} <strong style={{ color: "#f1f5f9" }}>{newStatus}</strong>. {t("Who should be notified by e-mail?")}
+        {isCreated
+          ? <>{t("Record created:")} <strong style={{ color: "#f1f5f9" }}>{recordLabel}</strong>. {t("Who should be notified by e-mail?")}</>
+          : <>{t("Status changed to")} <strong style={{ color: "#f1f5f9" }}>{newStatus}</strong>. {t("Who should be notified by e-mail?")}</>}
       </p>
       {recipients === null ? (
         <p style={{ color: "#64748b", fontSize: "13px" }}>{t("Loading…")}</p>
@@ -1620,6 +1630,142 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
         </Btn>
       </div>
     </Modal>
+  );
+}
+
+// Recipient picker for sending an already-generated PDF/Excel by e-mail
+// instead of (or in addition to) downloading it — sibling to
+// NotifyStatusChangeModal but simpler: the attachment is already resolved
+// (fetched + uploaded to Cloudinary by DocButtons before this opens), there's
+// no old/new status, and it always posts eventType "document". Reuses the
+// same /notifications/status-change route and recipient-eligibility rules
+// (e.g. Commercial Invoice documents are still restricted to
+// non-hideCommercialStatus users with screen access).
+function SendDocumentModal({ entityType, recordLabel, documentLabel, attachment, onClose }) {
+  const t = useT();
+  const [recipients, setRecipients] = useState(null);
+  const [selected, setSelected] = useState(() => new Set());
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    api(`/notifications/recipients?entityType=${encodeURIComponent(entityType)}`)
+      .then(setRecipients)
+      .catch(() => setRecipients([]));
+  }, [entityType]);
+
+  function toggle(username) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(username)) next.delete(username); else next.add(username);
+      return next;
+    });
+  }
+
+  async function send() {
+    if (selected.size === 0) { onClose(); return; }
+    setSending(true);
+    try {
+      const res = await api("/notifications/status-change", "POST", {
+        entityType, recordLabel, eventType: "document", documentLabel,
+        recipientUsernames: [...selected],
+        message: message.trim() || undefined,
+        attachmentUrl: attachment?.url,
+        attachmentName: attachment?.name,
+      });
+      setResult(res);
+      setTimeout(onClose, 1100);
+    } catch {
+      setResult({ error: true });
+      setSending(false);
+    }
+  }
+
+  return (
+    <Modal title={t("Send by e-mail")} onClose={onClose}>
+      <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#94a3b8", lineHeight: 1.5 }}>
+        {t("Send by e-mail")}: <strong style={{ color: "#f1f5f9" }}>{documentLabel} — {recordLabel}</strong>. {t("Who should receive it by e-mail?")}
+      </p>
+      {recipients === null ? (
+        <p style={{ color: "#64748b", fontSize: "13px" }}>{t("Loading…")}</p>
+      ) : recipients.length === 0 ? (
+        <p style={{ color: "#64748b", fontSize: "13px" }}>{t("No eligible recipients for this record.")}</p>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px 16px", marginBottom: "20px" }}>
+          {recipients.map(u => (
+            <label key={u.username} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", color: "#f1f5f9", cursor: "pointer" }}>
+              <input type="checkbox" checked={selected.has(u.username)} onChange={() => toggle(u.username)} />
+              {u.name}
+            </label>
+          ))}
+        </div>
+      )}
+      <div style={{ marginBottom: "20px" }}>
+        <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "6px" }}>
+          {t("Message (optional)")}
+        </label>
+        <Textarea value={message} onChange={e => setMessage(e.target.value)} placeholder={t("Add a note to include in the e-mail…")} />
+      </div>
+      {result && !result.error && (
+        <p style={{ fontSize: "13px", color: "#4ade80", margin: "0 0 12px" }}>
+          {t("Sent")}: {result.sent.length}{result.skipped.length ? ` — ${t("skipped")}: ${result.skipped.length}` : ""}
+        </p>
+      )}
+      {result && result.error && (
+        <p style={{ fontSize: "13px", color: "#f87171", margin: "0 0 12px" }}>{t("Failed to send. Try again.")}</p>
+      )}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+        <Btn outline color="#64748b" onClick={onClose} disabled={sending}>{t("Cancel")}</Btn>
+        <Btn onClick={send} disabled={sending || recipients === null || recipients.length === 0}>
+          {sending ? t("Sending…") : t("Send")}
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// Wraps an existing "Download PDF/Excel" button with a second small button
+// that fetches the same file, uploads it to Cloudinary (reusing
+// uploadToCloudinary — same helper as message attachments elsewhere), and
+// opens SendDocumentModal to pick who gets it by e-mail. Download behavior
+// is untouched; the e-mail path is purely additive.
+function DocButtons({ url, filename, entityType, recordLabel, documentLabel = "PDF", label, color = "#10b981", small = true }) {
+  const t = useT();
+  const [preparing, setPreparing] = useState(false);
+  const [sendDoc, setSendDoc] = useState(null); // { attachment }
+
+  async function startSend() {
+    setPreparing(true);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const file = new File([blob], filename, { type: blob.type });
+      const uploaded = await uploadToCloudinary(file);
+      setSendDoc({ attachment: uploaded });
+    } catch (err) {
+      alert(t("Failed to prepare document: ") + err.message);
+    }
+    setPreparing(false);
+  }
+
+  return (
+    <>
+      <Btn small={small} outline color={color} onClick={() => window.open(url, "_blank")}>{label || `📄 ${documentLabel}`}</Btn>
+      <Btn small={small} outline color="#3b82f6" disabled={preparing} onClick={startSend} title={t("Send by e-mail")}>
+        {preparing ? "…" : "✉️"}
+      </Btn>
+      {sendDoc && (
+        <SendDocumentModal
+          entityType={entityType}
+          recordLabel={recordLabel}
+          documentLabel={documentLabel}
+          attachment={sendDoc.attachment}
+          onClose={() => setSendDoc(null)}
+        />
+      )}
+    </>
   );
 }
 
@@ -4153,7 +4299,8 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        {f.id && <Btn outline color="#10b981" onClick={() => window.open(authUrl(`${API}/proformas/${f.id}/pdf`), "_blank")}>📄 Download PDF</Btn>}
+        {f.id && <DocButtons url={authUrl(`${API}/proformas/${f.id}/pdf`)} filename={`Proforma-${f.number}.pdf`}
+          entityType="proformas" recordLabel={f.number} label="📄 Download PDF" small={false} />}
         <Btn onClick={async () => {
           // Same BR-formatted-text cleanup as QuotationForm/OrderForm — the
           // items here go through the same PricingRow editor.
@@ -4317,10 +4464,12 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
             schedule falls back to the one plain button it had before.
             Generates an Excel file, not a PDF. */}
         {!isClient && f.id && (PAYMENT_SCHEDULES[f.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]).parts.map((part, i) => (
-          <Btn key={i} outline color="#10b981"
-            onClick={() => window.open(authUrl(`${API}/financial/suppliers/${f.id}/payment-notice-xlsx${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`), "_blank")}>
-            📊 {part.label ? `${part.label} (${part.pct}%)` : t("Payment Notice")}
-          </Btn>
+          <DocButtons key={i}
+            url={authUrl(`${API}/financial/suppliers/${f.id}/payment-notice-xlsx${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`)}
+            filename={`PaymentNotice-${f.description || f.supplier || f.id}${part.label ? `-${part.label}` : ""}.xlsx`}
+            entityType="financial-suppliers" recordLabel={f.description || f.supplier}
+            documentLabel={part.label ? `Payment Notice — ${part.label} (${part.pct}%)` : "Payment Notice"}
+            label={<>📊 {part.label ? `${part.label} (${part.pct}%)` : t("Payment Notice")}</>} small={false} />
         ))}
         <Btn color={isClient ? "#3b82f6" : "#8b5cf6"} onClick={async () => {
           // Amount/Amount Paid display with live thousands-separator
@@ -4684,7 +4833,10 @@ console.log('quotations set:', quotations?.length);
         placeholder="Search by number, product, client or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       {modal && (
         <Modal title={t("New Quotation")} onClose={() => setModal(false)} wide>
-          <QuotationForm onSave={b => api("/quotations", "POST", b).then(load)} onClose={() => setModal(false)} />
+          <QuotationForm onSave={b => api("/quotations", "POST", b).then(() => {
+            load();
+            setNotify({ entityType: "quotations", recordLabel: b.number, eventType: "created" });
+          })} onClose={() => setModal(false)} />
         </Modal>
       )}
       {editing && (
@@ -4707,7 +4859,11 @@ console.log('quotations set:', quotations?.length);
     <ProformaForm
       orders={[]}
       initial={proformaModal}
-      onSave={async b => { await api("/proformas", "POST", b); setProformaModal(null); load(); }}
+      onSave={async b => {
+        await api("/proformas", "POST", b);
+        setProformaModal(null); load();
+        setNotify({ entityType: "proformas", recordLabel: b.number, eventType: "created" });
+      }}
       onClose={() => setProformaModal(null)}
     />
   </Modal>
@@ -5287,7 +5443,8 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
 
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        {f.id && <Btn outline color="#10b981" onClick={() => window.open(authUrl(`${API}/packing-lists/${f.id}/pdf`), "_blank")}>📄 Download PDF</Btn>}
+        {f.id && <DocButtons url={authUrl(`${API}/packing-lists/${f.id}/pdf`)} filename={`PackingList-${f.number}.pdf`}
+          entityType="packing-lists" recordLabel={f.number} label="📄 Download PDF" small={false} />}
         <Btn onClick={async () => { await onSave(f); onClose(); }}>Save Packing List</Btn>
       </div>
     </div>
@@ -5362,7 +5519,10 @@ setSuppliersList(suppliersList);
     (o.incoterm || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  const createOrder = (f) => api("/orders", "POST", f).then(load);
+  const createOrder = (f) => api("/orders", "POST", f).then(() => {
+    load();
+    setNotify({ entityType: "orders", recordLabel: f.order_number, eventType: "created" });
+  });
   const updateOrder = (f) => api(`/orders/${editOrder.id}`, "PUT", f).then(load);
 
 const changeStatus = async (id, status) => {
@@ -5402,6 +5562,7 @@ const prevStatus = { "In Production": "Pending", Inspection: "In Production", Co
   setEditCommercial(ci);
   setEditCommercialOriginal(ci);
   load();
+  setNotify({ entityType: "commercial-invoices", recordLabel: ci.number || number, eventType: "created" });
 };
 const generateContract = (order) => {
   // No "PO-" prefix — the client wants the exact same reference number on
@@ -5577,7 +5738,18 @@ const inspectionStatusFor = (order) => {
                     ? await api(`/inspections/${insp.id}`, "PUT", b)
                     : await api("/inspections", "POST", b);
                   setInspectionsModal(prev => prev.map((p, i) => i === idx ? saved : p));
-                  setSavedInspections(prev => prev.includes(idx) ? prev : [...prev, idx]);
+                  setSavedInspections(prev => {
+                    const wasAlreadySaved = prev.includes(idx);
+                    const updated = wasAlreadySaved ? prev : [...prev, idx];
+                    if (!wasAlreadySaved && updated.length === inspectionsModal.length) {
+                      setNotify({
+                        entityType: "inspections",
+                        recordLabel: inspectionsModal.map(ii => ii.number).join(", "),
+                        eventType: "created",
+                      });
+                    }
+                    return updated;
+                  });
                   load();
                 }}
                 onClose={() => setEditingInspectionIdx(null)}
@@ -5691,8 +5863,18 @@ onSave={async b => {
     items_json: b.items_json || null,
   });
   setSavedContracts(prev => {
-    const updated = [...prev, idx];
-    if (updated.length === contractModal.length) load();
+    const wasAlreadySaved = prev.includes(idx);
+    const updated = wasAlreadySaved ? prev : [...prev, idx];
+    if (updated.length === contractModal.length) {
+      load();
+      if (!wasAlreadySaved) {
+        setNotify({
+          entityType: "contracts",
+          recordLabel: contractModal.map(cc => cc.contract_number).join(", "),
+          eventType: "created",
+        });
+      }
+    }
     return updated;
   });
 }}
@@ -6048,7 +6230,10 @@ const [proformas, setProformas] = useState([]);
       </div>
       {modal && (
         <Modal title={t("New Proforma")} onClose={() => setModal(false)} wide>
-          <ProformaForm orders={orders} onSave={b => api("/proformas", "POST", b).then(load)} onClose={() => setModal(false)} />
+          <ProformaForm orders={orders} onSave={b => api("/proformas", "POST", b).then(() => {
+            load();
+            setNotify({ entityType: "proformas", recordLabel: b.number, eventType: "created" });
+          })} onClose={() => setModal(false)} />
         </Modal>
       )}
       {editing && (
@@ -6076,7 +6261,10 @@ const [proformas, setProformas] = useState([]);
             <p style={{ color: "#94a3b8", fontSize: "14px", margin: "0 0 24px" }}>
               {t("Order")} <strong style={{ color: "#f1f5f9" }}>{orderNotification}</strong> {t("was created successfully!")}
             </p>
-            <Btn color="#10b981" onClick={() => setOrderNotification(null)}>OK</Btn>
+            <Btn color="#10b981" onClick={() => {
+              setNotify({ entityType: "orders", recordLabel: orderNotification, eventType: "created" });
+              setOrderNotification(null);
+            }}>OK</Btn>
           </div>
         </div>
       )}
@@ -6106,7 +6294,8 @@ cols={[
       <Btn small color={r.order_id ? "#10b981" : "#334155"} onClick={() => !r.order_id && createOrderFromProforma(r)}>
         🛒 {r.order_id ? t("Order ✓") : t("Create Order")}
       </Btn>
-      <Btn small outline color="#10b981" onClick={() => window.open(authUrl(`${API}/proformas/${r.id}/pdf`), "_blank")}>📄 PDF</Btn>
+      <DocButtons url={authUrl(`${API}/proformas/${r.id}/pdf`)} filename={`Proforma-${r.number}.pdf`}
+        entityType="proformas" recordLabel={r.number} label="📄 PDF" />
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/proformas/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
       <LastModifiedBy name={r.updated_by} />
@@ -6179,7 +6368,8 @@ function Contracts() {
           )},
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
-              <Btn small outline color="#10b981" onClick={() => window.open(authUrl(`${API}/contracts/${r.id}/pdf`), "_blank")}>📄 PDF</Btn>
+              <DocButtons url={authUrl(`${API}/contracts/${r.id}/pdf`)} filename={`Contract-${r.contract_number}.pdf`}
+                entityType="contracts" recordLabel={r.contract_number} label="📄 PDF" />
               <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
               <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/contracts/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
               <LastModifiedBy name={r.updated_by} />
@@ -6331,10 +6521,12 @@ cols={[
           modal — a plain 100% schedule still renders as the single
           original button. Generates an Excel file, not a PDF. */}
       {!isClient && (PAYMENT_SCHEDULES[r.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]).parts.map((part, i) => (
-        <Btn key={i} small outline color="#10b981"
-          onClick={() => window.open(authUrl(`${API}/financial/suppliers/${r.id}/payment-notice-xlsx${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`), "_blank")}>
-          📊 {part.label ? `${part.label} (${part.pct}%)` : t("Excel")}
-        </Btn>
+        <DocButtons key={i}
+          url={authUrl(`${API}/financial/suppliers/${r.id}/payment-notice-xlsx${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`)}
+          filename={`PaymentNotice-${r.description || r.supplier || r.id}${part.label ? `-${part.label}` : ""}.xlsx`}
+          entityType="financial-suppliers" recordLabel={r.description || r.supplier}
+          documentLabel={part.label ? `Payment Notice — ${part.label} (${part.pct}%)` : "Payment Notice"}
+          label={<>📊 {part.label ? `${part.label} (${part.pct}%)` : t("Excel")}</>} />
       ))}
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`${endpoint}/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
@@ -7068,7 +7260,8 @@ function CommercialInvoices() {
             const hasPackingList = packingLists.find(p => Number(p.order_id) === Number(r.order_id));
             return (
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                <Btn small outline color="#10b981" onClick={() => window.open(authUrl(`${API}/commercial-invoices/${r.id}/pdf`), "_blank")}>📄 PDF</Btn>
+                <DocButtons url={authUrl(`${API}/commercial-invoices/${r.id}/pdf`)} filename={`CI-${r.number}.pdf`}
+                  entityType="commercial-invoices" recordLabel={r.number} label="📄 PDF" />
                 <Btn small outline color="#64748b" onClick={() => { setEditing(r); setEditingOriginal(r); }}>Edit</Btn>
                 {order && (
                   <Btn small outline={!hasPackingList} color={hasPackingList ? "#06b6d4" : "#64748b"}
@@ -7138,7 +7331,8 @@ function PackingLists() {
           { label: "Status", key: "status" },
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
-              <Btn small outline color="#10b981" onClick={() => window.open(authUrl(`${API}/packing-lists/${r.id}/pdf`), "_blank")}>📄 PDF</Btn>
+              <DocButtons url={authUrl(`${API}/packing-lists/${r.id}/pdf`)} filename={`PackingList-${r.number}.pdf`}
+                entityType="packing-lists" recordLabel={r.number} label="📄 PDF" />
               <Btn small outline color="#64748b" onClick={() => setEditList(r)}>Edit</Btn>
               <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/packing-lists/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
               <LastModifiedBy name={r.updated_by} />
@@ -7291,7 +7485,11 @@ function Inspections() {
         placeholder="Search by number, inspector or result…" style={{ ...inputStyle, marginBottom: "16px" }} />
       {modal && (
         <Modal title={t("New Inspection")} onClose={() => setModal(false)} wide>
-          <InspectionForm orders={orders} onSave={async b => { await api("/inspections", "POST", b); load(); }} onClose={() => setModal(false)} />
+          <InspectionForm orders={orders} onSave={async b => {
+            await api("/inspections", "POST", b);
+            load();
+            setNotify({ entityType: "inspections", recordLabel: b.number, eventType: "created" });
+          }} onClose={() => setModal(false)} />
         </Modal>
       )}
       {editing && (

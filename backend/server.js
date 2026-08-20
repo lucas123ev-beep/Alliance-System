@@ -1929,9 +1929,15 @@ app.get('/api/notifications/recipients', requireAuth(db), (req, res) => {
 });
 
 app.post('/api/notifications/status-change', requireAuth(db), async (req, res) => {
-  const { entityType, recordLabel, oldStatus, newStatus, recipientUsernames, message, attachmentUrl, attachmentName } = req.body || {};
+  const { entityType, recordLabel, oldStatus, newStatus, recipientUsernames, message, attachmentUrl, attachmentName, eventType, documentLabel } = req.body || {};
+  // newStatus is only required for the original 'status_change' flow — a
+  // 'created' notification has no De/Para, and a 'document' one (someone
+  // generated a PDF/Excel and chose to send it by e-mail) is keyed off the
+  // attachment instead.
   if (!ENTITY_LABELS[entityType]) return res.status(400).json({ error: 'Unknown entityType' });
-  if (!recordLabel || !newStatus) return res.status(400).json({ error: 'recordLabel and newStatus required' });
+  if (!recordLabel || ((!eventType || eventType === 'status_change') && !newStatus)) {
+    return res.status(400).json({ error: 'recordLabel required (and newStatus, unless eventType is "created" or "document")' });
+  }
 
   const requested = Array.isArray(recipientUsernames) ? recipientUsernames : [];
   if (requested.length === 0) return res.json({ sent: [], skipped: [] });
@@ -1959,6 +1965,8 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
         changedBy: actorName(req),
         message,
         attachment,
+        eventType,
+        documentLabel,
       });
       sent.push(username);
     } catch (err) {
