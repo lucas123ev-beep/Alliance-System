@@ -513,6 +513,7 @@ const TRANSLATIONS = {
     "Sending": "发送内容",
     "Who should receive it by e-mail?": "谁应该通过邮件收到？",
     "Failed to prepare document: ": "准备文档失败：",
+    "Failed to save product: ": "保存产品失败：",
     "Download": "下载",
     "was created": "已创建",
     "sent": "已发送",
@@ -1472,7 +1473,7 @@ function useEscapeToClose(active, onClose) {
   }, [active, onClose]);
 }
 
-function Modal({ title, onClose, children, wide }) {
+function Modal({ title, onClose, children, wide, headerExtra }) {
   useEscapeToClose(true, onClose);
   return (
     <div
@@ -1491,9 +1492,12 @@ function Modal({ title, onClose, children, wide }) {
           overflow: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.6)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "24px 28px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "24px 28px 0", gap: "12px" }}>
           <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "#f1f5f9", fontFamily: "'DM Sans', sans-serif" }}>{title}</h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "#64748b", fontSize: "22px", cursor: "pointer", lineHeight: 1 }}>×</button>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+            {headerExtra}
+            <button onClick={onClose} style={{ background: "none", border: "none", color: "#64748b", fontSize: "22px", cursor: "pointer", lineHeight: 1 }}>×</button>
+          </div>
         </div>
         <div style={{ padding: "20px 28px 28px" }}>{children}</div>
       </div>
@@ -2664,7 +2668,7 @@ function applyProductToItem(p, prevItem) {
   };
 }
 
-function ProductItemModal({ onSave, onClose, initial, products, showTargetPrice }) {
+function ProductItemModal({ onSave, onClose, initial, products, showTargetPrice, onProductSaved }) {
 const t = useT();
 // unit defaults to "Unit" (capitalized) to match the actual Sold By
 // dropdown options (SELLING_UNIT_OPTIONS: "Unit"/"Pair"/"Meter") — this
@@ -2679,6 +2683,13 @@ const [search, setSearch] = useState(
 );
 const [showList, setShowList] = useState(false);
 const [selectedProduct, setSelectedProduct] = useState(null); // ← adicionar esta linha
+// Lets someone register a brand-new product, or edit the one already linked
+// to this item, without leaving the Quotation/Proforma/Order screen — see
+// the "+ New Product"/"Edit" buttons in the modal header. null = closed,
+// "new" = registering a product from scratch, "edit" = editing the product
+// currently selected on this item (selectedProduct).
+const [showProductForm, setShowProductForm] = useState(null);
+const [savingProduct, setSavingProduct] = useState(false);
 
   useEffect(() => {
   if (initial?.product_id) {
@@ -2686,6 +2697,35 @@ const [selectedProduct, setSelectedProduct] = useState(null); // ← adicionar e
     if (found) setSelectedProduct(found);
   }
 }, []);
+
+// Saves the product (create or edit, same two API calls the Product Registry
+// screen itself uses), then applies the result to this item exactly like
+// picking it from the search dropdown would (applyProductToItem, via
+// selectProduct) — so a brand-new product becomes this item's product, and
+// an edited one refreshes the item's pricing/unit to match. onProductSaved
+// bubbles the saved row up so the parent form's own product list (used for
+// the search box) stays in sync without needing a full page reload.
+// Re-throws on failure (after the alert) rather than swallowing the error —
+// ProductForm's own Save button does `await onSave(...); onClose();` right
+// after calling this, with no try/catch of its own, so letting the promise
+// reject here is what stops that onClose() from firing and closing the
+// sub-modal out from under an edit that never actually saved.
+const handleProductFormSave = async (formData) => {
+  setSavingProduct(true);
+  try {
+    const saved = showProductForm === "edit" && selectedProduct
+      ? await api(`/products/${selectedProduct.id}`, "PUT", formData)
+      : await api("/products", "POST", formData);
+    selectProduct(saved);
+    onProductSaved?.(saved);
+    setShowProductForm(null);
+  } catch (err) {
+    alert(t("Failed to save product: ") + err.message);
+    setSavingProduct(false);
+    throw err;
+  }
+  setSavingProduct(false);
+};
 
   const filtered = products.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -2881,7 +2921,16 @@ const handleUnitChange = (e) => {
   };
 
   return (
-    <Modal title={initial ? t("Edit Product Item") : t("Add Product")} onClose={onClose}>
+    <>
+    <Modal title={initial ? t("Edit Product Item") : t("Add Product")} onClose={onClose}
+      headerExtra={
+        <div style={{ display: "flex", gap: "8px" }}>
+          <Btn small outline color="#60a5fa" onClick={() => setShowProductForm("new")}>+ New Product</Btn>
+          {selectedProduct && (
+            <Btn small outline color="#94a3b8" onClick={() => setShowProductForm("edit")}>Edit</Btn>
+          )}
+        </div>
+      }>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
         <Field label="Product">
           <div style={{ position: "relative" }}>
@@ -3076,6 +3125,16 @@ const handleUnitChange = (e) => {
         </div>
       </div>
     </Modal>
+    {showProductForm && (
+      <Modal title={showProductForm === "edit" ? t("Edit Product") : t("New Product")} onClose={() => !savingProduct && setShowProductForm(null)}>
+        <ProductForm
+          initial={showProductForm === "edit" ? selectedProduct : null}
+          onSave={handleProductFormSave}
+          onClose={() => !savingProduct && setShowProductForm(null)}
+        />
+      </Modal>
+    )}
+    </>
   );
 }
 
@@ -3219,6 +3278,7 @@ useEffect(() => {
             if (editingItemIdx !== null) { updateItem(editingItemIdx, item); setEditingItemIdx(null); }
             else addItem(item);
           }}
+          onProductSaved={(saved) => setProducts(prev => prev.some(p => p.id === saved.id) ? prev.map(p => p.id === saved.id ? saved : p) : [...prev, saved])}
           onClose={() => { setItemModal(null); setEditingItemIdx(null); }}
         />
       )}
@@ -4485,6 +4545,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
             if (editingItemIdx !== null) { updateItem(editingItemIdx, item); setEditingItemIdx(null); }
             else addItem(item);
           }}
+          onProductSaved={(saved) => setProducts(prev => prev.some(p => p.id === saved.id) ? prev.map(p => p.id === saved.id ? saved : p) : [...prev, saved])}
           onClose={() => { setItemModal(null); setEditingItemIdx(null); }}
         />
       )}
@@ -5002,6 +5063,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
             if (editingItemIdx !== null) { updateItem(editingItemIdx, item); setEditingItemIdx(null); }
             else addItem(item);
           }}
+          onProductSaved={(saved) => setProducts(prev => prev.some(p => p.id === saved.id) ? prev.map(p => p.id === saved.id ? saved : p) : [...prev, saved])}
           onClose={() => { setItemModal(null); setEditingItemIdx(null); }}
         />
       )}
