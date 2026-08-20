@@ -72,25 +72,29 @@ function isRestricted(entityType) {
   return RESTRICTED_ENTITY_TYPES.has(entityType);
 }
 
-// Fixed public_id + overwrite:false means this only actually uploads once
-// per Cloudinary account ever (later calls just resolve the existing
-// asset's URL), and the in-memory cache means it's at most once per
-// process — so a redeploy costs one extra Cloudinary call on its very
-// first e-mail, not one per e-mail. Returns null (never throws) on failure,
-// so a Cloudinary hiccup degrades to "e-mail without a logo" instead of
-// blocking the notification entirely.
+// The in-memory cache means this uploads at most once per running process
+// (i.e. once per deploy/restart, on whichever e-mail happens to trigger it
+// first) — every e-mail after that reuses the cached URL instead of
+// re-uploading. Deliberately `overwrite: true` with a fixed public_id
+// instead of trying to detect "already uploaded" server-side: simpler, and
+// avoids relying on exactly how Cloudinary's overwrite:false behaves when
+// the asset already exists (which is what silently broke this the first
+// time — no error was thrown, but no URL came back either). Re-uploading a
+// 9KB image once per restart costs nothing worth optimizing away. Returns
+// null (never throws) on failure, so a Cloudinary hiccup degrades to
+// "e-mail without a logo" instead of blocking the notification entirely.
 let cachedLogoUrl = null;
 async function getLogoUrl() {
   if (cachedLogoUrl) return cachedLogoUrl;
   try {
     const result = await cloudinary.uploader.upload(LOGO_DATA_URI, {
       public_id: 'exportflow/branding/hkag-logo-email',
-      overwrite: false,
+      overwrite: true,
       resource_type: 'image',
     });
     cachedLogoUrl = result.secure_url;
   } catch (err) {
-    console.error('Logo upload to Cloudinary failed:', err.message);
+    console.error('Logo upload to Cloudinary failed:', err?.message || err);
   }
   return cachedLogoUrl;
 }
