@@ -1863,22 +1863,58 @@ function NotificationBell({ sidebarOpen }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState(null); // full notification being viewed, or null
-  const prevUnreadRef = useRef(0);
-  const firstLoadRef = useRef(true);
+  const [toasts, setToasts] = useState([]);
+  // null until the first poll resolves — tracks which notification ids have
+  // already been seen (toasted/dinged for), so a fresh page load never
+  // toasts for everything already sitting unread from before, only for
+  // whatever shows up in a LATER poll that wasn't there yet.
+  const seenIdsRef = useRef(null);
   const boxRef = useRef(null);
+
+  function showToasts(freshOnes) {
+    // Capped at 3 on-screen at once — if a batch of 10 notifications landed
+    // together (e.g. someone picked "everyone" on a big change), stacking 10
+    // toast cards would just cover the screen; the bell badge still shows
+    // the real total.
+    const withTs = freshOnes.slice(0, 3).map(n => ({ ...n, _toastId: `${n.id}-${Date.now()}` }));
+    setToasts(prev => [...prev, ...withTs]);
+    withTs.forEach(tst => {
+      setTimeout(() => setToasts(prev => prev.filter(x => x._toastId !== tst._toastId)), 6000);
+    });
+  }
+
+  // OS-level notification for when the tab is in the background/minimized —
+  // the on-screen toast above only helps while someone's actually looking at
+  // this tab. Permission is requested from the bell button's own click
+  // handler (a real user gesture), never automatically on page load.
+  function notifyDesktop(freshOnes) {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    if (document.visibilityState === "visible") return;
+    try {
+      const n = freshOnes[0];
+      const desktopNotif = new Notification("Alliance Flow", { body: notificationSummary(n, t) });
+      desktopNotif.onclick = () => { window.focus(); desktopNotif.close(); };
+    } catch { /* not supported/blocked in this browser — toast still covers it while visible */ }
+  }
 
   const load = useCallback(async () => {
     try {
       const res = await api("/notifications/inbox");
-      setItems(res.items || []);
-      const newCount = res.unreadCount || 0;
-      // Skipped on the very first load after page open/refresh — otherwise
-      // everyone would hear a "ding" just for having unread notifications
-      // from before, not because anything new just arrived.
-      if (!firstLoadRef.current && newCount > prevUnreadRef.current) playNotificationSound();
-      firstLoadRef.current = false;
-      prevUnreadRef.current = newCount;
-      setUnreadCount(newCount);
+      const newItems = res.items || [];
+      setItems(newItems);
+      setUnreadCount(res.unreadCount || 0);
+
+      if (seenIdsRef.current === null) {
+        seenIdsRef.current = new Set(newItems.map(n => n.id));
+      } else {
+        const freshOnes = newItems.filter(n => !n.is_read && !seenIdsRef.current.has(n.id));
+        newItems.forEach(n => seenIdsRef.current.add(n.id));
+        if (freshOnes.length > 0) {
+          playNotificationSound();
+          showToasts(freshOnes);
+          notifyDesktop(freshOnes);
+        }
+      }
     } catch { /* polling — a failed check silently retries next cycle */ }
   }, []);
 
@@ -1900,14 +1936,12 @@ function NotificationBell({ sidebarOpen }) {
   async function markRead(id) {
     setItems(prev => prev.map(n => (n.id === id ? { ...n, is_read: 1 } : n)));
     setUnreadCount(prev => Math.max(0, prev - 1));
-    prevUnreadRef.current = Math.max(0, prevUnreadRef.current - 1);
     try { await api(`/notifications/inbox/${id}/read`, "POST"); } catch { /* next poll reconciles */ }
   }
 
   async function markAllRead() {
     setItems(prev => prev.map(n => ({ ...n, is_read: 1 })));
     setUnreadCount(0);
-    prevUnreadRef.current = 0;
     try { await api("/notifications/inbox/read-all", "POST"); } catch { /* next poll reconciles */ }
   }
 
@@ -1920,9 +1954,20 @@ function NotificationBell({ sidebarOpen }) {
     if (!n.is_read) markRead(n.id);
   }
 
+  // First real click on the bell doubles as the user gesture browsers
+  // require before showing the "Allow notifications?" permission prompt —
+  // never requested automatically on page load, so nobody gets that popup
+  // just for opening the system.
+  function toggleOpen() {
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+    setOpen(o => !o);
+  }
+
   return (
     <div ref={boxRef} style={{ position: "relative" }}>
-      <button onClick={() => setOpen(o => !o)} title={t("Notifications")}
+      <button onClick={toggleOpen} title={t("Notifications")}
         style={{
           width: "100%", display: "flex", alignItems: "center",
           justifyContent: sidebarOpen ? "space-between" : "center", gap: "6px",
@@ -1981,6 +2026,29 @@ function NotificationBell({ sidebarOpen }) {
               </div>
             ))
           )}
+        </div>
+      )}
+      {toasts.length > 0 && (
+        <div style={{
+          position: "fixed", top: "20px", right: "20px", zIndex: 3000,
+          display: "flex", flexDirection: "column", gap: "10px", maxWidth: "340px",
+        }}>
+          {toasts.map(tst => (
+            <div key={tst._toastId}
+              onClick={() => { setToasts(prev => prev.filter(x => x._toastId !== tst._toastId)); openDetail(tst); }}
+              style={{
+                background: "#0f172a", border: "1px solid #3b82f6", borderRadius: "10px", padding: "12px 14px",
+                boxShadow: "0 10px 30px rgba(0,0,0,0.5)", cursor: "pointer", animation: "notifToastIn 0.25s ease",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                <span style={{ fontSize: "14px" }}>🔔</span>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: "#60a5fa" }}>{t("Notifications")}</span>
+              </div>
+              <div style={{ fontSize: "12.5px", color: "#e2e8f0", lineHeight: 1.4 }}>{notificationSummary(tst, t)}</div>
+              <div style={{ fontSize: "10.5px", color: "#64748b", marginTop: "4px" }}>{tst.sender_name}</div>
+            </div>
+          ))}
         </div>
       )}
       {detail && (
@@ -8208,6 +8276,7 @@ const renderTab = () => {
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
         input:focus, select:focus, textarea:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+        @keyframes notifToastIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
       `}</style>
       <div style={{ display: "flex", minHeight: "100vh" }}>
         {/* Sidebar */}
