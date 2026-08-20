@@ -521,6 +521,7 @@ const TRANSLATIONS = {
     "Mark all as read": "全部标为已读",
     "No notifications yet.": "暂无通知。",
     "Open attachment": "打开附件",
+    "Sent to": "发送给",
     "📎 Attach file": "📎 添加附件",
   },
 };
@@ -1863,6 +1864,7 @@ function NotificationBell({ sidebarOpen }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState(null); // full notification being viewed, or null
+  const [detailRecipients, setDetailRecipients] = useState(null); // who else got the same notification, or null while loading
   const [toasts, setToasts] = useState([]);
   // null until the first poll resolves — tracks which notification ids have
   // already been seen (toasted/dinged for), so a fresh page load never
@@ -1932,6 +1934,14 @@ function NotificationBell({ sidebarOpen }) {
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [open]);
+
+  useEffect(() => {
+    if (!detail) { setDetailRecipients(null); return; }
+    setDetailRecipients(null);
+    api(`/notifications/inbox/${detail.id}/recipients`)
+      .then(res => setDetailRecipients(res.recipients || []))
+      .catch(() => setDetailRecipients([]));
+  }, [detail]);
 
   async function markRead(id) {
     setItems(prev => prev.map(n => (n.id === id ? { ...n, is_read: 1 } : n)));
@@ -2071,6 +2081,23 @@ function NotificationBell({ sidebarOpen }) {
             <Btn onClick={() => window.open(detail.attachment_url, "_blank")}>
               📎 {detail.attachment_name || t("Open attachment")}
             </Btn>
+          )}
+          {detailRecipients && detailRecipients.length > 0 && (
+            <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid #334155" }}>
+              <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                {t("Sent to")}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {detailRecipients.map(r => (
+                  <span key={r.username} style={{
+                    fontSize: "12px", color: "#cbd5e1", background: "#1e293b",
+                    borderRadius: "999px", padding: "3px 10px",
+                  }}>
+                    {r.name || r.username}
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
         </Modal>
       )}

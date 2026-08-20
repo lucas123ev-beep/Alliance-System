@@ -426,10 +426,16 @@ db.exec(`
     sender_name TEXT,
     attachment_url TEXT,
     attachment_name TEXT,
+    -- One id per POST /api/notifications/status-change call, stamped on
+    -- every recipient's row that call inserts — lets the detail view answer
+    -- "who else got this one" (see GET /api/notifications/inbox/:id/recipients)
+    -- by grouping on this instead of guessing from matching timestamps.
+    batch_id TEXT,
     is_read INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_username, created_at);
+  CREATE INDEX IF NOT EXISTS idx_notifications_batch ON notifications(batch_id);
 `);
 
 // ─── Defensive migrations for pre-existing databases (e.g. Render disk) ──────
@@ -445,6 +451,7 @@ const migrations = [
   // added the normal migration way, same as any other pre-existing table.
   ['notifications', 'attachment_url', 'TEXT'],
   ['notifications', 'attachment_name', 'TEXT'],
+  ['notifications', 'batch_id', 'TEXT'],
   ['orders', 'acquisition_company', "TEXT DEFAULT ''"],
   ['orders', 'container', "TEXT DEFAULT ''"],
   ['orders', 'container_qty', 'REAL'],

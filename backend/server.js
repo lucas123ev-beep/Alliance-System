@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -1950,9 +1951,14 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
   const attachment = await fetchAttachment(attachmentUrl, attachmentName);
 
   const changedBy = actorName(req);
+  // One id for this whole call, stamped on every recipient's row below —
+  // lets the frontend's notification detail view ask "who else got this
+  // one" (see GET /api/notifications/inbox/:id/recipients) instead of
+  // guessing from matching timestamps.
+  const batchId = crypto.randomUUID();
   const insertInboxRow = db.prepare(`
-    INSERT INTO notifications (recipient_username, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name, attachment_url, attachment_name)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO notifications (recipient_username, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name, attachment_url, attachment_name, batch_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const sent = [];
@@ -1965,7 +1971,7 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
     // actually succeeds — the inbox is the reliable channel, e-mail is a
     // best-effort extra, so a Resend hiccup shouldn't also hide this from
     // the person inside the system.
-    insertInboxRow.run(username, entityType, recordLabel || null, eventType || 'status_change', oldStatus || null, newStatus || null, documentLabel || null, message || null, changedBy, attachmentUrl || null, attachmentName || null);
+    insertInboxRow.run(username, entityType, recordLabel || null, eventType || 'status_change', oldStatus || null, newStatus || null, documentLabel || null, message || null, changedBy, attachmentUrl || null, attachmentName || null, batchId);
     try {
       await sendStatusChangeEmail({
         to: user.email,
@@ -1995,7 +2001,7 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
 // correct even once older read items fall off that 50-row window.
 app.get('/api/notifications/inbox', requireAuth(db), (req, res) => {
   const items = db.prepare(`
-    SELECT id, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name, attachment_url, attachment_name, is_read, created_at
+    SELECT id, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name, attachment_url, attachment_name, batch_id, is_read, created_at
     FROM notifications WHERE recipient_username = ? ORDER BY created_at DESC, id DESC LIMIT 50
   `).all(req.user.username);
   const { unreadCount } = db.prepare(`SELECT COUNT(*) AS unreadCount FROM notifications WHERE recipient_username = ? AND is_read = 0`).get(req.user.username);
@@ -2006,6 +2012,24 @@ app.post('/api/notifications/inbox/:id/read', requireAuth(db), (req, res) => {
   const result = db.prepare(`UPDATE notifications SET is_read = 1 WHERE id = ? AND recipient_username = ?`).run(req.params.id, req.user.username);
   if (result.changes === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ ok: true });
+});
+
+// Who else got this same notification — grouped by batch_id (see the
+// comment on that column in database.js). Requires the requester to
+// actually be one of that batch's own recipients first (looked up by their
+// own id + username), so this can't be used to snoop on a batch_id someone
+// wasn't part of.
+app.get('/api/notifications/inbox/:id/recipients', requireAuth(db), (req, res) => {
+  const row = db.prepare(`SELECT batch_id FROM notifications WHERE id = ? AND recipient_username = ?`).get(req.params.id, req.user.username);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!row.batch_id) return res.json({ recipients: [] }); // pre-existing rows from before batch_id existed
+  const recipients = db.prepare(`
+    SELECT n.recipient_username AS username, u.name AS name
+    FROM notifications n LEFT JOIN users u ON u.username = n.recipient_username
+    WHERE n.batch_id = ?
+    ORDER BY name
+  `).all(row.batch_id);
+  res.json({ recipients });
 });
 
 app.post('/api/notifications/inbox/read-all', requireAuth(db), (req, res) => {
