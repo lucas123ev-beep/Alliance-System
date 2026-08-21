@@ -940,7 +940,6 @@ app.get('/api/quotations/:id/pdf', async (req, res) => {
       currency,
       items,
       totalAmount,
-      notes: q.notes,
     });
 
     const pdf = await renderPdfBuffer(html);

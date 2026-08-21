@@ -19,9 +19,9 @@ const ACQ = require("./acquisitionCompanies");
 //   number, date, client: { name, address, taxId, tel }, priceValidity, currency
 //   items: same normalizeSalesItem()-shaped array the other templates use,
 //     plus imageUrl (set by the caller)
-//   totalAmount, notes
+//   totalAmount
 function renderQuotation(params) {
-  const { number, date, client, priceValidity, currency, items, totalAmount, notes } = params;
+  const { number, date, client, priceValidity, currency, items, totalAmount } = params;
 
   const sectionsHtml = renderItemSections(items, currency, { showImage: true });
 
@@ -49,16 +49,11 @@ function renderQuotation(params) {
 
     <div class="footer-grid" style="margin-top:14px;">
       <div style="flex:1.2; display:flex; flex-direction:column;">
-        <div class="total-box" style="flex:none;">
+        <div class="total-box" style="flex:1;">
           <div class="label">Total Quotation Value</div>
           <div class="value">${escapeHtml(currencyLabel(currency))} ${fmtNumber(totalAmount, 2)}</div>
           <div class="words">${escapeHtml(amountToWords(totalAmount, currency))}</div>
         </div>
-        ${notes ? `
-        <div class="card" style="margin-top:8px; flex:1;">
-          <div class="card-title">${icon("file")}Notes</div>
-          <p style="white-space:pre-wrap;">${escapeHtml(notes)}</p>
-        </div>` : ""}
       </div>
       <div style="flex:1; display:flex; flex-direction:column;">
         ${partyCard("Client", client || {}, "flex:1;")}
