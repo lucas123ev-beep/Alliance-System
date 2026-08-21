@@ -8538,6 +8538,32 @@ export default function App() {
     setUser(null);
   };
 
+  // Permissions are captured once at login time and cached in localStorage
+  // (see handleLogin below) so a page reload doesn't force everyone to log
+  // in again — but that means an account whose permissions changed on the
+  // backend (e.g. canViewProfit newly granted to someone) keeps showing the
+  // STALE set for as long as that browser tab/session stays open, since
+  // nothing ever re-reads them. requireAuth in auth.js already recomputes
+  // permissions fresh on every backend request, so GET /api/me always
+  // reflects the current truth — this just re-fetches it once per app boot
+  // (a real page load/refresh, not every render — see the dependency below)
+  // and syncs the result into state + localStorage, so a refresh is enough
+  // to pick up a permissions change instead of requiring a full logout.
+  useEffect(() => {
+    if (!user || user.mustChangePassword) return;
+    let cancelled = false;
+    api("/me").then(fresh => {
+      if (cancelled || !fresh || !fresh.permissions) return;
+      setUser(prev => {
+        if (!prev) return prev;
+        const updated = { ...prev, permissions: fresh.permissions };
+        try { localStorage.setItem("af_user", JSON.stringify(updated)); } catch { /* private browsing — fine, just won't persist */ }
+        return updated;
+      });
+    }).catch(() => { /* offline, or session already invalid — api() itself handles a 401 */ });
+    return () => { cancelled = true; };
+  }, [user?.username]);
+
   if (!user) {
     return (
       <LanguageContext.Provider value={{ lang, setLang }}>
