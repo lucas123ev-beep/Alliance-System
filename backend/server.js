@@ -11,6 +11,7 @@ const { renderPdfBuffer } = require('./pdf/render');
 const { renderSalesInvoice } = require('./pdf/salesInvoice');
 const { renderPackingList } = require('./pdf/packingList');
 const { renderContract } = require('./pdf/contract');
+const { renderQuotation } = require('./pdf/quotation');
 const ACQUISITION_COMPANIES = require('./pdf/acquisitionCompanies');
 // The company is a trader with two invoicing entities (HK/Ningbo), but only
 // Ningbo is the real Chinese trading company that actually handles
@@ -917,6 +918,41 @@ app.delete('/api/quotations/:id', guardScreen('quotations'), (req, res) => {
   res.json({ success: true });
 });
 
+app.get('/api/quotations/:id/pdf', async (req, res) => {
+  try {
+    const q = db.prepare('SELECT * FROM quotations WHERE id=?').get(req.params.id);
+    if (!q) return res.status(404).json({ error: 'Quotation not found' });
+
+    const currency = q.currency || 'USD';
+    const rawItems = parseJsonSafe(q.items, []);
+    const items = rawItems.map(i => {
+      const normalized = normalizeSalesItem(i, currency);
+      return { ...normalized, imageUrl: firstProductImage(normalized._product) };
+    });
+    const totalAmount = q.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+    const clientRow = findClientByName(q.client);
+
+    const html = renderQuotation({
+      number: q.number,
+      date: q.created_at ? q.created_at.slice(0, 10) : null,
+      client: { name: q.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
+      priceValidity: q.price_validity,
+      currency,
+      items,
+      totalAmount,
+      notes: q.notes,
+    });
+
+    const pdf = await renderPdfBuffer(html);
+    const filename = `Quotation-${safeFilenamePart(q.number)}.pdf`;
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(filename) });
+    res.send(pdf);
+  } catch (err) {
+    console.error('Quotation PDF error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── INSPECTIONS ──────────────────────────────────────────────────────────────
 app.get('/api/inspections', (req, res) => {
   res.json(db.prepare('SELECT * FROM inspections ORDER BY created_at DESC').all());
@@ -1493,6 +1529,21 @@ function orderItemsFor(orderId) {
   // Invoice...), which all need items to print in the order they were
   // actually added, not whatever order SQLite happens to return them in.
   return db.prepare('SELECT * FROM order_items WHERE order_id=? ORDER BY id ASC').all(orderId);
+}
+
+// First registered photo for a product (Quotation PDF's per-item thumbnail —
+// see /api/quotations/:id/pdf below). `media` is a JSON array of either
+// plain URL strings or { url, name } objects (same shape ProductForm's
+// upload UI produces — see handleUpload there); PDFs/videos in that list are
+// skipped since they don't make sense as a thumbnail image.
+function firstProductImage(product) {
+  const arr = parseJsonSafe(product?.media, []);
+  if (!Array.isArray(arr)) return null;
+  for (const entry of arr) {
+    const url = typeof entry === 'string' ? entry : entry?.url;
+    if (url && !/\.(pdf|mp4|mov|avi|webm)$/i.test(url)) return url;
+  }
+  return null;
 }
 
 app.get('/api/proformas/:id/pdf', async (req, res) => {

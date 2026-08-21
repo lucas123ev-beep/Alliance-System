@@ -136,7 +136,25 @@ function renderHeader(acq) {
   `;
 }
 
-function wrapDocument({ title, acq, body, extraCss = "" }) {
+// Quotation-stage documents predate any Order, so there's no single
+// "acquisition company" decided yet (that choice — HK or Ningbo entity — only
+// gets made once an Order exists; see acquisition_company throughout
+// server.js). Rather than picking one arbitrarily, this shows both trading
+// entities' names stacked in the header's top-right corner, with no address/
+// phone/e-mail underneath (a Quotation isn't the document either company's
+// contact/bank details would matter on).
+function renderMultiCompanyHeader(names) {
+  return `
+    <div class="header">
+      <img class="logo" src="${LOGO}" alt="Alliance Flow" />
+      <div class="company">
+        ${names.map(n => `<div class="company-name">${escapeHtml(n)}</div>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function wrapDocument({ title, acq, body, extraCss = "", header }) {
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -144,11 +162,11 @@ function wrapDocument({ title, acq, body, extraCss = "" }) {
 <style>${baseCss()}${extraCss}</style>
 </head>
 <body>
-  ${renderHeader(acq)}
+  ${header || renderHeader(acq)}
   <div class="title-bar">${escapeHtml(title)}</div>
   ${body}
 </body>
 </html>`;
 }
 
-module.exports = { baseCss, renderHeader, wrapDocument, icon, ICONS, NAVY };
+module.exports = { baseCss, renderHeader, renderMultiCompanyHeader, wrapDocument, icon, ICONS, NAVY };

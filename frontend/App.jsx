@@ -1526,11 +1526,23 @@ const inputStyle = {
   width: "100%", boxSizing: "border-box", fontFamily: "inherit",
 };
 
-function Input({ style, placeholder, ...props }) {
+function Input({ style, placeholder, onWheel, type, ...props }) {
   // Auto-translates plain-string placeholders via the shared dictionary —
   // same safe fallback-to-English pattern as Field/Btn/Table/Select.
   const t = useT();
-  return <input style={{ ...inputStyle, ...style }} placeholder={typeof placeholder === "string" ? t(placeholder) : placeholder} {...props} />;
+  // A focused <input type="number"> silently changes its value on mouse-
+  // wheel scroll — a native browser quirk, not anything this app opted
+  // into. Bit someone scrolling past the Margin % field on the product
+  // form (mid-scroll of the whole page) and having it change value under
+  // them without any click. Blurring on wheel is the standard fix — once
+  // the field isn't focused, the browser has nothing to apply the scroll
+  // delta to, and normal page scrolling continues working right past it.
+  // Only applies to type="number" (the only type this quirk affects);
+  // anything else keeps whatever onWheel (if any) was explicitly passed.
+  const handleWheel = type === "number"
+    ? (e) => { e.target.blur(); onWheel?.(e); }
+    : onWheel;
+  return <input type={type} style={{ ...inputStyle, ...style }} placeholder={typeof placeholder === "string" ? t(placeholder) : placeholder} onWheel={handleWheel} {...props} />;
 }
 // `style` is destructured separately and merged AFTER the base inputStyle so
 // that callers passing a custom style (e.g. a narrower width for an inline
@@ -5226,6 +5238,8 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
         </Field>
 
         <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+          {f.id && <DocButtons url={authUrl(`${API}/quotations/${f.id}/pdf`)} filename={`Quotation-${f.number}.pdf`}
+            entityType="quotations" recordLabel={f.number} label="📄 Download PDF" small={false} />}
           <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
           <Btn onClick={async () => {
             // Normalize any BR-formatted text ("1.000,00") typed into the
@@ -5365,24 +5379,6 @@ console.log('quotations set:', quotations?.length);
     return suppliers.length > 0 ? suppliers.join(", ") : "—";
   } catch { return "—"; }
 }},
-          { label: "Qty", sortValue: r => r.quantity, render: r => `${r.quantity || "—"} ${r.unit || ""}` },
-          { label: "Target Price", sortValue: r => {
-  try {
-    const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
-    const withTarget = items.filter(i => i.target_price !== "" && i.target_price != null);
-    return withTarget.length > 0 ? parseFloat(withTarget[0].target_price) : null;
-  } catch { return null; }
-}, render: r => {
-  try {
-    const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
-    const withTarget = items.filter(i => i.target_price !== "" && i.target_price != null);
-    if (withTarget.length === 0) return "—";
-    // Target Price is always RMB (negotiation reference vs. the supplier),
-    // regardless of what currency the rest of the quotation is priced in.
-    const label = i => `${fmt(parseFloat(i.target_price), "CNY")}${targetPriceUnitSuffix(i)}`;
-    return withTarget.length > 1 ? `${label(withTarget[0])} +${withTarget.length - 1}` : label(withTarget[0]);
-  } catch { return "—"; }
-}},
           { label: "Total", sortValue: r => {
   try {
     const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
@@ -5432,6 +5428,8 @@ console.log('quotations set:', quotations?.length);
         })}>
         📋 {hasProforma ? t("Proforma ✓") : t("Proforma")}
       </Btn>
+      <DocButtons url={authUrl(`${API}/quotations/${r.id}/pdf`)} filename={`Quotation-${r.number}.pdf`}
+        entityType="quotations" recordLabel={r.number} label="📄 PDF" />
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/quotations/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
       <LastModifiedBy name={r.updated_by} />

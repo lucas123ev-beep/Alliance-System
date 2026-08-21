@@ -1,5 +1,6 @@
 const { wrapDocument, icon } = require("./layout");
 const { escapeHtml, fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLabel } = require("./helpers");
+const { renderItemSections } = require("./itemSections");
 
 // production_days/delivery_days are usually a plain day-count ("28"), auto-
 // wrapped into "28 days after TT payment." — but some deals need a full
@@ -88,146 +89,13 @@ function renderSalesInvoice(params) {
     partyBlocksHtml = partyCard("Importer / Consignee / Notify Party", importer, "flex:1;");
   }
 
-  // Textile/DTF Film rolls are quoted and measured by the meter, so they get
-  // the original Total Length column. Everything else (machines, chemicals,
-  // accessories...) is quoted per drum/crate/unit, so they get a Quantity
-  // column (e.g. "55 Steel Drums / Barrels") and a Total Weight column
-  // instead — grouped into their own section with its own header, since
-  // mixing both meanings into one "Total Length" column was misleading.
+  // Category-aware item table(s) — Textile/DTF Film (Total Length column) vs
+  // everything else, further split per category when more than one is mixed
+  // in. Shared with the Quotation PDF — see itemSections.js for the actual
+  // per-category logic/peculiarities (ton-priced Chemical, textile meterage,
+  // units_per_package...).
   const textileItems = items.filter(i => i.isTextile);
-  const otherItems = items.filter(i => !i.isTextile);
-
-  // Non-Textile items still get split into their own group per category
-  // (e.g. Chemical vs Machine vs Other) when an order mixes more than one —
-  // otherwise a Chemical item and an unrelated general-goods item (like LED
-  // lights) would land in the same table with no visual separation, which
-  // reads as confusing/ambiguous on a client-facing document. When every
-  // non-Textile item shares one category, this collapses back to a single
-  // plain table exactly like before (no redundant label for the common
-  // single-category case).
-  const otherGroups = [];
-  otherItems.forEach(item => {
-    const key = item.category || "Other";
-    let group = otherGroups.find(g => g.key === key);
-    if (!group) { group = { key, items: [] }; otherGroups.push(group); }
-    group.items.push(item);
-  });
-  const separateOtherGroups = otherGroups.length > 1;
-
-  // Product name and description are two separate columns (matching the
-  // client's own reference documents), not name-plus-paragraph stacked in
-  // one cell — NCM and any extra facts (CAS number, etc.) print as their
-  // own plain lines under the description, same as the reference documents
-  // (flush-left, no bullet marker/indent — see .desc-line in layout.js).
-  const nameCell = item => `<td class="center"><strong>${escapeHtml(item.description)}</strong></td>`;
-  const descCell = item => `
-    <td>
-      ${item.descriptionText ? `<p class="desc-text">${escapeHtml(item.descriptionText)}</p>` : ""}
-      ${(item.bullets || []).map(b => `<p class="desc-line">${escapeHtml(b)}</p>`).join("")}
-      ${item.ncm ? `<p class="desc-line"><strong>NCM: ${escapeHtml(item.ncm)}</strong></p>` : ""}
-    </td>
-  `;
-
-  // Width and Meters/Roll dropped from the table (the client found the row
-  // itself too tall) — Width is already stated in the description paragraph
-  // (e.g. "LARGURA DE 1,37 MT..."), so it was a duplicate column stealing
-  // room from Description; Meters/Roll wasn't, so it's just gone rather
-  // than folded in. Weight (gramatura) stays as its own quick-glance column.
-  const textileRows = textileItems.map(item => `
-    <tr>
-      ${nameCell(item)}
-      ${descCell(item)}
-      <td class="center">${escapeHtml(item.color || "—")}</td>
-      <td class="center">${escapeHtml(item.weightSpec || "—")}</td>
-      <td class="num">${fmtNumber(item.totalLength, 3)}</td>
-      <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
-      <td class="num">${fmtMoney(item.total, currency)}</td>
-    </tr>
-  `).join("");
-
-  // Total Weight only means something for Chemical (liter-priced — ton-
-  // priced items already show their weight as the Quantity itself, "48 t
-  // (≈ 240 Drums)", so repeating it here would be redundant). Every OTHER
-  // category — Machine, Accessory, anything counted in Units/Pairs rather
-  // than priced by weight — leaves this column fully empty instead of
-  // printing a weight nobody quoted or cares about on this document.
-  const otherRowsFor = groupItems => groupItems.map(item => `
-    <tr>
-      ${nameCell(item)}
-      ${descCell(item)}
-      <td class="center">${escapeHtml(item.color || "—")}</td>
-      <td class="center">${escapeHtml(item.priceUnitLabel || item.width || "—")}</td>
-      <td class="center">${item.quantityLabel
-        ? escapeHtml(item.quantityLabel)
-        : item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
-      <td class="num">${(item.category === "Chemical" && item.priceBasis !== "ton")
-        ? (item.totalWeight ? `${fmtNumber(item.totalWeight, 1)} kg` : "—")
-        : ""}</td>
-      <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
-      <td class="num">${fmtMoney(item.total, currency)}</td>
-    </tr>
-  `).join("");
-
-  // Each category group renders as its own clearly separated table block —
-  // Textile/DTF Film with the Total Length column, everything else with
-  // Quantity + Total Weight instead.
-  // Column widths are all explicit percentages (not left to auto-distribute)
-  // so Description can take a noticeably wider share — the short columns
-  // (Color, Unit, Weight...) hold single short values/numbers and don't
-  // need much room, so that space is better spent letting more words fit
-  // per description line before wrapping. Doesn't touch the page size
-  // itself (still plain A4 from render.js) — just how the row's own width
-  // is divided up.
-  let sectionsHtml = "";
-
-  if (textileItems.length > 0) {
-    sectionsHtml += `
-    <table class="items-table" style="margin-top:4px;">
-      <thead>
-        <tr>
-          <th style="width:11%">Product</th>
-          <th style="width:42%">Description</th>
-          <th style="width:8%">Color</th>
-          <th style="width:9%">Weight</th>
-          <th style="width:10%">Total Length</th>
-          <th style="width:9%">Unit Price</th>
-          <th style="width:11%">Total Amount</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${textileRows}
-      </tbody>
-    </table>
-  `;
-  }
-
-  otherGroups.forEach((group, idx) => {
-    // Later groups (2nd category onward) get extra top spacing only — no
-    // line, no category text. Just enough of a gap to read as a new group,
-    // since the client doesn't want their own internal category labels
-    // (e.g. "Accessory") showing up on a client-facing document, and even
-    // a plain rule read as too heavy/noisy.
-    const isNewSection = separateOtherGroups && idx > 0;
-    sectionsHtml += `
-    <table class="items-table" style="margin-top:${isNewSection ? "12px" : "4px"};">
-      <thead>
-        <tr>
-          <th style="width:12%">Product</th>
-          <th style="width:32%">Description</th>
-          <th style="width:8%">Color</th>
-          <th style="width:9%">Unit</th>
-          <th style="width:10%">Quantity</th>
-          <th style="width:10%">Total Weight</th>
-          <th style="width:9%">Unit Price</th>
-          <th style="width:10%">Total Amount</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${otherRowsFor(group.items)}
-      </tbody>
-    </table>
-  `;
-  });
+  let sectionsHtml = renderItemSections(items, currency);
 
   // Total Length (Textile/DTF Film) or Total Quantity (everything else) now
   // shares the same row as Grand Total Amount instead of living in its own
@@ -331,4 +199,4 @@ function renderSalesInvoice(params) {
   return wrapDocument({ title, acq, body });
 }
 
-module.exports = { renderSalesInvoice };
+module.exports = { renderSalesInvoice, partyCard };
