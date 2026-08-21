@@ -23,6 +23,11 @@ const COLUMNS = [
   { key: "freightCost", header: "Freight", width: 13, type: "money" },
   { key: "loadingCost", header: "Loading", width: 13, type: "money" },
   { key: "totalCost", header: "Total Cost", width: 15, type: "money" },
+  // Recoverable input-tax credit on the product leg (see
+  // computeOrderProfitability in server.js) — already folded into Profit
+  // below, shown separately here too so Profit doesn't look like it's
+  // pulling a number out of nowhere on an order whose Sale is under Cost.
+  { key: "vatCredit", header: "VAT Credit", width: 13, type: "money" },
   { key: "profit", header: "Profit", width: 15, type: "money" },
   { key: "marginPct", header: "Margin %", width: 12, type: "decimal" },
 ];
@@ -45,6 +50,7 @@ function buildProfitReportWorkbook({ generatedAt, currency, orders }) {
     freightCost: toNumber(o.freightCost) || 0,
     loadingCost: toNumber(o.loadingCost) || 0,
     totalCost: toNumber(o.totalCost) || 0,
+    vatCredit: toNumber(o.vatCreditTotal) || 0,
     profit: toNumber(o.profit) || 0,
     marginPct: o.marginPct == null ? null : toNumber(o.marginPct.toFixed(2)),
   }));
@@ -55,7 +61,7 @@ function buildProfitReportWorkbook({ generatedAt, currency, orders }) {
     subtitle: `Generated ${generatedAt} — figures in ${currency}, each order converted at the exchange rate on its own completion date`,
     columns: COLUMNS,
     rows,
-    totals: ["sale", "productCost", "agentCost", "freightCost", "loadingCost", "totalCost", "profit"],
+    totals: ["sale", "productCost", "agentCost", "freightCost", "loadingCost", "totalCost", "vatCredit", "profit"],
   });
 
   return workbook;

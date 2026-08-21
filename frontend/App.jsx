@@ -521,6 +521,7 @@ const TRANSLATIONS = {
     "All figures in": "所有金额单位为",
     "Real Profit": "实际利润",
     "Margin": "利润率",
+    "VAT Credit": "增值税抵扣",
     "No completed orders yet.": "暂无已完成的订单。",
     "Select all": "全选",
     "All Completed": "全部已完成",
@@ -5989,6 +5990,12 @@ function OrderProfitModal({ order, onClose }) {
             <StatCard label="Agent Cost" value={fmt(data.agentCost, data.currency)} color="#94a3b8" />
             <StatCard label="Freight Cost" value={fmt(data.freightCost, data.currency)} color="#94a3b8" />
             <StatCard label="Loading Cost" value={fmt(data.loadingCost, data.currency)} color="#94a3b8" />
+            {/* Recoverable input-tax credit on the registered product cost —
+                same convention as the Real Margin box on the Product form
+                (Real Margin = ((Sale-Cost)/Cost)*100 + VAT%). Shown as its
+                own line so Real Profit below doesn't look like it's pulling
+                a number out of nowhere when Sale alone is under Cost. */}
+            <StatCard label="VAT Credit" value={fmt(data.vatCreditTotal, data.currency)} color="#a78bfa" />
           </div>
           <div style={{
             marginTop: "20px", background: "#1e293b",

@@ -1615,22 +1615,40 @@ async function computeOrderProfitability(order, baseCurrencyOverride) {
     return (amt / rates[from]) * rates[base];
   };
 
+  // VAT registered on the product (products.vat_pct) is treated as
+  // recoverable input-tax credit — the same convention the Real Margin box
+  // on the Product form already uses (Real Margin % = ((Sale-Cost)/Cost)*100
+  // + VAT%, see ProductForm's handleSalePctChange). Looked up live from
+  // products rather than snapshotted onto the order item, same as every
+  // other product-derived figure here — order_items doesn't carry its own
+  // vat_pct column, so this is the one source of truth for it.
+  const vatPctForProduct = db.prepare('SELECT vat_pct FROM products WHERE id=?');
+
   const rawItems = orderItemsFor(order.id);
-  let saleTotal = 0, productCostTotal = 0;
+  let saleTotal = 0, productCostTotal = 0, vatCreditTotal = 0;
   const items = rawItems.map(i => {
     const qty = parseFloat(i.quantity) || 0;
     const lineSale = parseFloat(i.total) || ((parseFloat(i.unit_price) || 0) * qty);
     const lineCost = (parseFloat(i.cost_price) || 0) * qty;
     const saleBase = toBase(lineSale, i.currency);
     const costBase = toBase(lineCost, i.cost_currency);
+    const vatPct = i.product_id ? (parseFloat(vatPctForProduct.get(i.product_id)?.vat_pct) || 0) : 0;
+    // Same base as the Product form: VAT% is a percentage of COST (not
+    // sale), added straight onto profit rather than compounded — matches
+    // Real Margin = grossPct + vatPct exactly (see the worked example in
+    // ProductForm's help text).
+    const vatCredit = (vatPct / 100) * costBase;
     saleTotal += saleBase;
     productCostTotal += costBase;
+    vatCreditTotal += vatCredit;
     return {
       product_name: i.product_name || '—',
       quantity: qty,
       unit: i.unit || '',
       sale: saleBase,
       cost: costBase,
+      vatPct,
+      vatCredit,
     };
   });
 
@@ -1647,9 +1665,14 @@ async function computeOrderProfitability(order, baseCurrencyOverride) {
 
   const shippingCost = agentCost + freightCost + loadingCost;
   const totalCost = productCostTotal + shippingCost;
-  const profit = saleTotal - totalCost;
+  // VAT credit only applies to the product leg (it's input tax recovered on
+  // the goods themselves, not on Agent/Freight/Loading), so it's added once
+  // here on top of the raw Sale-minus-Cost result rather than folded into
+  // totalCost — same effect the Product form gets by adding vatPct straight
+  // onto the gross % rather than changing what Cost itself means.
+  const profit = saleTotal - totalCost + vatCreditTotal;
   // Measured against cost, same convention as the Real Margin box on the
-  // Product form ((Sale - Cost) / Cost) — not against sale price.
+  // Product form ((Sale - Cost) / Cost + VAT%) — not against sale price.
   const marginPct = totalCost > 0 ? (profit / totalCost) * 100 : null;
 
   return {
@@ -1666,6 +1689,7 @@ async function computeOrderProfitability(order, baseCurrencyOverride) {
     loadingCost,
     shippingCost,
     totalCost,
+    vatCreditTotal,
     profit,
     marginPct,
   };
