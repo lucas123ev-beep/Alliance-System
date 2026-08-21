@@ -217,6 +217,54 @@ app.get('/api/orders', (req, res) => {
   res.json(orders);
 });
 
+// Registered ABOVE the generic /api/orders/:id route just below — Express
+// matches routes in registration order, not by specificity, so if this sat
+// after /api/orders/:id (as it originally did), a request for
+// "/api/orders/profitability-report" would match :id="profitability-report"
+// first and 404 with "Order not found" before ever reaching this handler.
+// requireProfitAccess/computeOrderProfitability/buildProfitReportWorkbook
+// are all `function`/top-level `const` declarations elsewhere in this file,
+// which are fully hoisted/initialized by the time any request actually
+// comes in, so defining this route this early (before their own textual
+// definitions further down) is safe.
+//
+// ?all=1 -> every Completed order. Otherwise ?ids=1,2,3 -> exactly those
+// orders (any status — a privileged user picking specific orders by hand is
+// trusted to know why), matching the "one, some, or all" report Lucas asked
+// for. Always forces the USD base (see computeOrderProfitability) so a
+// report spanning orders in different currencies still has a meaningful
+// grand total row.
+app.get('/api/orders/profitability-report', requireProfitAccess, async (req, res) => {
+  try {
+    let orderRows;
+    if (req.query.all === '1') {
+      orderRows = db.prepare(`SELECT * FROM orders WHERE status='Completed' ORDER BY order_number ASC`).all();
+    } else {
+      const ids = String(req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean);
+      if (ids.length === 0) return res.status(400).json({ error: 'No orders selected' });
+      orderRows = ids.map(id => db.prepare('SELECT * FROM orders WHERE id=?').get(id)).filter(Boolean);
+    }
+    if (orderRows.length === 0) return res.status(404).json({ error: 'No orders found' });
+
+    const results = [];
+    for (const order of orderRows) {
+      results.push(await computeOrderProfitability(order, 'USD'));
+    }
+
+    const workbook = buildProfitReportWorkbook({ generatedAt: new Date().toISOString().slice(0, 10), currency: 'USD', orders: results });
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `AllianceFlow-Profitability-Report-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': contentDisposition(filename),
+    });
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('Profitability report error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/orders/:id', (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -1712,43 +1760,6 @@ app.get('/api/orders/:id/profitability', requireProfitAccess, async (req, res) =
     res.json(await computeOrderProfitability(order));
   } catch (err) {
     console.error('Order profitability error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ?all=1 -> every Completed order. Otherwise ?ids=1,2,3 -> exactly those
-// orders (any status — a privileged user picking specific orders by hand is
-// trusted to know why), matching the "one, some, or all" report Lucas asked
-// for. Always forces the USD base (see computeOrderProfitability) so a
-// report spanning orders in different currencies still has a meaningful
-// grand total row.
-app.get('/api/orders/profitability-report', requireProfitAccess, async (req, res) => {
-  try {
-    let orderRows;
-    if (req.query.all === '1') {
-      orderRows = db.prepare(`SELECT * FROM orders WHERE status='Completed' ORDER BY order_number ASC`).all();
-    } else {
-      const ids = String(req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean);
-      if (ids.length === 0) return res.status(400).json({ error: 'No orders selected' });
-      orderRows = ids.map(id => db.prepare('SELECT * FROM orders WHERE id=?').get(id)).filter(Boolean);
-    }
-    if (orderRows.length === 0) return res.status(404).json({ error: 'No orders found' });
-
-    const results = [];
-    for (const order of orderRows) {
-      results.push(await computeOrderProfitability(order, 'USD'));
-    }
-
-    const workbook = buildProfitReportWorkbook({ generatedAt: new Date().toISOString().slice(0, 10), currency: 'USD', orders: results });
-    const buffer = await workbook.xlsx.writeBuffer();
-    const filename = `AllianceFlow-Profitability-Report-${new Date().toISOString().slice(0, 10)}.xlsx`;
-    res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': contentDisposition(filename),
-    });
-    res.send(Buffer.from(buffer));
-  } catch (err) {
-    console.error('Profitability report error:', err);
     res.status(500).json({ error: err.message });
   }
 });
