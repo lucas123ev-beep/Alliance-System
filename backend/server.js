@@ -12,6 +12,7 @@ const { renderSalesInvoice } = require('./pdf/salesInvoice');
 const { renderPackingList } = require('./pdf/packingList');
 const { renderContract } = require('./pdf/contract');
 const { renderQuotation } = require('./pdf/quotation');
+const { buildProfitReportWorkbook } = require('./xlsx/profitReport');
 const ACQUISITION_COMPANIES = require('./pdf/acquisitionCompanies');
 // The company is a trader with two invoicing entities (HK/Ningbo), but only
 // Ningbo is the real Chinese trading company that actually handles
@@ -323,7 +324,13 @@ app.patch('/api/orders/:id/status', (req, res) => {
   const { status } = req.body;
   const validStatuses = ['Pending', 'In Production', 'Inspection', 'Shipment', 'Completed'];
   if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' });
-  db.prepare(`UPDATE orders SET status=?, updated_by=?, updated_at=datetime('now') WHERE id=?`)
+  // completed_at drives which day's exchange rate the real-profit
+  // calculation converts costs at (see computeOrderProfitability) — stamped
+  // the moment status actually becomes Completed, and cleared if it's ever
+  // moved back off Completed (e.g. a mistake reopened), so it never keeps
+  // reporting a stale "completed" date for an order that no longer is.
+  const completedAt = status === 'Completed' ? "datetime('now')" : 'NULL';
+  db.prepare(`UPDATE orders SET status=?, updated_by=?, updated_at=datetime('now'), completed_at=${completedAt} WHERE id=?`)
     .run(status, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id));
 });
@@ -469,6 +476,46 @@ app.get('/api/exchange-rates', async (req, res) => {
     res.status(502).json({ error: 'Could not fetch exchange rates', message: err.message });
   }
 });
+
+// Historical counterpart to getFxRates() — used by computeOrderProfitability
+// so an order's real profit is converted at the exchange rate that was
+// actually in effect the day the deal closed (order.completed_at), not
+// whatever the rate happens to be on the day someone opens the report. A
+// dated rate never changes once published, so each one is cached forever
+// (in-memory per boot + persisted to app_settings keyed by date) instead of
+// the 24h freshness check getFxRates() does for "today".
+const fxHistoryCache = {};
+async function getFxRatesForDate(dateStr) {
+  const today = new Date().toISOString().slice(0, 10);
+  // No completion date yet (order not Completed) or the date is today/future
+  // (Frankfurter has no rate for a day that hasn't closed) — today's live
+  // rate is the correct answer here anyway.
+  if (!dateStr || dateStr >= today) return getFxRates();
+  if (fxHistoryCache[dateStr]) return { rates: fxHistoryCache[dateStr], date: dateStr, stale: false };
+
+  const settingsKey = `fx_rates_${dateStr}`;
+  const saved = db.prepare(`SELECT value FROM app_settings WHERE key=?`).get(settingsKey);
+  if (saved) {
+    const rates = JSON.parse(saved.value);
+    fxHistoryCache[dateStr] = rates;
+    return { rates, date: dateStr, stale: false };
+  }
+  try {
+    const resp = await fetch(`https://api.frankfurter.app/${dateStr}?from=USD&to=${FX_CURRENCIES.join(',')}`);
+    if (!resp.ok) throw new Error(`Frankfurter responded ${resp.status}`);
+    const data = await resp.json();
+    const rates = { USD: 1, ...data.rates };
+    fxHistoryCache[dateStr] = rates;
+    db.prepare(`
+      INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')
+    `).run(settingsKey, JSON.stringify(rates));
+    return { rates, date: dateStr, stale: false };
+  } catch (err) {
+    console.error(`Historical exchange rate fetch failed for ${dateStr}, falling back to current rate:`, err.message);
+    return getFxRates();
+  }
+}
 
 app.delete('/api/products/:id', guardScreen('products'), (req, res) => {
   db.prepare('DELETE FROM products WHERE id=?').run(req.params.id);
@@ -835,18 +882,20 @@ app.post('/api/packing-lists', guardScreen('packing-lists'), (req, res) => {
     // Freight forwarding info — informational only, never printed on the
     // Packing List PDF itself (renderPackingList/packingList.js never
     // receives these), only ever surfaced on the Order's own report.
-    freight_agent, agent_cost, freight_cost, loading_cost } = req.body;
+    freight_agent, agent_cost, freight_cost, loading_cost,
+    agent_currency, freight_currency, loading_currency } = req.body;
   try {
     const result = db.prepare(`
       INSERT INTO packing_lists (order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
         port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
         total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date,
-        freight_agent, agent_cost, freight_cost, loading_cost, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        freight_agent, agent_cost, freight_cost, loading_cost, agent_currency, freight_currency, loading_currency, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, number, date, way_of_shipment || 'By Sea', country_of_origin || 'China', country_of_acquisition || '',
       port_of_origin || '', port_of_destination || '', incoterm || '', manufacturer || '', manufacturer_address || '', items_json || null,
       total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null,
-      freight_agent || '', agent_cost || null, freight_cost || null, loading_cost || null, actorName(req));
+      freight_agent || '', agent_cost || null, freight_cost || null, loading_cost || null,
+      agent_currency || 'USD', freight_currency || 'USD', loading_currency || 'USD', actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -857,17 +906,19 @@ app.put('/api/packing-lists/:id', guardScreen('packing-lists'), (req, res) => {
   const { order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
     port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
     total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date,
-    freight_agent, agent_cost, freight_cost, loading_cost } = req.body;
+    freight_agent, agent_cost, freight_cost, loading_cost,
+    agent_currency, freight_currency, loading_currency } = req.body;
   db.prepare(`
     UPDATE packing_lists SET order_id=?, number=?, date=?, way_of_shipment=?, country_of_origin=?, country_of_acquisition=?,
       port_of_origin=?, port_of_destination=?, incoterm=?, manufacturer=?, manufacturer_address=?, items_json=?,
       total_length=?, total_roll=?, total_gross_weight=?, total_net_weight=?, total_cbm=?, status=?, notes=?, containers_json=?, loading_date=?,
-      freight_agent=?, agent_cost=?, freight_cost=?, loading_cost=?, updated_by=?
+      freight_agent=?, agent_cost=?, freight_cost=?, loading_cost=?, agent_currency=?, freight_currency=?, loading_currency=?, updated_by=?
     WHERE id=?
   `).run(order_id || null, number, date, way_of_shipment || 'By Sea', country_of_origin || 'China', country_of_acquisition || '',
     port_of_origin || '', port_of_destination || '', incoterm || '', manufacturer || '', manufacturer_address || '', items_json || null,
     total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null,
-    freight_agent || '', agent_cost || null, freight_cost || null, loading_cost || null, actorName(req), req.params.id);
+    freight_agent || '', agent_cost || null, freight_cost || null, loading_cost || null,
+    agent_currency || 'USD', freight_currency || 'USD', loading_currency || 'USD', actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(req.params.id));
 });
 
@@ -1529,6 +1580,154 @@ function orderItemsFor(orderId) {
   // actually added, not whatever order SQLite happens to return them in.
   return db.prepare('SELECT * FROM order_items WHERE order_id=? ORDER BY id ASC').all(orderId);
 }
+
+// Real profitability for an Order — sale value vs. registered product cost
+// (order_items.cost_price × quantity, the same per-unit rate basis as
+// unit_price/quantity — see applyProductToItem on the frontend) plus the
+// Agent/Freight/Loading costs entered on that order's Packing List(s) (see
+// the per-cost currency pickers on PackingListForm). Everything gets
+// converted into one base currency via the FX rate in effect on the day the
+// order was actually completed (order.completed_at, see getFxRatesForDate)
+// rather than today's rate — the deal's real currency exposure was locked
+// in when it closed, so that's the rate that reflects the real profit.
+// Orders with no completed_at yet (not Completed, or completed before this
+// column existed and the one-time backfill in database.js didn't find a
+// usable fallback date either) fall back to today's live rate. Defaults to
+// the order's own currency as the base, but the multi-order report below
+// forces USD so orders placed in different currencies can be summed into
+// one meaningful grand total.
+// Restricted to canViewProfit accounts (see permissions.js and
+// requireProfitAccess below) — nobody else can reach either route this
+// feeds.
+async function computeOrderProfitability(order, baseCurrencyOverride) {
+  const { rates } = await getFxRatesForDate(order.completed_at ? order.completed_at.slice(0, 10) : null);
+  const base = baseCurrencyOverride || order.currency || 'USD';
+  const toBase = (amount, cur) => {
+    const amt = parseFloat(amount) || 0;
+    if (!amt) return 0;
+    const from = cur || 'USD';
+    if (from === base) return amt;
+    // Can't convert (unsupported/missing currency) — treat as already in
+    // the base currency rather than silently dropping it from the total;
+    // this only happens for currencies outside FX_CURRENCIES, which the
+    // app's own currency pickers don't offer anyway.
+    if (!rates[from] || !rates[base]) return amt;
+    return (amt / rates[from]) * rates[base];
+  };
+
+  const rawItems = orderItemsFor(order.id);
+  let saleTotal = 0, productCostTotal = 0;
+  const items = rawItems.map(i => {
+    const qty = parseFloat(i.quantity) || 0;
+    const lineSale = parseFloat(i.total) || ((parseFloat(i.unit_price) || 0) * qty);
+    const lineCost = (parseFloat(i.cost_price) || 0) * qty;
+    const saleBase = toBase(lineSale, i.currency);
+    const costBase = toBase(lineCost, i.cost_currency);
+    saleTotal += saleBase;
+    productCostTotal += costBase;
+    return {
+      product_name: i.product_name || '—',
+      quantity: qty,
+      unit: i.unit || '',
+      sale: saleBase,
+      cost: costBase,
+    };
+  });
+
+  // Summed across every Packing List tied to this order — normally just
+  // one, but a multi-shipment order could have more than one, and none
+  // should get silently dropped.
+  const packingLists = db.prepare('SELECT * FROM packing_lists WHERE order_id=?').all(order.id);
+  let agentCost = 0, freightCost = 0, loadingCost = 0;
+  packingLists.forEach(pl => {
+    agentCost += toBase(pl.agent_cost, pl.agent_currency);
+    freightCost += toBase(pl.freight_cost, pl.freight_currency);
+    loadingCost += toBase(pl.loading_cost, pl.loading_currency);
+  });
+
+  const shippingCost = agentCost + freightCost + loadingCost;
+  const totalCost = productCostTotal + shippingCost;
+  const profit = saleTotal - totalCost;
+  // Measured against cost, same convention as the Real Margin box on the
+  // Product form ((Sale - Cost) / Cost) — not against sale price.
+  const marginPct = totalCost > 0 ? (profit / totalCost) * 100 : null;
+
+  return {
+    orderId: order.id,
+    orderNumber: order.order_number,
+    client: order.client,
+    status: order.status,
+    currency: base,
+    items,
+    saleTotal,
+    productCostTotal,
+    agentCost,
+    freightCost,
+    loadingCost,
+    shippingCost,
+    totalCost,
+    profit,
+    marginPct,
+  };
+}
+
+// Narrower than any existing guardScreen() check — this isn't tied to a
+// sidebar screen at all, just the four accounts with canViewProfit set in
+// permissions.js.
+function requireProfitAccess(req, res, next) {
+  if (!req.user || !req.user.permissions || !req.user.permissions.canViewProfit) {
+    return res.status(403).json({ error: 'Not authorized' });
+  }
+  next();
+}
+
+app.get('/api/orders/:id/profitability', requireProfitAccess, async (req, res) => {
+  try {
+    const order = db.prepare('SELECT * FROM orders WHERE id=?').get(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    res.json(await computeOrderProfitability(order));
+  } catch (err) {
+    console.error('Order profitability error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ?all=1 -> every Completed order. Otherwise ?ids=1,2,3 -> exactly those
+// orders (any status — a privileged user picking specific orders by hand is
+// trusted to know why), matching the "one, some, or all" report Lucas asked
+// for. Always forces the USD base (see computeOrderProfitability) so a
+// report spanning orders in different currencies still has a meaningful
+// grand total row.
+app.get('/api/orders/profitability-report', requireProfitAccess, async (req, res) => {
+  try {
+    let orderRows;
+    if (req.query.all === '1') {
+      orderRows = db.prepare(`SELECT * FROM orders WHERE status='Completed' ORDER BY order_number ASC`).all();
+    } else {
+      const ids = String(req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean);
+      if (ids.length === 0) return res.status(400).json({ error: 'No orders selected' });
+      orderRows = ids.map(id => db.prepare('SELECT * FROM orders WHERE id=?').get(id)).filter(Boolean);
+    }
+    if (orderRows.length === 0) return res.status(404).json({ error: 'No orders found' });
+
+    const results = [];
+    for (const order of orderRows) {
+      results.push(await computeOrderProfitability(order, 'USD'));
+    }
+
+    const workbook = buildProfitReportWorkbook({ generatedAt: new Date().toISOString().slice(0, 10), currency: 'USD', orders: results });
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `AllianceFlow-Profitability-Report-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': contentDisposition(filename),
+    });
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('Profitability report error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // First registered photo for a product (Quotation PDF's per-item thumbnail —
 // see /api/quotations/:id/pdf below). `media` is a JSON array of either

@@ -23,6 +23,14 @@
 // for their actual job, and hiding both numbers would break that. Only
 // the derived "how much profit we make" callout is hidden, matching
 // exactly what was asked for.
+//
+// canViewProfit: the opposite kind of flag (grant, not hide) — true only
+// for the four people who should see an Order's real profitability (sale
+// vs. product cost + agent/freight/loading cost from its Packing List(s),
+// once the order is Completed) and be able to run the profitability
+// report across orders. Missing/false for everyone else, including
+// accounts with otherwise-full access like yukin — this is a distinct,
+// narrower grant, not tied to hideMargin/hideCommercialStatus.
 const ALL_SCREENS = [
   "dashboard", "quotations", "proformas", "orders", "commercial",
   "packing-lists", "contracts", "inspections", "fin-suppliers", "samples",
@@ -30,10 +38,10 @@ const ALL_SCREENS = [
 ];
 
 const PERMISSIONS = {
-  lucas:     { screens: ALL_SCREENS, hideCommercialStatus: false, hideMargin: false },
-  martiello: { screens: ALL_SCREENS, hideCommercialStatus: false, hideMargin: false },
-  gabriel:   { screens: ALL_SCREENS, hideCommercialStatus: false, hideMargin: false },
-  juliana:   { screens: ALL_SCREENS, hideCommercialStatus: false, hideMargin: false },
+  lucas:     { screens: ALL_SCREENS, hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
+  martiello: { screens: ALL_SCREENS, hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
+  gabriel:   { screens: ALL_SCREENS, hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
+  juliana:   { screens: ALL_SCREENS, hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
 
   // Full access, but never sees Commercial Invoice status (screen or
   // Dashboard card) or the Product Real Margin indicator.

@@ -515,6 +515,16 @@ const TRANSLATIONS = {
     "Who should receive it by e-mail?": "谁应该通过邮件收到？",
     "Failed to prepare document: ": "准备文档失败：",
     "Failed to save product: ": "保存产品失败：",
+    "Profitability Report": "利润报告",
+    "Profitability": "利润",
+    "Profit": "利润",
+    "All figures in": "所有金额单位为",
+    "Real Profit": "实际利润",
+    "Margin": "利润率",
+    "No completed orders yet.": "暂无已完成的订单。",
+    "Select all": "全选",
+    "All Completed": "全部已完成",
+    "Generate Report": "生成报告",
     "Download": "下载",
     "was created": "已创建",
     "sent": "已发送",
@@ -1448,6 +1458,10 @@ async function uploadToCloudinary(file) {
 // ─── STATUS CONFIG ────────────────────────────────────────────────────────────
 
 const ORDER_STATUSES = ["Pending", "In Production", "Inspection", "Shipment", "Completed"];
+// Same currency list ProductForm already offers for Cost/Sale Price —
+// shared here for the Packing List's per-cost currency pickers (Agent/
+// Freight/Loading) so all three stay consistent with the rest of the app.
+const PACKING_COST_CURRENCIES = ["USD", "BRL", "CNY", "EUR", "GBP", "JPY", "HKD"];
 const STATUS_COLORS = {
   Pending: { bg: "#1e293b", text: "#94a3b8", dot: "#64748b", border: "#334155" },
   "In Production": { bg: "#1e3a5f", text: "#60a5fa", dot: "#3b82f6", border: "#1e40af" },
@@ -5843,15 +5857,35 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
           in the app) — matches how every other cost/weight figure already
           on this specific form (Gross/Net Weight, CBM) is entered, and
           avoids sending a comma-formatted display string somewhere that
-          only ever expects a clean parseable number. */}
+          only ever expects a clean parseable number. Each cost gets its own
+          currency picker right next to it — the agent's fee, the freight
+          rate and a local loading fee are often quoted in different
+          currencies, and this feeds the Order's real-profit calculation
+          (see computeOrderProfitability in server.js), which needs to know
+          which currency each figure is actually in to convert correctly. */}
       <Field label="Agent Cost" half>
-        <Input type="number" value={f.agent_cost || ""} onChange={set("agent_cost")} placeholder="0.00" />
+        <div style={{ display: "flex", gap: "8px" }}>
+          <Input type="number" value={f.agent_cost || ""} onChange={set("agent_cost")} placeholder="0.00" style={{ flex: 1 }} />
+          <Select value={f.agent_currency || "USD"} onChange={set("agent_currency")} style={{ width: "90px", flexShrink: 0 }}>
+            {PACKING_COST_CURRENCIES.map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
+          </Select>
+        </div>
       </Field>
       <Field label="Freight Cost" half>
-        <Input type="number" value={f.freight_cost || ""} onChange={set("freight_cost")} placeholder="0.00" />
+        <div style={{ display: "flex", gap: "8px" }}>
+          <Input type="number" value={f.freight_cost || ""} onChange={set("freight_cost")} placeholder="0.00" style={{ flex: 1 }} />
+          <Select value={f.freight_currency || "USD"} onChange={set("freight_currency")} style={{ width: "90px", flexShrink: 0 }}>
+            {PACKING_COST_CURRENCIES.map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
+          </Select>
+        </div>
       </Field>
       <Field label="Loading Cost" half>
-        <Input type="number" value={f.loading_cost || ""} onChange={set("loading_cost")} placeholder="0.00" />
+        <div style={{ display: "flex", gap: "8px" }}>
+          <Input type="number" value={f.loading_cost || ""} onChange={set("loading_cost")} placeholder="0.00" style={{ flex: 1 }} />
+          <Select value={f.loading_currency || "USD"} onChange={set("loading_currency")} style={{ width: "90px", flexShrink: 0 }}>
+            {PACKING_COST_CURRENCIES.map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
+          </Select>
+        </div>
       </Field>
 
       {!isMultiContainer && containers.length === 1 && (
@@ -5912,8 +5946,141 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
   );
 }
 
+// Real profit for a single Completed order — sale vs. product cost + the
+// Agent/Freight/Loading costs on its Packing List(s), everything converted
+// to the order's own currency by the backend (see computeOrderProfitability
+// in server.js). Only ever rendered when canViewProfit is true (see the
+// button in Orders() below) — the route itself is also gated server-side,
+// so this never even gets a chance to render real numbers for anyone else.
+function OrderProfitModal({ order, onClose }) {
+  const t = useT();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api(`/orders/${order.id}/profitability`)
+      .then(setData)
+      .catch(err => setError(err.message || "Failed to load"));
+  }, [order.id]);
+
+  return (
+    <Modal title={`${t("Profitability")} — ${order.order_number}`} onClose={onClose} wide>
+      {error && <p style={{ color: "#ef4444", fontSize: "13px" }}>{error}</p>}
+      {!data && !error && <p style={{ color: "#64748b", fontSize: "13px" }}>{t("Loading...")}</p>}
+      {data && (
+        <div>
+          <div style={{ marginBottom: "16px", fontSize: "12.5px", color: "#64748b" }}>
+            {t("Client")}: <strong style={{ color: "#f1f5f9" }}>{data.client || "—"}</strong>
+            {" · "}{t("All figures in")} {currencyLabel(data.currency)}
+          </div>
+          <Table
+            cols={[
+              { label: "Product", key: "product_name" },
+              { label: "Qty", render: r => `${r.quantity || "—"} ${r.unit || ""}`.trim() },
+              { label: "Sale", render: r => fmt(r.sale, data.currency) },
+              { label: "Cost", render: r => fmt(r.cost, data.currency) },
+            ]}
+            rows={data.items}
+          />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginTop: "20px" }}>
+            <StatCard label="Total Sale" value={fmt(data.saleTotal, data.currency)} color="#60a5fa" />
+            <StatCard label="Product Cost" value={fmt(data.productCostTotal, data.currency)} color="#f59e0b" />
+            <StatCard label="Total Cost" value={fmt(data.totalCost, data.currency)} color="#ef4444" />
+            <StatCard label="Agent Cost" value={fmt(data.agentCost, data.currency)} color="#94a3b8" />
+            <StatCard label="Freight Cost" value={fmt(data.freightCost, data.currency)} color="#94a3b8" />
+            <StatCard label="Loading Cost" value={fmt(data.loadingCost, data.currency)} color="#94a3b8" />
+          </div>
+          <div style={{
+            marginTop: "20px", background: "#1e293b",
+            border: `1px solid ${data.profit < 0 ? "#ef4444" : "#10b981"}`,
+            borderRadius: "10px", padding: "18px 20px", display: "flex",
+            justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px",
+          }}>
+            <div>
+              <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("Real Profit")}</div>
+              <div style={{ fontSize: "26px", fontWeight: 700, color: data.profit < 0 ? "#ef4444" : "#10b981" }}>
+                {fmt(data.profit, data.currency)}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>{t("Margin")}</div>
+              <div style={{ fontSize: "26px", fontWeight: 700, color: data.marginPct == null ? "#94a3b8" : data.marginPct < 0 ? "#ef4444" : "#10b981" }}>
+                {data.marginPct == null ? "—" : `${data.marginPct > 0 ? "+" : ""}${data.marginPct.toFixed(1)}%`}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// Lets a canViewProfit user pick one, several, or every Completed order and
+// download a PDF profitability report for exactly that selection — see
+// GET /api/orders/profitability-report in server.js. `orders` is the same
+// list Orders() already has loaded, filtered down to Completed here rather
+// than re-fetched.
+function OrderProfitReportModal({ orders, onClose }) {
+  const t = useT();
+  const completed = orders.filter(o => o.status === "Completed");
+  const [selected, setSelected] = useState(() => new Set());
+  const allSelected = completed.length > 0 && selected.size === completed.length;
+
+  function toggle(id) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <Modal title={t("Profitability Report")} onClose={onClose}>
+      {completed.length === 0 ? (
+        <p style={{ color: "#64748b", fontSize: "13px" }}>{t("No completed orders yet.")}</p>
+      ) : (
+        <>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", color: "#cbd5e1", cursor: "pointer", marginBottom: "10px" }}>
+            <input type="checkbox" checked={allSelected}
+              onChange={() => setSelected(allSelected ? new Set() : new Set(completed.map(o => o.id)))} />
+            {t("Select all")} ({completed.length})
+          </label>
+          <div style={{ maxHeight: "320px", overflowY: "auto", border: "1px solid #1e293b", borderRadius: "8px" }}>
+            {completed.map(o => (
+              <label key={o.id} style={{
+                display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px",
+                borderBottom: "1px solid #1e293b", fontSize: "13px", color: "#e2e8f0", cursor: "pointer",
+              }}>
+                <input type="checkbox" checked={selected.has(o.id)} onChange={() => toggle(o.id)} />
+                <span style={{ fontWeight: 700, color: "#60a5fa" }}>{o.order_number}</span>
+                <span style={{ color: "#64748b" }}>{o.client}</span>
+              </label>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "16px", flexWrap: "wrap" }}>
+            <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
+            <Btn outline color="#2563eb" onClick={() => { window.open(authUrl(`${API}/orders/profitability-report?all=1`), "_blank"); onClose(); }}>
+              📊 {t("All Completed")}
+            </Btn>
+            <Btn color="#10b981" disabled={selected.size === 0}
+              onClick={() => {
+                window.open(authUrl(`${API}/orders/profitability-report?ids=${[...selected].join(",")}`), "_blank");
+                onClose();
+              }}>
+              📊 {t("Generate Report")}{selected.size > 0 ? ` (${selected.size})` : ""}
+            </Btn>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
 function Orders() {
 const t = useT();
+const { canViewProfit } = usePermissions();
+const [profitOrder, setProfitOrder] = useState(null); // order whose profit detail modal is open, or null
+const [showProfitReport, setShowProfitReport] = useState(false);
 const [contracts, setContracts] = useState([]);
 const [commercials, setCommercials] = useState([]);
 const [editContract, setEditContract] = useState(null);
@@ -6147,7 +6314,12 @@ const inspectionStatusFor = (order) => {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Orders")}</h2>
-        <Btn onClick={() => setModal("new")}>+ New Order</Btn>
+        <div style={{ display: "flex", gap: "10px" }}>
+          {canViewProfit && (
+            <Btn outline color="#10b981" onClick={() => setShowProfitReport(true)}>📊 {t("Profitability Report")}</Btn>
+          )}
+          <Btn onClick={() => setModal("new")}>+ New Order</Btn>
+        </div>
       </div>
       <Input value={search} onChange={e => setSearch(e.target.value)}
   placeholder="Search by order #, client, status or incoterm…" style={{ ...inputStyle, marginBottom: "16px" }} />
@@ -6157,6 +6329,8 @@ const inspectionStatusFor = (order) => {
           <OrderForm onSave={createOrder} onClose={() => setModal(null)} />
         </Modal>
       )}
+      {profitOrder && <OrderProfitModal order={profitOrder} onClose={() => setProfitOrder(null)} />}
+      {showProfitReport && <OrderProfitReportModal orders={orders} onClose={() => setShowProfitReport(false)} />}
 {editOrder && (
         <Modal title={t("Edit Order")} onClose={() => setEditOrder(null)}>
           <OrderForm initial={editOrder} onSave={updateOrder} onClose={() => setEditOrder(null)} />
@@ -6432,6 +6606,9 @@ const hasCommercial = commercials.find(c => Number(c.order_id) === Number(r.id))
   onClick={() => generateInspections(r)}>
   🔍 {t("Inspection")}{insStatus.total > 0 ? ` (${insStatus.done}/${insStatus.total})` : ""}
 </Btn>
+      {canViewProfit && r.status === "Completed" && (
+        <Btn small outline color="#10b981" onClick={() => setProfitOrder(r)}>💰 {t("Profit")}</Btn>
+      )}
       <Btn small outline color="#64748b" onClick={() => setEditOrder(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/orders/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
       <LastModifiedBy name={r.updated_by} />

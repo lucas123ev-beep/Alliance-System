@@ -538,6 +538,13 @@ const migrations = [
   ['samples', 'media', 'TEXT'],
   ['proformas', 'quotation_id', 'INTEGER'],
   ['quotations', 'price_validity', 'TEXT'],
+  // Stamped by the PATCH /api/orders/:id/status route the moment status
+  // becomes 'Completed' (cleared back to NULL if it's ever moved off
+  // Completed again) — the real-profit calculation (computeOrderProfitability
+  // in server.js) uses THIS date's exchange rate to convert each cost into
+  // the order's currency, not whatever day the report happens to be run,
+  // since the deal's actual currency exposure was locked in when it closed.
+  ['orders', 'completed_at', 'TEXT'],
   ['supplier_contracts', 'items_json', 'TEXT'],
   ['financial_suppliers', 'contract_id', 'INTEGER'],
   ['financial_suppliers', 'items_json', 'TEXT'],
@@ -683,6 +690,14 @@ const migrations = [
   ['packing_lists', 'agent_cost', 'REAL'],
   ['packing_lists', 'freight_cost', 'REAL'],
   ['packing_lists', 'loading_cost', 'REAL'],
+  // Each of the three costs above can be quoted in a different currency
+  // (e.g. the freight agent's fee in USD, a local loading fee in RMB) —
+  // previously all three were silently assumed to be in one currency with
+  // no way to say which. Defaults to USD (matching every other cost field
+  // in the app) for rows saved before this existed.
+  ['packing_lists', 'agent_currency', "TEXT DEFAULT 'USD'"],
+  ['packing_lists', 'freight_currency', "TEXT DEFAULT 'USD'"],
+  ['packing_lists', 'loading_currency', "TEXT DEFAULT 'USD'"],
   // Which supplier a sample request went to, and when it's expected to be
   // ready — neither existed before, so Samples had no way to track either.
   ['samples', 'supplier', "TEXT DEFAULT ''"],
@@ -754,5 +769,19 @@ const USER_EMAILS = {
 for (const [username, email] of Object.entries(USER_EMAILS)) {
   db.prepare(`UPDATE users SET email = ? WHERE username = ? AND (email IS NULL OR email = '')`).run(email, username);
 }
+
+// One-time backfill for orders already sitting at status='Completed' from
+// before completed_at existed — there's no way to recover the actual date
+// each one was marked Completed, so this fills in the closest real date
+// already on the order (arrival_date, since goods having arrived is usually
+// what prompted marking it Completed in the first place) as a best-effort
+// stand-in, falling back to updated_at when even that's blank. Only ever
+// touches rows where completed_at is still NULL, so it never overwrites the
+// real value the status-change route stamps for every order completed after
+// this shipped.
+db.prepare(`
+  UPDATE orders SET completed_at = COALESCE(NULLIF(arrival_date, ''), updated_at)
+  WHERE status = 'Completed' AND (completed_at IS NULL OR completed_at = '')
+`).run();
 
 module.exports = db;
