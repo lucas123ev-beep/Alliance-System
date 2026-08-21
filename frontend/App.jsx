@@ -424,7 +424,7 @@ const TRANSLATIONS = {
     "Gross Weight (kg)": "毛重 (kg)",
     "Net Weight (kg)": "净重 (kg)",
     "Informational only — not used in any calculation.": "仅供参考 — 不参与任何计算。",
-    "Adds this % on top of the Sale Price — not calculated from Cost.": "在销售价基础上加此百分比 — 不基于成本价计算。",
+    "Sets the Sale Price so the Real Margin below equals this %.": "设置销售价，使下方的实际利润率等于此百分比。",
     "Trade Name": "商用名称",
     "English name, e.g. for Chinese suppliers": "英文名称，例如中国供应商的英文名",
     "Excel": "Excel",
@@ -3721,16 +3721,6 @@ const handleCostChange = (e) => {
   }));
 };
 
-  // Margin % used to be measured against Cost Price (sale_pct = ((sale/cost)
-  // - 1) * 100), which produced confusing/negative values whenever cost
-  // wasn't filled in yet or was in a different currency than the sale price.
-  // It's now a one-way "bump the sale price by X%" action with no relation
-  // to cost at all — it takes whatever Sale Price was set when the field was
-  // focused (markupBaseRef, snapshotted below) and adds the percentage on
-  // top of that, same direction as the Quotation/Order screens' Margin %
-  // (which is likewise always measured against a sale price, never cost).
-  const markupBaseRef = useRef(null);
-
   const handleSalePriceChange = (e) => {
   const masked = maskMoney(e.target.value);
   const sale = parseLocaleNumber(masked) || 0;
@@ -3752,16 +3742,29 @@ const handleCostChange = (e) => {
   }));
 };
 
-const handleMarkupFocus = () => {
-  markupBaseRef.current = parseLocaleNumber(f.sale_price) || 0;
-};
-
+// Margin % is the target for the "Real Margin" box further down (Sale vs.
+// Cost, converted into Sale Price's currency, PLUS VAT % added straight on
+// top — same combinedMarginPct math that box itself displays): typing 11
+// here solves for whatever Sale Price makes that box read exactly +11.0%,
+// instead of the old behavior of just bumping whatever Sale Price already
+// happened to be typed in. Needs Cost Price filled in (and, for a different
+// Cost/Sale currency pair, the live exchange rate to have loaded) — without
+// those there's nothing to solve the equation from, so the field still
+// accepts the number but leaves Sale Price untouched until they're there.
 const handleSalePctChange = (e) => {
   const pctStr = e.target.value;
   const pct = parseFloat(pctStr);
-  const base = markupBaseRef.current != null ? markupBaseRef.current : (parseLocaleNumber(f.sale_price) || 0);
-  const canCalc = base > 0 && !isNaN(pct);
-  const sale = canCalc ? base * (1 + pct / 100) : null;
+  const costNum = parseLocaleNumber(f.unit_cost) || 0;
+  const costCur = f.cost_currency || "USD";
+  const saleCur = f.sale_currency || "USD";
+  let costInSaleCur = null;
+  if (costNum > 0) {
+    if (costCur === saleCur) costInSaleCur = costNum;
+    else if (fx?.rates?.[costCur] && fx?.rates?.[saleCur]) costInSaleCur = (costNum / fx.rates[costCur]) * fx.rates[saleCur];
+  }
+  const vatPct = parseFloat(f.vat_pct) || 0;
+  const canCalc = costInSaleCur != null && costInSaleCur > 0 && !isNaN(pct);
+  const sale = canCalc ? costInSaleCur * (1 + (pct - vatPct) / 100) : null;
   const h = parseFloat(f.height) || 0;
   const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(f);
@@ -4135,8 +4138,8 @@ const handleSalePerLiterChange = (e) => {
       <Input type="text" inputMode="decimal" value={f.sale_price || ""} onChange={handleSalePriceChange} placeholder="0.00" />
     </Field>
     <Field label="Margin %">
-      <Input type="number" value={f.sale_pct || ""} onFocus={handleMarkupFocus} onChange={handleSalePctChange} placeholder="e.g. 15" />
-      <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>{t("Adds this % on top of the Sale Price — not calculated from Cost.")}</div>
+      <Input type="number" value={f.sale_pct || ""} onChange={handleSalePctChange} placeholder="e.g. 15" />
+      <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>{t("Sets the Sale Price so the Real Margin below equals this %.")}</div>
     </Field>
   </div>
 </div>
