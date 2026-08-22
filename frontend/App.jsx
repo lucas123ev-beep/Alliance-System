@@ -5130,19 +5130,24 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
         </Field>
 
         <Field label="Deadline" half><Input type="date" value={f.deadline} onChange={set("deadline")} /></Field>
-        <div />
-        <Field label="Price Validity" half><Input type="date" value={f.price_validity || ""} onChange={set("price_validity")} /></Field>
-        <div />
+        {/* Left column keeps stacking straight down from here (Port of
+            Loading then Port of Discharge, right below Client/Deadline)
+            while Price Validity fills the right column alongside them —
+            requested this way instead of the ports trailing off after
+            Price Validity, which left one of the two stranded alone on its
+            own row. */}
         <Field label="Port of Loading" half>
           <PortAutocomplete value={f.port_of_loading} options={CHINA_PORTS_OPTIONS}
             onChange={v => setF(p => ({ ...p, port_of_loading: v }))}
             placeholder="Search China ports or type any…" />
         </Field>
+        <Field label="Price Validity" half><Input type="date" value={f.price_validity || ""} onChange={set("price_validity")} /></Field>
         <Field label="Port of Discharge" half>
           <PortAutocomplete value={f.port_of_discharge} options={BRAZIL_PORTS_OPTIONS}
             onChange={v => setF(p => ({ ...p, port_of_discharge: v }))}
             placeholder="Search Brazil ports or type any…" />
         </Field>
+        <div />
 
         <Field label="Products">
           <div style={{ background: "#1e293b", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>
