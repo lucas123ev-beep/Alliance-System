@@ -991,12 +991,12 @@ app.get('/api/quotations', (req, res) => {
 });
 
 app.post('/api/quotations', guardScreen('quotations'), (req, res) => {
- const { number, client, suppliers, currency, deadline, price_validity, specifications, notes, status, media, items, total, target_price } = req.body;
+ const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, specifications, notes, status, media, items, total, target_price } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO quotations (number, client, suppliers, currency, deadline, price_validity, specifications, notes, status, media, items, total, target_price, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(number, client, suppliers, currency || 'USD', deadline, price_validity || null, specifications, notes, status || 'Open', media || null, items || null, total || null, target_price || null, actorName(req));
+      INSERT INTO quotations (number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, specifications, notes, status, media, items, total, target_price, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(number, client, suppliers, currency || 'USD', deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, specifications, notes, status || 'Open', media || null, items || null, total || null, target_price || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM quotations WHERE id=?').get(result.lastInsertRowid));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -1004,11 +1004,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 });
 
 app.put('/api/quotations/:id', guardScreen('quotations'), (req, res) => {
-  const { number, client, suppliers, currency, deadline, price_validity, specifications, notes, status, media, items, total, target_price } = req.body;
+  const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, specifications, notes, status, media, items, total, target_price } = req.body;
   db.prepare(`
-    UPDATE quotations SET number=?, client=?, suppliers=?, currency=?, deadline=?, price_validity=?, specifications=?, notes=?, status=?, media=?, items=?, total=?, target_price=?, updated_by=?
+    UPDATE quotations SET number=?, client=?, suppliers=?, currency=?, deadline=?, price_validity=?, port_of_loading=?, port_of_discharge=?, specifications=?, notes=?, status=?, media=?, items=?, total=?, target_price=?, updated_by=?
     WHERE id=?
-  `).run(number, client, suppliers, currency, deadline, price_validity || null, specifications, notes, status, media || null, items || null, total || null, target_price || null, actorName(req), req.params.id);
+  `).run(number, client, suppliers, currency, deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, specifications, notes, status, media || null, items || null, total || null, target_price || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM quotations WHERE id=?').get(req.params.id));
 });
 
@@ -1036,6 +1036,8 @@ app.get('/api/quotations/:id/pdf', async (req, res) => {
       date: q.created_at ? q.created_at.slice(0, 10) : null,
       client: { name: q.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
       priceValidity: q.price_validity,
+      portOfLoading: q.port_of_loading,
+      portOfDischarge: q.port_of_discharge,
       currency,
       items,
       totalAmount,

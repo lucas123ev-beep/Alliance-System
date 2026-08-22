@@ -136,6 +136,12 @@ db.exec(`
     -- can need an answer by one date while the price it's quoting is only
     -- firm until an earlier or later one, depending on the supplier's terms.
     price_validity TEXT,
+    -- Mirrors the same fields on proformas/orders (see PortAutocomplete on
+    -- the frontend) — captured at Quotation stage so "Generate Proforma"
+    -- can carry them straight over instead of making someone re-pick both
+    -- ports a second time for a shipment that was already scoped here.
+    port_of_loading TEXT,
+    port_of_discharge TEXT,
     specifications TEXT,
     notes TEXT,
     status TEXT DEFAULT 'Open',
@@ -538,6 +544,10 @@ const migrations = [
   ['samples', 'media', 'TEXT'],
   ['proformas', 'quotation_id', 'INTEGER'],
   ['quotations', 'price_validity', 'TEXT'],
+  // See the CREATE TABLE comment above — lets "Generate Proforma" (Quotations
+  // screen) carry the shipment ports straight into the new Proforma.
+  ['quotations', 'port_of_loading', 'TEXT'],
+  ['quotations', 'port_of_discharge', 'TEXT'],
   // Stamped by the PATCH /api/orders/:id/status route the moment status
   // becomes 'Completed' (cleared back to NULL if it's ever moved off
   // Completed again) — the real-profit calculation (computeOrderProfitability

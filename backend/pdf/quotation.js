@@ -16,12 +16,13 @@ const ACQ = require("./acquisitionCompanies");
 // server.js) so the client can recognize what's being quoted at a glance.
 //
 // params:
-//   number, date, client: { name, address, taxId, tel }, priceValidity, currency
+//   number, date, client: { name, address, taxId, tel }, priceValidity,
+//   portOfLoading, portOfDischarge, currency
 //   items: same normalizeSalesItem()-shaped array the other templates use,
 //     plus imageUrl (set by the caller)
 //   totalAmount
 function renderQuotation(params) {
-  const { number, date, client, priceValidity, currency, items, totalAmount } = params;
+  const { number, date, client, priceValidity, portOfLoading, portOfDischarge, currency, items, totalAmount } = params;
 
   const sectionsHtml = renderItemSections(items, currency, { showImage: true });
 
@@ -34,6 +35,10 @@ function renderQuotation(params) {
       <tr>
         <td>${icon("user")}<strong>Client:</strong> ${escapeHtml(client?.name || "—")}</td>
         <td>${icon("calendar")}<strong>Price Validity:</strong> ${priceValidity ? fmtDateLong(priceValidity) : "—"}</td>
+      </tr>
+      <tr>
+        <td>${icon("anchor")}<strong>Port of Loading:</strong> ${escapeHtml(portOfLoading || "—")}</td>
+        <td>${icon("ship")}<strong>Port of Discharge:</strong> ${escapeHtml(portOfDischarge || "—")}</td>
       </tr>
     </table>
 

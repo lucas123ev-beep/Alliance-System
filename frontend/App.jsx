@@ -4979,6 +4979,7 @@ function QuotationForm({ onSave, onClose, initial }) {
   const t = useT();
   const [f, setF] = useState(initial || {
   number: "", client: "", currency: "USD", deadline: "", price_validity: "",
+  port_of_loading: "", port_of_discharge: "",
   total: "",
   specifications: "", notes: "", status: "Pending",
 });
@@ -5131,6 +5132,17 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
         <Field label="Deadline" half><Input type="date" value={f.deadline} onChange={set("deadline")} /></Field>
         <div />
         <Field label="Price Validity" half><Input type="date" value={f.price_validity || ""} onChange={set("price_validity")} /></Field>
+        <div />
+        <Field label="Port of Loading" half>
+          <PortAutocomplete value={f.port_of_loading} options={CHINA_PORTS_OPTIONS}
+            onChange={v => setF(p => ({ ...p, port_of_loading: v }))}
+            placeholder="Search China ports or type any…" />
+        </Field>
+        <Field label="Port of Discharge" half>
+          <PortAutocomplete value={f.port_of_discharge} options={BRAZIL_PORTS_OPTIONS}
+            onChange={v => setF(p => ({ ...p, port_of_discharge: v }))}
+            placeholder="Search Brazil ports or type any…" />
+        </Field>
 
         <Field label="Products">
           <div style={{ background: "#1e293b", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>
@@ -5436,6 +5448,12 @@ console.log('quotations set:', quotations?.length);
           currency: r.currency || "USD",
           status: "Draft",
           notes: r.notes || "",
+          // Carried straight over from the Quotation instead of making
+          // someone re-pick both ports a second time for a shipment that
+          // was already scoped at the Quotation stage — still fully
+          // editable afterwards like every other field here.
+          port_of_loading: r.port_of_loading || "",
+          port_of_discharge: r.port_of_discharge || "",
           // Copy the Quotation's items in as the Proforma's own snapshot —
           // from this point on they're independently editable, same as how
           // Order items work once created from a Proforma.
