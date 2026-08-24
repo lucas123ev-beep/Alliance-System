@@ -3909,10 +3909,14 @@ const handleSalePerLiterChange = (e) => {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Product Code" half><Input value={f.code} onChange={set("code")} placeholder="001" /></Field>
-      <Field label="Name" half><Input value={f.name} onChange={set("name")} /></Field>
+      {/* Name/Color are always stored upper-case (typed or pasted — a paste
+          fires the same onChange event as typing, so uppercasing here on
+          every change covers both) per client convention for how these
+          print on generated PDFs/labels. */}
+      <Field label="Name" half><Input value={f.name} onChange={e => setF(p => ({ ...p, name: e.target.value.toUpperCase() }))} /></Field>
       <Field label="NCM" half><Input value={f.ncm} onChange={e => setF(p => ({ ...p, ncm: maskNCM(e.target.value) }))} placeholder="0000.00.00" /></Field>
       <Field label="HS Code" half><Input value={f.hs_code || ""} onChange={set("hs_code")} placeholder="0000.00" /></Field>
-      <Field label="Color" half><Input value={f.color || ""} onChange={set("color")} placeholder="e.g. Red, Navy Blue" /></Field>
+      <Field label="Color" half><Input value={f.color || ""} onChange={e => setF(p => ({ ...p, color: e.target.value.toUpperCase() }))} placeholder="e.g. Red, Navy Blue" /></Field>
       <Field label="Category" half>
   <Select value={f.category} onChange={set("category")}>
     <option value="">Select...</option>

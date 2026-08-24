@@ -794,4 +794,28 @@ db.prepare(`
   WHERE status = 'Completed' AND (completed_at IS NULL OR completed_at = '')
 `).run();
 
+// Backfill for Name/Color on products registered before the frontend
+// started forcing upper-case on those two fields (see ProductForm). Done in
+// JS rather than SQLite's own UPPER() — SQLite only upper-cases plain ASCII
+// out of the box, so an accented name like "algodão" would come back
+// "ALGODãO" instead of "ALGODÃO"; JS's toUpperCase() handles that correctly
+// and matches exactly what the frontend now does on every keystroke there.
+// Safe to run on every boot: only rows that aren't already fully upper-case
+// get touched, so this isn't rewriting the whole table on every restart.
+{
+  const productsToFix = db.prepare(`
+    SELECT id, name, color FROM products
+    WHERE (name IS NOT NULL AND name != UPPER(name))
+       OR (color IS NOT NULL AND color != UPPER(color))
+  `).all();
+  const fixProduct = db.prepare(`UPDATE products SET name = ?, color = ? WHERE id = ?`);
+  for (const p of productsToFix) {
+    fixProduct.run(
+      p.name != null ? p.name.toUpperCase() : p.name,
+      p.color != null ? p.color.toUpperCase() : p.color,
+      p.id
+    );
+  }
+}
+
 module.exports = db;
