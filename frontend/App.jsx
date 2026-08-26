@@ -2635,6 +2635,21 @@ function buildPackingListDraft(order, products) {
 
 // ─── FORMS ───────────────────────────────────────────────────────────────────
 
+// Textile/DTF items sold "by Meters" (see isTextileMeters on
+// ProductItemModal) keep the real ROLL COUNT in item.quantity underneath —
+// every downstream calc (weight, Packing List, PDFs) still needs a roll
+// count — while item.total_meterage holds the total meters the person
+// actually typed in. Anywhere quantity+unit get shown together as a plain
+// human-readable summary (the little product-card header line), that roll
+// count next to "Meters" reads as if it were itself a meter figure (e.g.
+// "750 Meters" when 750 is really the roll count for 30,000 meters) — this
+// shows total_meterage instead whenever the item is in that mode.
+function displayQtyUnit(item) {
+  const isTextileMeters = (item.category === "Textile" || item.category === "DTF Film") && item.unit === "Meters";
+  const qty = isTextileMeters ? item.total_meterage : item.quantity;
+  return `${qty ?? ""} ${item.unit || ""}`.trim();
+}
+
 // Shared product -> item field mapping, used both when a product is picked
 // from the search dropdown (ProductItemModal's selectProduct below) and by
 // the Order/Quotation item list's "refresh from registered product" button
@@ -3379,7 +3394,7 @@ useEffect(() => {
                     <div style={{ flex: 1, fontSize: "13px" }}>
                       <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
                       <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
-                      <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
+                      <span style={{ color: "#64748b", marginLeft: "8px" }}>{displayQtyUnit(item)}</span>
                     </div>
                     {/* Pulls the current registered price/spec from the Product
                         record onto this item — disabled for items never linked
@@ -4699,7 +4714,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
                   <div style={{ flex: 1, fontSize: "13px" }}>
                     <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
                     <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
-                    <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
+                    <span style={{ color: "#64748b", marginLeft: "8px" }}>{displayQtyUnit(item)}</span>
                   </div>
                   <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
                   <Btn small outline color="#ef4444" onClick={() => removeItem(idx)}>✕</Btn>
@@ -4873,7 +4888,7 @@ function ContractForm({ onSave, onClose, orders, initial }) {
               <div>
                 <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
                 <span style={{ color: "#f1f5f9", marginLeft: "8px", fontWeight: 600 }}>{item.product_name}</span>
-                <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
+                <span style={{ color: "#64748b", marginLeft: "8px" }}>{displayQtyUnit(item)}</span>
                 {perMeterLabel(item, "cost_per_meter", item.cost_currency || item.currency) && (
                   <span style={{ color: "#a78bfa", marginLeft: "8px", fontSize: "11px" }}>({perMeterLabel(item, "cost_per_meter", item.cost_currency || item.currency)})</span>
                 )}
@@ -5188,7 +5203,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
                     <div style={{ flex: 1, fontSize: "13px" }}>
                       <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
                       <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
-                      <span style={{ color: "#64748b", marginLeft: "8px" }}>{item.quantity} {item.unit}</span>
+                      <span style={{ color: "#64748b", marginLeft: "8px" }}>{displayQtyUnit(item)}</span>
                     </div>
                     {/* Pulls the current registered price/spec from the Product
                         record onto this item — disabled for items never linked
