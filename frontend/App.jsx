@@ -2668,20 +2668,40 @@ function applyProductToItem(p, prevItem) {
     ? (parseFloat(p.cost_per_liter) * volL).toFixed(2)
     : p.unit_cost || "";
 
+  // Textile/DTF items sold "by Meters" (see isTextileMeters on
+  // ProductItemModal) keep that choice across a refresh instead of snapping
+  // back to Rolls every time — that used to silently discard someone's
+  // "sell by total meters" setup (and the figure already typed in) the
+  // moment they refreshed the item after fixing something on the product
+  // record, which is exactly the scenario that made a corrected Length per
+  // Roll look like it still wasn't fixing the item's Total.
+  const keepsMeters = isTextile && prevItem.unit === "Meters";
+  // Re-derives the roll count from the (possibly just-corrected) roll
+  // length, same math as handleQtyChange — so fixing a wrong Length per
+  // Roll on the product and then refreshing this item actually flows
+  // through to a correct Total instead of leaving the old (often zero)
+  // roll count behind.
+  const totalMetersPrev = parseFloat(prevItem.total_meterage) || 0;
+  const qtyForTotal = keepsMeters && heightM > 0
+    ? String(Math.round((totalMetersPrev / heightM) * 100) / 100)
+    : prevItem.quantity;
+
   return {
     ...prevItem,
     product_id: p.id,
     product_name: p.name,
     product_code: p.code,
     supplier: p.supplier || "",
-    unit: (p.category === "Textile" || p.category === "DTF Film") ? "Rolls"
+    unit: keepsMeters ? "Meters"
+      : (p.category === "Textile" || p.category === "DTF Film") ? "Rolls"
       : p.category === "Chemical" ? (p.unit || "unit")
       : (p.selling_unit || "Unit"),
+    quantity: keepsMeters ? qtyForTotal : prevItem.quantity,
     currency: p.sale_currency || p.cost_currency || "USD",
     unit_price: salePrice,
     cost_price: costPrice,
     cost_currency: p.cost_currency || "USD",
-    total: prevItem.quantity && salePrice ? (parseFloat(prevItem.quantity) * parseFloat(salePrice)).toFixed(2) : (prevItem.total || ""),
+    total: qtyForTotal && salePrice ? (parseFloat(qtyForTotal) * parseFloat(salePrice)).toFixed(2) : (prevItem.total || ""),
     category: p.category || "",
     sale_per_meter: isTextile ? (p.sale_per_meter || null) : null,
     cost_per_meter: isTextile ? (p.cost_per_meter || null) : null,
