@@ -97,6 +97,8 @@ const TRANSLATIONS = {
     "Container": "集装箱",
     "Port of Loading": "装货港",
     "Port of Discharge": "卸货港",
+    "Airport of Loading": "装货机场",
+    "Airport of Discharge": "卸货机场",
     "Shipment Date": "发货日期",
     "Arrival Date": "到达日期",
     "Payment Terms": "付款条件",
@@ -778,6 +780,31 @@ const BRAZIL_PORTS_OPTIONS = [
   "Antonina, BR", "Cotegipe, BR", "Praia Mole, BR", "Tubarão, BR",
   "Itacoatiara, BR", "Barcarena, BR", "Vila do Conde, BR", "Macapá, BR",
   "Niterói, BR", "Forno, BR", "Itaperi, BR", "Camaçari, BR", "Guarujá, BR",
+];
+
+// Same idea as the ports above, but for when Way of Shipment is "By Air" —
+// the client's air shipments always run through one of these major
+// international airports, never a random regional strip, so a fixed list
+// (still free-typeable, same as the ports) is enough here too.
+const CHINA_AIRPORTS_OPTIONS = [
+  "Beijing Capital (PEK), CN", "Beijing Daxing (PKX), CN", "Shanghai Pudong (PVG), CN",
+  "Shanghai Hongqiao (SHA), CN", "Guangzhou Baiyun (CAN), CN", "Shenzhen Bao'an (SZX), CN",
+  "Chengdu Shuangliu (CTU), CN", "Chengdu Tianfu (TFU), CN", "Kunming Changshui (KMG), CN",
+  "Xi'an Xianyang (XIY), CN", "Hangzhou Xiaoshan (HGH), CN", "Nanjing Lukou (NKG), CN",
+  "Chongqing Jiangbei (CKG), CN", "Wuhan Tianhe (WUH), CN", "Qingdao Jiaodong (TAO), CN",
+  "Xiamen Gaoqi (XMN), CN", "Zhengzhou Xinzheng (CGO), CN", "Changsha Huanghua (CSX), CN",
+  "Tianjin Binhai (TSN), CN", "Ningbo Lishe (NGB), CN", "Fuzhou Changle (FOC), CN",
+  "Shenyang Taoxian (SHE), CN", "Harbin Taiping (HRB), CN", "Dalian Zhoushuizi (DLC), CN",
+  "Hong Kong (HKG), HK",
+];
+
+const BRAZIL_AIRPORTS_OPTIONS = [
+  "São Paulo/Guarulhos (GRU), BR", "Viracopos/Campinas (VCP), BR", "Rio de Janeiro/Galeão (GIG), BR",
+  "Belo Horizonte/Confins (CNF), BR", "Brasília (BSB), BR", "Curitiba (CWB), BR",
+  "Porto Alegre (POA), BR", "Recife (REC), BR", "Salvador (SSA), BR", "Fortaleza (FOR), BR",
+  "Manaus (MAO), BR", "Florianópolis (FLN), BR", "Navegantes (NVT), BR", "Joinville (JOI), BR",
+  "Vitória (VIX), BR", "Belém (BEL), BR", "Goiânia (GYN), BR", "Campo Grande (CGR), BR",
+  "Natal (NAT), BR", "São Luís (SLZ), BR", "Cuiabá (CGB), BR", "São José dos Campos (SJK), BR",
 ];
 
 const PORT_DROPDOWN_STYLE = {
@@ -4886,15 +4913,18 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
           <option>By Sea</option><option>By Air</option><option>By Land</option>
         </Select>
       </Field>
-      <Field label="Port of Loading" half>
-        <PortAutocomplete value={f.port_of_loading} options={CHINA_PORTS_OPTIONS}
+      {/* By Air switches both fields to airport lists/labels instead of sea
+          ports — an air shipment's "Port of Loading" would otherwise show
+          Ningbo/Shanghai etc., which don't mean anything for air freight. */}
+      <Field label={f.way_of_shipment === "By Air" ? "Airport of Loading" : "Port of Loading"} half>
+        <PortAutocomplete value={f.port_of_loading} options={f.way_of_shipment === "By Air" ? CHINA_AIRPORTS_OPTIONS : CHINA_PORTS_OPTIONS}
           onChange={v => setF(p => ({ ...p, port_of_loading: v }))}
-          placeholder="Search China ports or type any…" />
+          placeholder={f.way_of_shipment === "By Air" ? "Search China airports or type any…" : "Search China ports or type any…"} />
       </Field>
-      <Field label="Port of Discharge" half>
-        <PortAutocomplete value={f.port_of_discharge} options={BRAZIL_PORTS_OPTIONS}
+      <Field label={f.way_of_shipment === "By Air" ? "Airport of Discharge" : "Port of Discharge"} half>
+        <PortAutocomplete value={f.port_of_discharge} options={f.way_of_shipment === "By Air" ? BRAZIL_AIRPORTS_OPTIONS : BRAZIL_PORTS_OPTIONS}
           onChange={v => setF(p => ({ ...p, port_of_discharge: v }))}
-          placeholder="Search Brazil ports or type any…" />
+          placeholder={f.way_of_shipment === "By Air" ? "Search Brazil airports or type any…" : "Search Brazil ports or type any…"} />
       </Field>
 
       <Field label="Payment Terms">

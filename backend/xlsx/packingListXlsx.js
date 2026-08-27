@@ -66,9 +66,14 @@ function buildPackingListWorkbook(params) {
     row.eachCell(c => { c.alignment = { wrapText: true, vertical: "middle" }; });
     return row;
   };
+  // Same Port-vs-Airport label switch as the PDF (pdf/packingList.js).
+  const isAir = wayOfShipment === "By Air";
+  const originLabel = isAir ? "Airport Of Origin" : "Port Of Origin";
+  const destinationLabel = isAir ? "Airport Of Destination" : "Port Of Destination";
+
   addMetaLine("Way Of Shipment", wayOfShipment || "By Sea", "Country Of Origin", countryOfOrigin || "China");
-  addMetaLine("Port Of Origin", portOfOrigin || "—", "Incoterm", incoterm || "—");
-  addMetaLine("Port Of Destination", portOfDestination || "—", "Manufacturer", manufacturer?.name || "—");
+  addMetaLine(originLabel, portOfOrigin || "—", "Incoterm", incoterm || "—");
+  addMetaLine(destinationLabel, portOfDestination || "—", "Manufacturer", manufacturer?.name || "—");
   const mfgAddrRow = sheet.addRow([`Manufacturer Address: ${manufacturer?.address || "—"}${manufacturer?.tel ? ` | Tel.: ${manufacturer.tel}` : ""}`]);
   sheet.mergeCells(mfgAddrRow.number, 1, mfgAddrRow.number, NUM_COLS);
 

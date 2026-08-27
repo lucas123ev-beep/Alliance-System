@@ -240,6 +240,12 @@ function renderPackingList(params) {
     </table>
   `;
 
+  // Same Port-vs-Airport label switch as the Proforma/Commercial Invoice
+  // PDF — Packing List has its own Way Of Shipment field too.
+  const isAir = wayOfShipment === "By Air";
+  const originLabel = isAir ? "Airport Of Origin" : "Port Of Origin";
+  const destinationLabel = isAir ? "Airport Of Destination" : "Port Of Destination";
+
   const body = `
     <div class="doc-meta-row">
       <div><strong>Number:</strong> ${escapeHtml(number)}</div>
@@ -248,9 +254,9 @@ function renderPackingList(params) {
     <table class="meta-table">
       <tr><td>${icon("ship")}<strong>Way Of Shipment:</strong> ${escapeHtml(wayOfShipment || "By Sea")}.</td>
           <td>${icon("world")}<strong>Country Of Origin:</strong> ${escapeHtml(countryOfOrigin || "China")}.</td></tr>
-      <tr><td>${icon("anchor")}<strong>Port Of Origin:</strong> ${escapeHtml(portOfOrigin || "—")}.</td>
+      <tr><td>${icon("anchor")}<strong>${originLabel}:</strong> ${escapeHtml(portOfOrigin || "—")}.</td>
           <td>${icon("file")}<strong>Incoterm:</strong> ${escapeHtml(incoterm || "—")}</td></tr>
-      <tr><td>${icon("ship")}<strong>Port Of Destination:</strong> ${escapeHtml(portOfDestination || "—")}.</td>
+      <tr><td>${icon("ship")}<strong>${destinationLabel}:</strong> ${escapeHtml(portOfDestination || "—")}.</td>
           <td>${icon("building")}<strong>Manufacturer:</strong> ${escapeHtml(manufacturer.name || "—")}</td></tr>
       <tr><td colspan="2">${icon("building")}<strong>Manufacturer Address:</strong> ${escapeHtml(manufacturer.address || "—")}${manufacturer.tel ? ` | Tel.: ${escapeHtml(manufacturer.tel)}` : ""}</td></tr>
     </table>
