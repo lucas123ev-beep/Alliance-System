@@ -3328,6 +3328,7 @@ function OrderForm({ initial, onSave, onClose }) {
     order_number: "", client: "", supplier: "", value: "", currency: "USD",
     production_lead_time: "", delivery_days: "", shipment_date: "", arrival_date: "",
     incoterm: "", payment_terms: "", port_of_loading: "", port_of_discharge: "",
+    freight_value: "",
     acquisition_company: "", container: "", container_qty: "", notes: "",
   });
   const [items, setItems] = useState(initial?.items || []);
@@ -3448,7 +3449,11 @@ useEffect(() => {
       sale_pct: item.sale_pct !== "" && item.sale_pct != null ? (parseLocaleNumber(item.sale_pct) ?? item.sale_pct) : item.sale_pct,
       target_price: item.target_price !== "" && item.target_price != null ? (parseLocaleNumber(item.target_price) ?? item.target_price) : item.target_price,
     }));
-    await onSave({ ...f, value: parseLocaleNumber(f.value) ?? 0, items: cleanedItems });
+    await onSave({
+      ...f, value: parseLocaleNumber(f.value) ?? 0,
+      freight_value: f.freight_value !== "" && f.freight_value != null ? (parseLocaleNumber(f.freight_value) ?? f.freight_value) : f.freight_value,
+      items: cleanedItems,
+    });
     onClose();
   };
 
@@ -3560,6 +3565,13 @@ useEffect(() => {
           <Select value={f.currency} onChange={set("currency")}>
             <option>USD</option><option>EUR</option><option>BRL</option><option value="CNY">RMB</option><option value="HKD">HKD</option>
           </Select>
+        </Field>
+        {/* CIF freight charged to the client, on top of the goods themselves
+            — shown on the Proforma/Commercial Invoice PDFs and counted as
+            ordinary revenue in the Order Profitability report. */}
+        <Field label={`Freight Value (${currencyLabel(f.currency)})`} half>
+          <Input type="text" inputMode="decimal" value={f.freight_value || ""}
+            onChange={e => setF(p => ({ ...p, freight_value: maskMoney(e.target.value) }))} placeholder="0.00" />
         </Field>
         <Field label="Prod. Lead Time (days)" half>
           <Input type="number" value={f.production_lead_time} onChange={set("production_lead_time")} />
@@ -4663,6 +4675,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
   const [f, setF] = useState(initial || {
     order_id: "", quotation_id: "", number: "", issue_date: "", validity: "", client: "", total: "", currency: "USD", status: "Draft", notes: "",
     acquisition_company: "", incoterm: "", way_of_shipment: "By Sea", port_of_loading: "", port_of_discharge: "",
+    freight_value: "",
     payment_terms: "", production_days: "", delivery_days: "", consignee: "", notify_party: "",
   });
   const [items, setItems] = useState(() => {
@@ -4882,6 +4895,13 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
     {["USD","EUR","BRL","CNY","HKD"].map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
   </Select>
 </Field>
+      {/* CIF freight charged to the client, on top of the goods themselves —
+          shown as its own line on the Proforma/Commercial Invoice PDFs, and
+          counted as ordinary revenue in the Order Profitability report. */}
+      <Field label={`Freight Value (${currencyLabel(f.currency)})`} half>
+        <Input type="text" inputMode="decimal" value={f.freight_value || ""}
+          onChange={e => setF(p => ({ ...p, freight_value: maskMoney(e.target.value) }))} placeholder="0.00" />
+      </Field>
       <Field label="Status" half>
         <Select value={f.status} onChange={set("status")}>
           {["Draft","Sent","Accepted","Rejected"].map(s => <option key={s}>{s}</option>)}
@@ -4977,7 +4997,11 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
             sale_pct: item.sale_pct !== "" && item.sale_pct != null ? (parseLocaleNumber(item.sale_pct) ?? item.sale_pct) : item.sale_pct,
             target_price: item.target_price !== "" && item.target_price != null ? (parseLocaleNumber(item.target_price) ?? item.target_price) : item.target_price,
           }));
-          await onSave({ ...f, items: JSON.stringify(cleanedItems) });
+          await onSave({
+            ...f,
+            freight_value: f.freight_value !== "" && f.freight_value != null ? (parseLocaleNumber(f.freight_value) ?? f.freight_value) : f.freight_value,
+            items: JSON.stringify(cleanedItems),
+          });
           onClose();
         }}>Save Proforma</Btn>
       </div>
@@ -5156,6 +5180,7 @@ function QuotationForm({ onSave, onClose, initial }) {
   const [f, setF] = useState(initial || {
   number: "", client: "", currency: "USD", deadline: "", price_validity: "",
   port_of_loading: "", port_of_discharge: "",
+  freight_value: "",
   total: "",
   specifications: "", notes: "", status: "Pending",
 });
@@ -5323,7 +5348,13 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
             onChange={v => setF(p => ({ ...p, port_of_discharge: v }))}
             placeholder="Search Brazil ports or type any…" />
         </Field>
-        <div />
+        {/* CIF freight charged to the client, on top of the goods themselves
+            — shown as its own line on the Quotation PDF and carried into
+            the Proforma/Order once generated from here. */}
+        <Field label={`Freight Value (${currencyLabel(f.currency)})`} half>
+          <Input type="text" inputMode="decimal" value={f.freight_value || ""}
+            onChange={e => setF(p => ({ ...p, freight_value: maskMoney(e.target.value) }))} placeholder="0.00" />
+        </Field>
 
         <Field label="Products">
           <div style={{ background: "#1e293b", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>
@@ -5464,7 +5495,11 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
               sale_pct: item.sale_pct !== "" && item.sale_pct != null ? (parseLocaleNumber(item.sale_pct) ?? item.sale_pct) : item.sale_pct,
               target_price: item.target_price !== "" && item.target_price != null ? (parseLocaleNumber(item.target_price) ?? item.target_price) : item.target_price,
             }));
-            await onSave({ ...f, items: JSON.stringify(cleanedItems), media: JSON.stringify(media) });
+            await onSave({
+              ...f,
+              freight_value: f.freight_value !== "" && f.freight_value != null ? (parseLocaleNumber(f.freight_value) ?? f.freight_value) : f.freight_value,
+              items: JSON.stringify(cleanedItems), media: JSON.stringify(media),
+            });
             onClose();
           }}>Save Quotation</Btn>
         </div>
@@ -5635,6 +5670,9 @@ console.log('quotations set:', quotations?.length);
           // editable afterwards like every other field here.
           port_of_loading: r.port_of_loading || "",
           port_of_discharge: r.port_of_discharge || "",
+          // Same carry-over as the ports above — the CIF freight already
+          // negotiated at Quotation stage.
+          freight_value: r.freight_value || "",
           // Copy the Quotation's items in as the Proforma's own snapshot —
           // from this point on they're independently editable, same as how
           // Order items work once created from a Proforma.
@@ -7064,6 +7102,7 @@ const [proformas, setProformas] = useState([]);
       incoterm: pf.incoterm || "",
       port_of_loading: pf.port_of_loading || "",
       port_of_discharge: pf.port_of_discharge || "",
+      freight_value: pf.freight_value || "",
       acquisition_company: pf.acquisition_company || "",
       payment_terms: pf.payment_terms || "",
       production_lead_time: pf.production_days || "",

@@ -59,8 +59,14 @@ function renderSalesInvoice(params) {
     title, number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
     incoterm, acq, manufacturer, items, totalLength, totalWeight, totalQuantity, totalAmount, currency,
     paymentTerms, productionDays, deliveryDays, importer, consignee, notifyParty,
-    extraShipmentLine, extraShipmentLineLabel, validity,
+    extraShipmentLine, extraShipmentLineLabel, validity, freightValue,
   } = params;
+
+  // CIF freight charged to the client — separate line, folded into every
+  // "grand total" shown below (the summary row and the Total Invoice Value
+  // box) instead of changing what totalAmount itself means upstream.
+  const freight = parseFloat(freightValue) || 0;
+  const grandTotal = (parseFloat(totalAmount) || 0) + freight;
 
   // Blank consignee/notifyParty (the common case) -> one combined card, same
   // party for all three roles, exactly like before this field existed.
@@ -113,8 +119,9 @@ function renderSalesInvoice(params) {
   sectionsHtml += `
     <table class="items-table" style="margin-top:4px;">
       <tbody>
+        ${freight > 0 ? `<tr><td class="num">Total CIF Freight: ${fmtMoney(freight, currency)}</td></tr>` : ""}
         <tr class="totals-row">
-          <td class="num">${escapeHtml(summaryLabel)} &nbsp;&nbsp;|&nbsp;&nbsp; Grand Total Amount: ${fmtMoney(totalAmount, currency)}</td>
+          <td class="num">${escapeHtml(summaryLabel)} &nbsp;&nbsp;|&nbsp;&nbsp; Grand Total Amount: ${fmtMoney(grandTotal, currency)}</td>
         </tr>
       </tbody>
     </table>
@@ -174,8 +181,8 @@ function renderSalesInvoice(params) {
         </div>
         <div class="total-box">
           <div class="label">Total Invoice Value</div>
-          <div class="value">${escapeHtml(currencyLabel(currency))} ${fmtNumber(totalAmount, 2)}</div>
-          <div class="words">${escapeHtml(amountToWords(totalAmount, currency))}</div>
+          <div class="value">${escapeHtml(currencyLabel(currency))} ${fmtNumber(grandTotal, 2)}</div>
+          <div class="words">${escapeHtml(amountToWords(grandTotal, currency))}</div>
         </div>
         ${title === "PROFORMA INVOICE" && validity ? `
         <div class="card" style="margin-top:8px; flex:none;">

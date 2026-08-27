@@ -20,11 +20,14 @@ const ACQ = require("./acquisitionCompanies");
 //   portOfLoading, portOfDischarge, currency
 //   items: same normalizeSalesItem()-shaped array the other templates use,
 //     plus imageUrl (set by the caller)
-//   totalAmount
+//   totalAmount, freightValue: optional CIF freight charged to the client,
+//     shown as its own line and folded into the Grand Total below it
 function renderQuotation(params) {
-  const { number, date, client, priceValidity, portOfLoading, portOfDischarge, currency, items, totalAmount } = params;
+  const { number, date, client, priceValidity, portOfLoading, portOfDischarge, currency, items, totalAmount, freightValue } = params;
 
   const sectionsHtml = renderItemSections(items, currency, { showImage: true });
+  const freight = parseFloat(freightValue) || 0;
+  const grandTotal = (parseFloat(totalAmount) || 0) + freight;
 
   const body = `
     <div class="doc-meta-row">
@@ -46,8 +49,9 @@ function renderQuotation(params) {
 
     <table class="items-table" style="margin-top:4px;">
       <tbody>
+        ${freight > 0 ? `<tr><td class="num">Total CIF Freight: ${fmtMoney(freight, currency)}</td></tr>` : ""}
         <tr class="totals-row">
-          <td class="num">Grand Total Amount: ${fmtMoney(totalAmount, currency)}</td>
+          <td class="num">Grand Total Amount: ${fmtMoney(grandTotal, currency)}</td>
         </tr>
       </tbody>
     </table>
@@ -56,8 +60,8 @@ function renderQuotation(params) {
       <div style="flex:1.2; display:flex; flex-direction:column;">
         <div class="total-box" style="flex:1;">
           <div class="label">Total Quotation Value</div>
-          <div class="value">${escapeHtml(currencyLabel(currency))} ${fmtNumber(totalAmount, 2)}</div>
-          <div class="words">${escapeHtml(amountToWords(totalAmount, currency))}</div>
+          <div class="value">${escapeHtml(currencyLabel(currency))} ${fmtNumber(grandTotal, 2)}</div>
+          <div class="words">${escapeHtml(amountToWords(grandTotal, currency))}</div>
         </div>
       </div>
       <div style="flex:1; display:flex; flex-direction:column;">

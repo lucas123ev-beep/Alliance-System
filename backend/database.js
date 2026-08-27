@@ -26,6 +26,16 @@ db.exec(`
     acquisition_company TEXT DEFAULT '',
     container TEXT DEFAULT '',
     container_qty REAL,
+    -- Freight charged TO THE CLIENT when the deal is negotiated CIF (the
+    -- client pays extra on top of the goods themselves for the shipping) —
+    -- separate from the Packing List's agent/freight/loading cost fields,
+    -- which are what the company itself pays a forwarder. Shown as its own
+    -- line on the Quotation/Proforma/Commercial Invoice PDFs and Excel
+    -- exports, added into the Grand Total there, and counted as ordinary
+    -- revenue (added to Sale Total) in the Order Profitability report — see
+    -- computeOrderProfitability in server.js. Same currency as the document
+    -- itself, no separate currency field.
+    freight_value TEXT DEFAULT '',
     notes TEXT,
     status TEXT DEFAULT 'Pending',
     created_at TEXT DEFAULT (datetime('now')),
@@ -155,6 +165,10 @@ db.exec(`
     -- ports a second time for a shipment that was already scoped here.
     port_of_loading TEXT,
     port_of_discharge TEXT,
+    -- Freight charged to the client (CIF deals) — see the matching column
+    -- on orders above for the full explanation. Carried over to Proforma/
+    -- Order by "Generate Proforma"/"Create Order" the same way the ports are.
+    freight_value TEXT DEFAULT '',
     specifications TEXT,
     notes TEXT,
     status TEXT DEFAULT 'Open',
@@ -182,6 +196,9 @@ db.exec(`
     way_of_shipment TEXT DEFAULT 'By Sea',
     port_of_loading TEXT,
     port_of_discharge TEXT,
+    -- Freight charged to the client (CIF deals) — see the matching column
+    -- on orders above for the full explanation.
+    freight_value TEXT DEFAULT '',
     supplier TEXT,
     payment_terms TEXT,
     production_days INTEGER,
@@ -561,6 +578,10 @@ const migrations = [
   // screen) carry the shipment ports straight into the new Proforma.
   ['quotations', 'port_of_loading', 'TEXT'],
   ['quotations', 'port_of_discharge', 'TEXT'],
+  // See the CREATE TABLE comment above — freight charged to the client on
+  // CIF deals, shown on the docs and counted as revenue in the profit report.
+  ['quotations', 'freight_value', "TEXT DEFAULT ''"],
+  ['orders', 'freight_value', "TEXT DEFAULT ''"],
   // See the CREATE TABLE comment above — the client's own color reference,
   // printed under Color on the sales PDFs.
   ['products', 'client_color_code', "TEXT DEFAULT ''"],
@@ -606,6 +627,7 @@ const migrations = [
   ['proformas', 'way_of_shipment', "TEXT DEFAULT 'By Sea'"],
   ['proformas', 'port_of_loading', 'TEXT'],
   ['proformas', 'port_of_discharge', 'TEXT'],
+  ['proformas', 'freight_value', "TEXT DEFAULT ''"],
   ['proformas', 'supplier', 'TEXT'],
   // Payment terms + production/delivery day counts, entered on the Proforma
   // (before an Order necessarily exists) so they can be pulled straight into

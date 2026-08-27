@@ -281,15 +281,15 @@ app.get('/api/orders/:id', (req, res) => {
 app.post('/api/orders', guardScreen('orders'), (req, res) => {
   const { order_number, client, supplier, product, value, currency, production_lead_time, delivery_days,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
-    port_of_discharge, acquisition_company, container, container_qty, notes, items } = req.body;
+    port_of_discharge, freight_value, acquisition_company, container, container_qty, notes, items } = req.body;
   try {
     const insert = db.transaction(() => {
       const result = db.prepare(`
         INSERT INTO orders (order_number, client, supplier, product, value, currency, production_lead_time, delivery_days,
-          shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, acquisition_company, container, container_qty, notes, updated_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, freight_value, acquisition_company, container, container_qty, notes, updated_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(order_number, client, supplier, product, value, currency || 'USD', production_lead_time || null, delivery_days || null,
-        shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, acquisition_company || '', container || '', container_qty, notes, actorName(req));
+        shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, freight_value || '', acquisition_company || '', container || '', container_qty, notes, actorName(req));
       const orderId = result.lastInsertRowid;
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
@@ -317,16 +317,16 @@ app.post('/api/orders', guardScreen('orders'), (req, res) => {
 app.put('/api/orders/:id', guardScreen('orders'), (req, res) => {
   const { order_number, client, supplier, product, value, currency, production_lead_time, delivery_days,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
-    port_of_discharge, acquisition_company, container, container_qty, notes, items } = req.body;
+    port_of_discharge, freight_value, acquisition_company, container, container_qty, notes, items } = req.body;
   db.prepare(`
     UPDATE orders SET order_number=?, client=?, supplier=?, product=?, value=?, currency=?,
       production_lead_time=?, delivery_days=?, shipment_date=?, arrival_date=?, incoterm=?,
-      payment_terms=?, port_of_loading=?, port_of_discharge=?, acquisition_company=?, container=?, container_qty=?, notes=?,
+      payment_terms=?, port_of_loading=?, port_of_discharge=?, freight_value=?, acquisition_company=?, container=?, container_qty=?, notes=?,
       updated_by=?, updated_at=datetime('now')
     WHERE id=?
   `).run(order_number, client, supplier, product, value, currency, production_lead_time || null, delivery_days || null,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
-    port_of_discharge, acquisition_company || '', container || '', container_qty || null, notes, actorName(req), req.params.id);
+    port_of_discharge, freight_value || '', acquisition_company || '', container || '', container_qty || null, notes, actorName(req), req.params.id);
 
 db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
 if (items && items.length > 0) {
@@ -629,16 +629,16 @@ app.get('/api/proformas', (req, res) => {
 // screen.
 app.post('/api/proformas', (req, res) => {
   const { order_id, quotation_id, number, issue_date, validity, client, total, currency, status, notes,
-    acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier,
+    acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, freight_value, supplier,
     payment_terms, production_days, delivery_days, items, consignee, notify_party } = req.body;
   try {
     const result = db.prepare(`
 INSERT INTO proformas (order_id, quotation_id, number, issue_date, validity, client, total, currency, status, notes,
-  acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier,
+  acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, freight_value, supplier,
   payment_terms, production_days, delivery_days, items, consignee, notify_party, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `).run(order_id || null, quotation_id || null, number, issue_date, validity, client, total, currency || 'USD', status || 'Draft', notes,
-      acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', supplier || '',
+      acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', freight_value || '', supplier || '',
       payment_terms || null, production_days || null, delivery_days || null, items || null, consignee || null, notify_party || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM proformas WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
@@ -648,15 +648,15 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
 app.put('/api/proformas/:id', (req, res) => {
   const { order_id, number, issue_date, validity, client, total, currency, status, notes,
-    acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, supplier,
+    acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, freight_value, supplier,
     payment_terms, production_days, delivery_days, items, consignee, notify_party } = req.body;
   db.prepare(`
     UPDATE proformas SET order_id=?, number=?, issue_date=?, validity=?, client=?, total=?, currency=?, status=?, notes=?,
-      acquisition_company=?, incoterm=?, way_of_shipment=?, port_of_loading=?, port_of_discharge=?, supplier=?,
+      acquisition_company=?, incoterm=?, way_of_shipment=?, port_of_loading=?, port_of_discharge=?, freight_value=?, supplier=?,
       payment_terms=?, production_days=?, delivery_days=?, items=?, consignee=?, notify_party=?, updated_by=?
     WHERE id=?
   `).run(order_id || null, number, issue_date, validity, client, total, currency, status, notes,
-    acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', supplier || '',
+    acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', freight_value || '', supplier || '',
     payment_terms || null, production_days || null, delivery_days || null, items || null, consignee || null, notify_party || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM proformas WHERE id=?').get(req.params.id));
 });
@@ -993,12 +993,12 @@ app.get('/api/quotations', (req, res) => {
 });
 
 app.post('/api/quotations', guardScreen('quotations'), (req, res) => {
- const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, specifications, notes, status, media, items, total, target_price } = req.body;
+ const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, specifications, notes, status, media, items, total, target_price } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO quotations (number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, specifications, notes, status, media, items, total, target_price, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(number, client, suppliers, currency || 'USD', deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, specifications, notes, status || 'Open', media || null, items || null, total || null, target_price || null, actorName(req));
+      INSERT INTO quotations (number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, specifications, notes, status, media, items, total, target_price, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(number, client, suppliers, currency || 'USD', deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, specifications, notes, status || 'Open', media || null, items || null, total || null, target_price || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM quotations WHERE id=?').get(result.lastInsertRowid));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -1006,11 +1006,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 });
 
 app.put('/api/quotations/:id', guardScreen('quotations'), (req, res) => {
-  const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, specifications, notes, status, media, items, total, target_price } = req.body;
+  const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, specifications, notes, status, media, items, total, target_price } = req.body;
   db.prepare(`
-    UPDATE quotations SET number=?, client=?, suppliers=?, currency=?, deadline=?, price_validity=?, port_of_loading=?, port_of_discharge=?, specifications=?, notes=?, status=?, media=?, items=?, total=?, target_price=?, updated_by=?
+    UPDATE quotations SET number=?, client=?, suppliers=?, currency=?, deadline=?, price_validity=?, port_of_loading=?, port_of_discharge=?, freight_value=?, specifications=?, notes=?, status=?, media=?, items=?, total=?, target_price=?, updated_by=?
     WHERE id=?
-  `).run(number, client, suppliers, currency, deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, specifications, notes, status, media || null, items || null, total || null, target_price || null, actorName(req), req.params.id);
+  `).run(number, client, suppliers, currency, deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, specifications, notes, status, media || null, items || null, total || null, target_price || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM quotations WHERE id=?').get(req.params.id));
 });
 
@@ -1043,6 +1043,7 @@ app.get('/api/quotations/:id/pdf', async (req, res) => {
       currency,
       items,
       totalAmount,
+      freightValue: q.freight_value,
     });
 
     const pdf = await renderPdfBuffer(html);
@@ -1705,6 +1706,17 @@ async function computeOrderProfitability(order, baseCurrencyOverride) {
     };
   });
 
+  // CIF freight charged to the client is ordinary revenue, same as the
+  // items themselves — added straight into saleTotal rather than kept
+  // separate, so it flows through to profit/margin the same way a higher
+  // item price would. Distinct from freightCost below (what the company
+  // itself pays a forwarder, from the Packing List's own cost fields) —
+  // one is money coming in, the other going out, and both can coexist on
+  // the same order (e.g. client pays CIF freight, but the actual shipping
+  // still costs the company something to arrange).
+  const freightRevenue = toBase(order.freight_value, order.currency);
+  saleTotal += freightRevenue;
+
   // Summed across every Packing List tied to this order — normally just
   // one, but a multi-shipment order could have more than one, and none
   // should get silently dropped.
@@ -1736,6 +1748,7 @@ async function computeOrderProfitability(order, baseCurrencyOverride) {
     currency: base,
     items,
     saleTotal,
+    freightRevenue,
     productCostTotal,
     agentCost,
     freightCost,
@@ -1851,6 +1864,10 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
       totalQuantity,
       totalAmount,
       currency,
+      // CIF freight charged to the client — entered on the Proforma itself;
+      // falls back to the linked Order's value once one has been created
+      // (matching payment terms/production days above).
+      freightValue: pf.freight_value || order?.freight_value,
       // Payment terms / production / delivery days: prefer whatever was
       // filled in on the Proforma itself (it usually exists before any Order
       // does); fall back to the linked Order once one has been created.
@@ -1921,6 +1938,7 @@ app.get('/api/proformas/:id/xlsx', async (req, res) => {
       totalQuantity,
       totalAmount,
       currency,
+      freightValue: pf.freight_value || order?.freight_value,
       paymentTerms: pf.payment_terms || order?.payment_terms,
       productionDays: pf.production_days || order?.production_lead_time,
       deliveryDays: pf.delivery_days || order?.delivery_days,
@@ -2024,6 +2042,9 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
       totalQuantity,
       totalAmount,
       currency,
+      // No separate field on Commercial Invoice itself — this always reads
+      // from the linked Order, same as payment terms/production days below.
+      freightValue: order?.freight_value,
       paymentTerms: order?.payment_terms || ci.notes,
       productionDays: order?.production_lead_time,
       deliveryDays: order?.delivery_days,
@@ -2099,6 +2120,7 @@ app.get('/api/commercial-invoices/:id/xlsx', async (req, res) => {
       totalQuantity,
       totalAmount,
       currency,
+      freightValue: order?.freight_value,
       paymentTerms: order?.payment_terms || ci.notes,
       productionDays: order?.production_lead_time,
       deliveryDays: order?.delivery_days,

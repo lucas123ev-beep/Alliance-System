@@ -29,8 +29,13 @@ function buildSalesInvoiceWorkbook(params) {
     title, number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
     incoterm, acq, manufacturer, items, totalLength, totalWeight, totalQuantity, totalAmount, currency,
     paymentTerms, productionDays, deliveryDays, importer, consignee, notifyParty,
-    extraShipmentLine, extraShipmentLineLabel, validity,
+    extraShipmentLine, extraShipmentLineLabel, validity, freightValue,
   } = params;
+
+  // Same CIF freight handling as the PDF (pdf/salesInvoice.js) — separate
+  // line, folded into every grand-total figure shown below.
+  const freight = parseFloat(freightValue) || 0;
+  const grandTotal = (parseFloat(totalAmount) || 0) + freight;
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(title === "PROFORMA INVOICE" ? "Proforma Invoice" : "Commercial Invoice", {
@@ -140,10 +145,15 @@ function buildSalesInvoiceWorkbook(params) {
     sheet.addRow([]);
   });
 
+  if (freight > 0) {
+    const freightRow = sheet.addRow([`Total CIF Freight: ${fmtMoney(freight, currency)}`]);
+    sheet.mergeCells(freightRow.number, 1, freightRow.number, NUM_COLS);
+    freightRow.getCell(1).alignment = { horizontal: "right" };
+  }
   const summaryLabel = textileItems.length > 0
     ? `Total Length: ${fmtNumber(totalLength, 0)} m`
     : `Total Quantity: ${fmtNumber(totalQuantity, 2)}`;
-  const summaryRow = sheet.addRow([`${summaryLabel}   |   Grand Total Amount: ${fmtMoney(totalAmount, currency)}`]);
+  const summaryRow = sheet.addRow([`${summaryLabel}   |   Grand Total Amount: ${fmtMoney(grandTotal, currency)}`]);
   sheet.mergeCells(summaryRow.number, 1, summaryRow.number, NUM_COLS);
   summaryRow.font = { bold: true };
   summaryRow.getCell(1).alignment = { horizontal: "right" };
@@ -179,8 +189,8 @@ function buildSalesInvoiceWorkbook(params) {
   orderLines.push(
     { text: "" },
     { text: "Total Invoice Value", ...title_ },
-    { text: `${currencyLabel(currency)} ${fmtNumber(totalAmount, 2)}`, ...big_ },
-    { text: amountToWords(totalAmount, currency), ...italic_ },
+    { text: `${currencyLabel(currency)} ${fmtNumber(grandTotal, 2)}`, ...big_ },
+    { text: amountToWords(grandTotal, currency), ...italic_ },
   );
   if (title === "PROFORMA INVOICE" && validity) {
     orderLines.push(
