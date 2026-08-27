@@ -44,10 +44,13 @@ function buildSalesInvoiceWorkbook(params) {
   titleCell.value = title;
   titleCell.font = { bold: true, size: 15, color: { argb: NAVY_ARGB } };
   titleCell.alignment = { vertical: "middle", horizontal: "right" };
-  sheet.getRow(1).height = 34;
+  sheet.getRow(1).height = 46;
   for (let c = 1; c <= NUM_COLS; c++) sheet.getCell(1, c).border = { bottom: HEADER_RULE };
   const imageId = workbook.addImage({ base64: LOGO, extension: "png" });
-  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.15 }, ext: { width: 88, height: 29 } });
+  // Real logo artwork is ~900x297px (~3.03:1) — width/height below keep that
+  // ratio, just scaled up from the original 88x29 (looked too small next to
+  // the title per the client's own feedback after seeing the first version).
+  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: 150, height: 50 } });
 
   sheet.getRow(2).height = 6; // spacer
 
@@ -141,69 +144,62 @@ function buildSalesInvoiceWorkbook(params) {
 
   sheet.addRow([]);
 
-  // ── Order Information ────────────────────────────────────────────────
-  const addSectionTitle = text => {
-    const row = sheet.addRow([text]);
-    sheet.mergeCells(row.number, 1, row.number, NUM_COLS);
-    row.font = { bold: true, size: 12, color: { argb: NAVY_ARGB } };
-    row.getCell(1).border = { bottom: HEADER_RULE, top: HEADER_RULE };
-    return row;
-  };
-  const addPlainLine = text => {
-    const row = sheet.addRow([text]);
-    sheet.mergeCells(row.number, 1, row.number, NUM_COLS);
-    row.getCell(1).alignment = { wrapText: true };
-    return row;
-  };
+  // ── Footer: Order Information | Bank Information | Importer/Consignee ──
+  // Same 3-column arrangement as the PDF's footer-grid (see salesInvoice.js)
+  // instead of three separate full-width blocks stacked one under another —
+  // per the client's feedback that the first version's layout here didn't
+  // read like the PDF. Each column is built as its own list of "lines"
+  // first, then written row-by-row in parallel so they line up side by
+  // side; columns of different length just leave the shorter ones blank
+  // for the remaining rows.
+  const title_ = { style: "title" };
+  const bold_ = { style: "bold" };
+  const italic_ = { style: "italic" };
+  const big_ = { style: "big" };
 
-  addSectionTitle("Order Information");
-  addPlainLine(`1. Payment terms: ${paymentTerms || "100% on BL copy"}.`);
-  addPlainLine(`2. End date of production: ${daysOrNote(productionDays, "28")}`);
-  addPlainLine(`3. Goods delivered: ${portOfOrigin || "—"}.`);
-  addPlainLine(`4. Delivery date at ${(portOfOrigin || "origin port").split(",")[0]}: ${daysOrNote(deliveryDays, "33")}`);
+  const orderLines = [
+    { text: "Order Information", ...title_ },
+    { text: `1. Payment terms: ${paymentTerms || "100% on BL copy"}.` },
+    { text: `2. End date of production: ${daysOrNote(productionDays, "28")}` },
+    { text: `3. Goods delivered: ${portOfOrigin || "—"}.` },
+    { text: `4. Delivery date at ${(portOfOrigin || "origin port").split(",")[0]}: ${daysOrNote(deliveryDays, "33")}` },
+  ];
   if (extraShipmentLine) {
-    addPlainLine(`5. Packing List Description${extraShipmentLineLabel ? `: ${extraShipmentLineLabel}` : ""}`).font = { bold: true };
+    orderLines.push({ text: `5. Packing List Description${extraShipmentLineLabel ? `: ${extraShipmentLineLabel}` : ""}`, ...bold_ });
     const lines = Array.isArray(extraShipmentLine) ? extraShipmentLine : [extraShipmentLine];
-    lines.forEach(l => addPlainLine(`     ${l}.`));
+    lines.forEach(l => orderLines.push({ text: `     ${l}.` }));
   }
-  sheet.addRow([]);
-
-  // ── Total Invoice Value ──────────────────────────────────────────────
-  const totalLabelRow = sheet.addRow(["Total Invoice Value"]);
-  sheet.mergeCells(totalLabelRow.number, 1, totalLabelRow.number, NUM_COLS);
-  totalLabelRow.font = { bold: true, color: { argb: NAVY_ARGB } };
-  const totalValueRow = sheet.addRow([`${currencyLabel(currency)} ${fmtNumber(totalAmount, 2)}`]);
-  sheet.mergeCells(totalValueRow.number, 1, totalValueRow.number, NUM_COLS);
-  totalValueRow.font = { bold: true, size: 14 };
-  const totalWordsRow = sheet.addRow([amountToWords(totalAmount, currency)]);
-  sheet.mergeCells(totalWordsRow.number, 1, totalWordsRow.number, NUM_COLS);
-  totalWordsRow.getCell(1).alignment = { wrapText: true };
-  totalWordsRow.font = { italic: true };
-  sheet.addRow([]);
-
+  orderLines.push(
+    { text: "" },
+    { text: "Total Invoice Value", ...title_ },
+    { text: `${currencyLabel(currency)} ${fmtNumber(totalAmount, 2)}`, ...big_ },
+    { text: amountToWords(totalAmount, currency), ...italic_ },
+  );
   if (title === "PROFORMA INVOICE" && validity) {
-    addSectionTitle("Quotation Validity");
-    addPlainLine(`This Proforma Invoice is valid until ${fmtDateLong(validity)}.`);
-    sheet.addRow([]);
+    orderLines.push(
+      { text: "" },
+      { text: "Quotation Validity", ...title_ },
+      { text: `This Proforma Invoice is valid until ${fmtDateLong(validity)}.` },
+    );
   }
 
-  // ── Bank Information ─────────────────────────────────────────────────
-  addSectionTitle("Bank Information");
-  addPlainLine(`Beneficiary Name: ${acq.bank.beneficiary}`);
-  addPlainLine(`Address: ${acq.bank.address}`);
-  addPlainLine(`Account Number: ${acq.bank.account}`);
-  addPlainLine(`Bank Name: ${acq.bank.bankName}`);
-  addPlainLine(`Bank SWIFT: ${acq.bank.swift}`);
-  sheet.addRow([]);
+  const bankLines = [
+    { text: "Bank Information", ...title_ },
+    { text: `Beneficiary Name: ${acq.bank.beneficiary}` },
+    { text: `Address: ${acq.bank.address}` },
+    { text: `Account Number: ${acq.bank.account}` },
+    { text: `Bank Name: ${acq.bank.bankName}` },
+    { text: `Bank SWIFT: ${acq.bank.swift}` },
+  ];
 
-  // ── Importer / Consignee / Notify Party ─────────────────────────────
-  const partyCard = (heading, party) => {
-    addSectionTitle(heading);
-    addPlainLine(party.name || "—").font = { bold: true };
-    addPlainLine(party.address || "—");
-    if (party.taxId) addPlainLine(`Tax ID / CNPJ: ${party.taxId}`);
-    if (party.tel) addPlainLine(`Tel.: ${party.tel}`);
-  };
+  const partyLinesFor = (heading, party) => [
+    { text: heading, ...title_ },
+    { text: party.name || "—", ...bold_ },
+    { text: party.address || "—" },
+    ...(party.taxId ? [{ text: `Tax ID / CNPJ: ${party.taxId}` }] : []),
+    ...(party.tel ? [{ text: `Tel.: ${party.tel}` }] : []),
+  ];
+  let partyLines;
   if (consignee || notifyParty) {
     const roles = [["Importer", importer]];
     if (consignee) roles.push(["Consignee", consignee]);
@@ -215,15 +211,42 @@ function buildSalesInvoiceWorkbook(params) {
       if (existing) existing.roles.push(role);
       else groups.push({ key, roles: [role], party });
     });
-    groups.forEach(g => partyCard(g.roles.join(" / "), g.party));
+    partyLines = groups.flatMap(g => [...partyLinesFor(g.roles.join(" / "), g.party), { text: "" }]);
   } else {
-    partyCard("Importer / Consignee / Notify Party", importer);
+    partyLines = partyLinesFor("Importer / Consignee / Notify Party", importer).concat([{ text: "" }]);
   }
-  sheet.addRow([]);
+  partyLines.push(
+    { text: `Authorized by: ${acq.name}`, ...bold_ },
+    { text: "Authorized signature: _______________________________" },
+  );
 
-  // ── Signature ────────────────────────────────────────────────────────
-  addPlainLine(`Authorized by: ${acq.name}`).font = { bold: true };
-  addPlainLine("Authorized signature: _______________________________");
+  const columns = [
+    { colStart: 1, colEnd: 3, lines: orderLines },
+    { colStart: 4, colEnd: 6, lines: bankLines },
+    { colStart: 7, colEnd: NUM_COLS, lines: partyLines },
+  ];
+  const maxLines = Math.max(...columns.map(c => c.lines.length));
+  for (let i = 0; i < maxLines; i++) {
+    const row = sheet.addRow([]);
+    columns.forEach(col => {
+      const line = col.lines[i];
+      if (!line || !line.text) return;
+      sheet.mergeCells(row.number, col.colStart, row.number, col.colEnd);
+      const cell = sheet.getCell(row.number, col.colStart);
+      cell.value = line.text;
+      cell.alignment = { wrapText: true, vertical: "top" };
+      if (line.style === "title") {
+        cell.font = { bold: true, size: 12, color: { argb: NAVY_ARGB } };
+        cell.border = { bottom: HEADER_RULE, top: HEADER_RULE };
+      } else if (line.style === "bold") {
+        cell.font = { bold: true };
+      } else if (line.style === "italic") {
+        cell.font = { italic: true };
+      } else if (line.style === "big") {
+        cell.font = { bold: true, size: 14 };
+      }
+    });
+  }
 
   if (title === "PROFORMA INVOICE") {
     sheet.addRow([]);

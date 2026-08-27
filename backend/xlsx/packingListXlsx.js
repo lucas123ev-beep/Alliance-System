@@ -43,10 +43,13 @@ function buildPackingListWorkbook(params) {
   titleCell.value = "PACKING LIST";
   titleCell.font = { bold: true, size: 15, color: { argb: NAVY_ARGB } };
   titleCell.alignment = { vertical: "middle", horizontal: "right" };
-  sheet.getRow(1).height = 34;
+  sheet.getRow(1).height = 46;
   for (let c = 1; c <= NUM_COLS; c++) sheet.getCell(1, c).border = { bottom: HEADER_RULE };
   const imageId = workbook.addImage({ base64: LOGO, extension: "png" });
-  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.15 }, ext: { width: 88, height: 29 } });
+  // Same size bump as the Proforma/Commercial Invoice workbook — see
+  // salesInvoiceXlsx.js for the reasoning (client felt the original 88x29
+  // read too small next to the title).
+  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: 150, height: 50 } });
 
   sheet.getRow(2).height = 6;
 
