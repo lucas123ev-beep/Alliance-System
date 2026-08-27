@@ -36,6 +36,8 @@ const { buildFullReportWorkbook, CATEGORIES: REPORT_CATEGORIES } = require('./xl
 const { buildProductSupplierReportWorkbook } = require('./xlsx/productSupplierReport');
 const { buildSupplierEvaluationReportWorkbook } = require('./xlsx/supplierEvaluationReport');
 const { buildPaymentNoticeWorkbook } = require('./xlsx/paymentNotice');
+const { buildSalesInvoiceWorkbook } = require('./xlsx/salesInvoiceXlsx');
+const { buildPackingListWorkbook } = require('./xlsx/packingListXlsx');
 const { PROBLEM_OPTIONS, SOLUTION_OPTIONS, findProblem, findSolution, computeRating } = require('./supplierEvaluationOptions');
 const {
   hashPassword, verifyPassword, generateToken, generateTempPassword, requireAuth, guardScreen, actorName,
@@ -1871,6 +1873,76 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
   }
 });
 
+// Excel version of the same document — same param-gathering as the PDF
+// route above (kept duplicated rather than refactored into a shared
+// function, matching how the Contract PDF/Payment Notice xlsx routes
+// already do their own independent param-building elsewhere in this file),
+// just handed to buildSalesInvoiceWorkbook instead of renderSalesInvoice.
+app.get('/api/proformas/:id/xlsx', async (req, res) => {
+  try {
+    const pf = db.prepare('SELECT * FROM proformas WHERE id=?').get(req.params.id);
+    if (!pf) return res.status(404).json({ error: 'Proforma not found' });
+
+    const order = pf.order_id ? db.prepare('SELECT * FROM orders WHERE id=?').get(pf.order_id) : null;
+    const quotation = pf.quotation_id ? db.prepare('SELECT * FROM quotations WHERE id=?').get(pf.quotation_id) : null;
+
+    let rawItems = [];
+    if (order) rawItems = orderItemsFor(order.id);
+    else if (pf.items) rawItems = parseJsonSafe(pf.items, []);
+    else if (quotation) rawItems = parseJsonSafe(quotation.items, []);
+
+    const currency = pf.currency || order?.currency || quotation?.currency || 'USD';
+    const items = rawItems.map(i => normalizeSalesItem(i, currency));
+    const totalLength = items.reduce((s, i) => s + (parseFloat(i.totalLength) || 0), 0);
+    const totalWeight = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.totalWeight) || 0), 0);
+    const totalQuantity = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
+    const totalAmount = pf.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+
+    const acqCode = order?.acquisition_company || pf.acquisition_company || 'HK';
+    const acq = getAcq(acqCode);
+    const clientRow = findClientByName(pf.client);
+    const consigneeRow = pf.consignee ? findClientByName(pf.consignee) : null;
+    const notifyPartyRow = pf.notify_party ? findClientByName(pf.notify_party) : null;
+
+    const workbook = buildSalesInvoiceWorkbook({
+      title: 'PROFORMA INVOICE',
+      number: pf.number,
+      date: pf.issue_date,
+      wayOfShipment: pf.way_of_shipment || order?.way_of_shipment,
+      countryOfOrigin: 'China',
+      portOfOrigin: pf.port_of_loading || order?.port_of_loading,
+      portOfDestination: pf.port_of_discharge || order?.port_of_discharge,
+      incoterm: pf.incoterm || order?.incoterm,
+      acq,
+      manufacturer: { name: NINGBO_ACQ.name, address: NINGBO_ACQ.addressLine, tel: NINGBO_ACQ.tel },
+      items,
+      totalLength,
+      totalWeight,
+      totalQuantity,
+      totalAmount,
+      currency,
+      paymentTerms: pf.payment_terms || order?.payment_terms,
+      productionDays: pf.production_days || order?.production_lead_time,
+      deliveryDays: pf.delivery_days || order?.delivery_days,
+      importer: { name: pf.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
+      consignee: pf.consignee ? { name: pf.consignee, address: fullAddress(consigneeRow), taxId: consigneeRow?.tax_id, tel: consigneeRow?.phone } : null,
+      notifyParty: pf.notify_party ? { name: pf.notify_party, address: fullAddress(notifyPartyRow), taxId: notifyPartyRow?.tax_id, tel: notifyPartyRow?.phone } : null,
+      validity: pf.validity,
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `Proforma-${safeFilenamePart(order?.order_number || pf.number)}.xlsx`;
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': contentDisposition(filename),
+    });
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('Proforma xlsx error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
   try {
     const ci = db.prepare('SELECT * FROM commercial_invoices WHERE id=?').get(req.params.id);
@@ -1970,6 +2042,84 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
   }
 });
 
+// Excel version — same param-gathering as the PDF route above.
+app.get('/api/commercial-invoices/:id/xlsx', async (req, res) => {
+  try {
+    const ci = db.prepare('SELECT * FROM commercial_invoices WHERE id=?').get(req.params.id);
+    if (!ci) return res.status(404).json({ error: 'Commercial invoice not found' });
+    const order = ci.order_id ? db.prepare('SELECT * FROM orders WHERE id=?').get(ci.order_id) : null;
+    const rawItems = order ? orderItemsFor(order.id) : [];
+    const currency = ci.currency || order?.currency || 'USD';
+    const items = rawItems.map(i => normalizeSalesItem(i, currency));
+    const totalLength = items.reduce((s, i) => s + (parseFloat(i.totalLength) || 0), 0);
+    const totalWeight = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.totalWeight) || 0), 0);
+    const totalQuantity = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
+    const totalAmount = ci.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+
+    const acq = getAcq(order?.acquisition_company || 'HK');
+    const clientRow = findClientByName(ci.client);
+    const pl = db.prepare('SELECT * FROM packing_lists WHERE order_id=? ORDER BY created_at DESC LIMIT 1').get(order?.id);
+    const plContainers = pl ? parseJsonSafe(pl.containers_json, []) : [];
+    const plItems = pl ? parseJsonSafe(pl.items_json, []) : [];
+    const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 0);
+    const unitSummary = (arr) => {
+      if (!arr.length) return 'Packages: 0';
+      if (arr.every(i => i.price_basis === 'ton' && i.tons_per_package)) {
+        const tons = arr.reduce((s, i) => s + (parseFloat(i.roll) || 0) * (parseFloat(i.tons_per_package) || 0), 0);
+        return `Tons: ${tons.toFixed(3)}`;
+      }
+      return `${arr.every(i => i.isTextile) ? 'Rolls' : 'Packages'}: ${sumOf(arr, 'roll')}`;
+    };
+    let plSummary = pl ? `${unitSummary(plItems)} | Gross Weight: ${pl.total_gross_weight || 0} kg | Net Weight: ${pl.total_net_weight || 0} kg | CBM: ${pl.total_cbm || 0}` : '';
+    if (pl && Array.isArray(plContainers) && plContainers.length >= 1) {
+      plSummary = plContainers.map(c => {
+        const containerItems = plItems.filter(i => (i.container_seq || 1) === c.seq && (parseFloat(i.roll) || 0) > 0);
+        if (!containerItems.length) return null;
+        return `Container ${String(c.seq).padStart(2, '0')}: ${c.code || '—'} — ${unitSummary(containerItems)} | Gross Weight: ${sumOf(containerItems, 'grossWeight').toFixed(1)} kg | Net Weight: ${sumOf(containerItems, 'netWeight').toFixed(1)} kg | CBM: ${sumOf(containerItems, 'cbm').toFixed(1)}`;
+      }).filter(Boolean);
+    }
+    const containerSummaryText = order?.container_qty && order?.container
+      ? `${order.container_qty}x ${order.container}`
+      : '';
+
+    const workbook = buildSalesInvoiceWorkbook({
+      title: 'COMMERCIAL INVOICE',
+      number: ci.number,
+      date: ci.issue_date,
+      wayOfShipment: order?.way_of_shipment,
+      countryOfOrigin: 'China',
+      portOfOrigin: order?.port_of_loading,
+      portOfDestination: order?.port_of_discharge,
+      incoterm: order?.incoterm,
+      acq,
+      manufacturer: { name: NINGBO_ACQ.name, address: NINGBO_ACQ.addressLine, tel: NINGBO_ACQ.tel },
+      items,
+      totalLength,
+      totalWeight,
+      totalQuantity,
+      totalAmount,
+      currency,
+      paymentTerms: order?.payment_terms || ci.notes,
+      productionDays: order?.production_lead_time,
+      deliveryDays: order?.delivery_days,
+      extraShipmentLine: plSummary,
+      extraShipmentLineLabel: containerSummaryText,
+      importer: { name: ci.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `Commercial-${safeFilenamePart(order?.order_number || ci.number)}.xlsx`;
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': contentDisposition(filename),
+    });
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('Commercial invoice xlsx error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/packing-lists/:id/pdf', async (req, res) => {
   try {
     const pl = db.prepare('SELECT * FROM packing_lists WHERE id=?').get(req.params.id);
@@ -2010,6 +2160,49 @@ app.get('/api/packing-lists/:id/pdf', async (req, res) => {
     res.send(pdf);
   } catch (err) {
     console.error('Packing list PDF error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Excel version — same param-gathering as the PDF route above.
+app.get('/api/packing-lists/:id/xlsx', async (req, res) => {
+  try {
+    const pl = db.prepare('SELECT * FROM packing_lists WHERE id=?').get(req.params.id);
+    if (!pl) return res.status(404).json({ error: 'Packing list not found' });
+    const order = pl.order_id ? db.prepare('SELECT * FROM orders WHERE id=?').get(pl.order_id) : null;
+    const items = parseJsonSafe(pl.items_json, []);
+    const containers = parseJsonSafe(pl.containers_json, []);
+    const clientRow = findClientByName(order?.client);
+    const acq = getAcq(order?.acquisition_company || 'HK');
+
+    const workbook = buildPackingListWorkbook({
+      number: pl.number,
+      date: pl.date,
+      wayOfShipment: pl.way_of_shipment,
+      countryOfOrigin: pl.country_of_origin,
+      portOfOrigin: pl.port_of_origin,
+      portOfDestination: pl.port_of_destination,
+      incoterm: pl.incoterm,
+      acq,
+      manufacturer: { name: pl.manufacturer, address: pl.manufacturer_address, tel: '' },
+      items,
+      containers,
+      totals: {
+        totalLength: pl.total_length, totalRoll: pl.total_roll,
+        totalGrossWeight: pl.total_gross_weight, totalNetWeight: pl.total_net_weight, totalCbm: pl.total_cbm,
+      },
+      importer: { name: order?.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `PackingList-${safeFilenamePart(order?.order_number || pl.number)}.xlsx`;
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': contentDisposition(filename),
+    });
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('Packing list xlsx error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2090,7 +2283,12 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
         color: product?.color || '',
         colorZh: product?.color_zh || '',
         clientColorCode: product?.client_color_code || '',
-        code: item.product_code || product?.code || '',
+        // Live registered code takes priority (same as name/color/etc. above)
+        // — a snapshot taken when the item was added to the order shouldn't
+        // keep printing on the Contract PDF after the code was corrected in
+        // the Product registry. Only falls back to the order item's own
+        // snapshot when the product record itself is gone (e.g. deleted).
+        code: product?.code || item.product_code || '',
         thickness: product?.thickness ? `${product.thickness}${product.thickness_unit || ''}` : '',
         width: product?.width ? `${product.width}${product.width_unit || ''}` : '',
         gramatura,

@@ -1772,7 +1772,7 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
 // same /notifications/status-change route and recipient-eligibility rules
 // (e.g. Commercial Invoice documents are still restricted to
 // non-hideCommercialStatus users with screen access).
-function SendDocumentModal({ entityType, recordLabel, documentLabel, attachment, onClose }) {
+function SendDocumentModal({ entityType, recordLabel, documentLabel, attachments, onClose }) {
   const t = useT();
   const [recipients, setRecipients] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
@@ -1794,18 +1794,29 @@ function SendDocumentModal({ entityType, recordLabel, documentLabel, attachment,
     });
   }
 
+  // One or two files may have been chosen (PDF and/or Spreadsheet) — since
+  // the backend/e-mail plumbing only ever attaches one file per message,
+  // sending both means firing one notification per file instead of trying
+  // to bundle two attachments into a single e-mail. Each recipient then
+  // gets one e-mail per format, its subject/documentLabel naming which one
+  // it is (e.g. "PDF" vs "Spreadsheet") so it's clear they're not
+  // duplicates. Results are combined across all the calls.
   async function send() {
     if (selected.size === 0) { onClose(); return; }
     setSending(true);
     try {
-      const res = await api("/notifications/status-change", "POST", {
-        entityType, recordLabel, eventType: "document", documentLabel,
+      const results = await Promise.all((attachments || []).map(att => api("/notifications/status-change", "POST", {
+        entityType, recordLabel, eventType: "document",
+        documentLabel: attachments.length > 1 ? `${documentLabel} (${att.formatLabel})` : documentLabel,
         recipientUsernames: [...selected],
         message: message.trim() || undefined,
-        attachmentUrl: attachment?.url,
-        attachmentName: attachment?.name,
+        attachmentUrl: att?.url,
+        attachmentName: att?.name,
+      })));
+      setResult({
+        sent: [...new Set(results.flatMap(r => r.sent || []))],
+        skipped: [...new Set(results.flatMap(r => r.skipped || []))],
       });
-      setResult(res);
       setTimeout(onClose, 1100);
     } catch {
       setResult({ error: true });
@@ -1856,25 +1867,93 @@ function SendDocumentModal({ entityType, recordLabel, documentLabel, attachment,
   );
 }
 
-// Wraps an existing "Download PDF/Excel" button with a second small button
-// that fetches the same file, uploads it to Cloudinary (reusing
-// uploadToCloudinary — same helper as message attachments elsewhere), and
-// opens SendDocumentModal to pick who gets it by e-mail. Download behavior
-// is untouched; the e-mail path is purely additive.
-function DocButtons({ url, filename, entityType, recordLabel, documentLabel = "PDF", label, color = "#10b981", small = true }) {
+// Small "which format?" chooser — used both for the plain download button
+// (pick one, opens it) and, when e-mailing, for picking which one(s) to
+// attach (checkboxes, since both can be sent at once). Only ever rendered
+// when the caller actually passed an xlsxUrl — documents without an Excel
+// version (Quotation, Contract) never show this and keep the old
+// single-button behavior untouched.
+function FormatPickerModal({ mode, onPick, onClose }) {
+  const t = useT();
+  const [checked, setChecked] = useState({ pdf: true, xlsx: false });
+  const toggle = key => setChecked(p => ({ ...p, [key]: !p[key] }));
+
+  return (
+    <Modal title={mode === "download" ? t("Choose a format") : t("Which format(s) to send?")} onClose={onClose}>
+      {mode === "download" ? (
+        <div style={{ display: "flex", gap: "12px", justifyContent: "center", padding: "8px 0 4px" }}>
+          <Btn onClick={() => onPick(["pdf"])}>📄 PDF</Btn>
+          <Btn onClick={() => onPick(["xlsx"])}>📊 {t("Spreadsheet")}</Btn>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", margin: "4px 0 20px" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", color: "#f1f5f9", cursor: "pointer" }}>
+              <input type="checkbox" checked={checked.pdf} onChange={() => toggle("pdf")} /> 📄 PDF
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px", color: "#f1f5f9", cursor: "pointer" }}>
+              <input type="checkbox" checked={checked.xlsx} onChange={() => toggle("xlsx")} /> 📊 {t("Spreadsheet")}
+            </label>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+            <Btn outline color="#64748b" onClick={onClose}>{t("Cancel")}</Btn>
+            <Btn disabled={!checked.pdf && !checked.xlsx} onClick={() => onPick([checked.pdf && "pdf", checked.xlsx && "xlsx"].filter(Boolean))}>
+              {t("Continue")}
+            </Btn>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+// Wraps an existing "Download PDF" button with (a) an Excel alternative,
+// when the caller passes xlsxUrl — clicking the main button then asks PDF
+// or Spreadsheet instead of opening the PDF straight away — and (b) a
+// second small button that fetches the chosen file(s), uploads them to
+// Cloudinary (reusing uploadToCloudinary — same helper as message
+// attachments elsewhere), and opens SendDocumentModal to pick who gets them
+// by e-mail. Documents with no xlsxUrl (Quotation, Contract) keep the exact
+// original single-button behavior — the format picker never appears.
+function DocButtons({ url, filename, xlsxUrl, xlsxFilename, entityType, recordLabel, documentLabel = "PDF", label, color = "#10b981", small = true }) {
   const t = useT();
   const [preparing, setPreparing] = useState(false);
-  const [sendDoc, setSendDoc] = useState(null); // { attachment }
+  const [picker, setPicker] = useState(null); // "download" | "email" | null
+  const [sendDoc, setSendDoc] = useState(null); // { attachments: [{ url, name, label }] }
 
-  async function startSend() {
+  const urlFor = fmt => (fmt === "xlsx" ? xlsxUrl : url);
+  const nameFor = fmt => (fmt === "xlsx" ? (xlsxFilename || filename) : filename);
+  const labelFor = fmt => (fmt === "xlsx" ? t("Spreadsheet") : "PDF");
+
+  function handleMainClick() {
+    if (xlsxUrl) { setPicker("download"); return; }
+    window.open(url, "_blank");
+  }
+
+  function handleDownloadPick(formats) {
+    setPicker(null);
+    (formats[0] ? [formats[0]] : []).forEach(fmt => window.open(urlFor(fmt), "_blank"));
+  }
+
+  function handleEmailClick() {
+    if (xlsxUrl) { setPicker("email"); return; }
+    prepareAndSend(["pdf"]);
+  }
+
+  async function prepareAndSend(formats) {
+    setPicker(null);
     setPreparing(true);
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const file = new File([blob], filename, { type: blob.type });
-      const uploaded = await uploadToCloudinary(file);
-      setSendDoc({ attachment: uploaded });
+      const attachments = [];
+      for (const fmt of formats) {
+        const res = await fetch(urlFor(fmt));
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const file = new File([blob], nameFor(fmt), { type: blob.type });
+        const uploaded = await uploadToCloudinary(file);
+        attachments.push({ ...uploaded, formatLabel: labelFor(fmt) });
+      }
+      setSendDoc({ attachments });
     } catch (err) {
       alert(t("Failed to prepare document: ") + err.message);
     }
@@ -1883,16 +1962,23 @@ function DocButtons({ url, filename, entityType, recordLabel, documentLabel = "P
 
   return (
     <>
-      <Btn small={small} outline color={color} onClick={() => window.open(url, "_blank")}>{label || `📄 ${documentLabel}`}</Btn>
-      <Btn small={small} outline color="#3b82f6" disabled={preparing} onClick={startSend} title={t("Send by e-mail")}>
+      <Btn small={small} outline color={color} onClick={handleMainClick}>{label || `📄 ${documentLabel}`}</Btn>
+      <Btn small={small} outline color="#3b82f6" disabled={preparing} onClick={handleEmailClick} title={t("Send by e-mail")}>
         {preparing ? "…" : "✉️"}
       </Btn>
+      {picker && (
+        <FormatPickerModal
+          mode={picker}
+          onClose={() => setPicker(null)}
+          onPick={formats => (picker === "download" ? handleDownloadPick(formats) : prepareAndSend(formats))}
+        />
+      )}
       {sendDoc && (
         <SendDocumentModal
           entityType={entityType}
           recordLabel={recordLabel}
           documentLabel={documentLabel}
-          attachment={sendDoc.attachment}
+          attachments={sendDoc.attachments}
           onClose={() => setSendDoc(null)}
         />
       )}
@@ -4842,7 +4928,8 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
         {f.id && <DocButtons url={authUrl(`${API}/proformas/${f.id}/pdf`)} filename={`Proforma-${f.number}.pdf`}
-          entityType="proformas" recordLabel={f.number} label="📄 Download PDF" small={false} />}
+          xlsxUrl={authUrl(`${API}/proformas/${f.id}/xlsx`)} xlsxFilename={`Proforma-${f.number}.xlsx`}
+          entityType="proformas" recordLabel={f.number} label="📄 Download" small={false} />}
         <Btn onClick={async () => {
           // Same BR-formatted-text cleanup as QuotationForm/OrderForm — the
           // items here go through the same PricingRow editor.
@@ -6018,7 +6105,8 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
         {f.id && <DocButtons url={authUrl(`${API}/packing-lists/${f.id}/pdf`)} filename={`PackingList-${f.number}.pdf`}
-          entityType="packing-lists" recordLabel={f.number} label="📄 Download PDF" small={false} />}
+          xlsxUrl={authUrl(`${API}/packing-lists/${f.id}/xlsx`)} xlsxFilename={`PackingList-${f.number}.xlsx`}
+          entityType="packing-lists" recordLabel={f.number} label="📄 Download" small={false} />}
         <Btn onClick={async () => { await onSave(f); onClose(); }}>Save Packing List</Btn>
       </div>
     </div>
@@ -7028,7 +7116,8 @@ cols={[
         🛒 {r.order_id ? t("Order ✓") : t("Create Order")}
       </Btn>
       <DocButtons url={authUrl(`${API}/proformas/${r.id}/pdf`)} filename={`Proforma-${r.number}.pdf`}
-        entityType="proformas" recordLabel={r.number} label="📄 PDF" />
+        xlsxUrl={authUrl(`${API}/proformas/${r.id}/xlsx`)} xlsxFilename={`Proforma-${r.number}.xlsx`}
+        entityType="proformas" recordLabel={r.number} label="📄 Doc" />
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/proformas/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
       <LastModifiedBy name={r.updated_by} />
