@@ -8,19 +8,19 @@ const { escapeHtml, fmtNumber, fmtMoney } = require("./helpers");
 function renderContract(params) {
   const {
     contractNumber, signDate, deliveryDate, acq, supplier, items, total, currency, remarks,
+    totalQuantity, totalQuantityUnit, totalQuantityDecimals,
   } = params;
 
   const rows = items.map((item, i) => `
     <tr>
       <td class="num">${i + 1}</td>
-      <td>${escapeHtml(item.productName)}</td>
-      <td>${escapeHtml(item.color || "—")}</td>
+      <td>${escapeHtml(item.productNameZh || item.productName)}</td>
+      <td>${escapeHtml(item.colorZh || item.color || "—")}</td>
       <td>${escapeHtml(item.code || "—")}</td>
       <td>${escapeHtml(item.thickness || "—")}</td>
       <td>${escapeHtml(item.width || "—")}</td>
-      <td>${escapeHtml(item.height || "—")}</td>
       <td>${escapeHtml(item.gramatura || "—")}</td>
-      <td class="num">${item.quantityValue != null ? `${fmtNumber(item.quantityValue, item.quantityDecimals ?? 3)}${item.quantityUnit ? " " + escapeHtml(item.quantityUnit) : ""}` : "—"}</td>
+      <td class="num">${item.quantityValue != null ? `${fmtNumber(item.quantityValue, item.quantityDecimals ?? 0)}${item.quantityUnit ? " " + escapeHtml(item.quantityUnit) : ""}` : "—"}</td>
       <td class="num">${fmtMoney(item.unitPrice, item.currency || currency)}</td>
       <td class="num">${fmtMoney(item.total, item.currency || currency)}</td>
     </tr>
@@ -77,13 +77,15 @@ function renderContract(params) {
       <thead>
         <tr>
           <th>项目 No.</th><th>品名 Product Name</th><th>颜色 Color</th><th>编号 Code</th><th>厚度 Thickness</th><th>有效门幅 Width</th>
-          <th>高度 Height</th><th>克重 Weight</th><th>数量 Quantity</th><th>含税单价 Unit Price</th><th>金额 Amount</th>
+          <th>克重 Weight</th><th>数量 Quantity</th><th>含税单价 Unit Price</th><th>金额 Amount</th>
         </tr>
       </thead>
       <tbody>
         ${rows}
         <tr class="totals-row">
-          <td colspan="10" style="text-align:right;">总计 (Total)</td>
+          <td colspan="7" style="text-align:right;">总计 (Total)</td>
+          <td class="num">${totalQuantity != null ? `${fmtNumber(totalQuantity, totalQuantityDecimals ?? 0)}${totalQuantityUnit ? " " + escapeHtml(totalQuantityUnit) : ""}` : ""}</td>
+          <td></td>
           <td class="num">${fmtMoney(total, currency)}</td>
         </tr>
       </tbody>

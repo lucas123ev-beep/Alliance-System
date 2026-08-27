@@ -36,6 +36,12 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
+    -- Chinese name/color, entered by hand alongside the English ones — the
+    -- Purchase Contract PDF is a bilingual document sent to the Chinese
+    -- factory, so it prints these under the English Product Name/Color
+    -- instead of leaving the factory to translate on their own.
+    name_zh TEXT DEFAULT '',
+    color_zh TEXT DEFAULT '',
     description TEXT,
     unit TEXT DEFAULT 'unit',
     ncm TEXT DEFAULT '',
@@ -558,6 +564,8 @@ const migrations = [
   // See the CREATE TABLE comment above — the client's own color reference,
   // printed under Color on the sales PDFs.
   ['products', 'client_color_code', "TEXT DEFAULT ''"],
+  ['products', 'name_zh', "TEXT DEFAULT ''"],
+  ['products', 'color_zh', "TEXT DEFAULT ''"],
   // Stamped by the PATCH /api/orders/:id/status route the moment status
   // becomes 'Completed' (cleared back to NULL if it's ever moved off
   // Completed again) — the real-profit calculation (computeOrderProfitability
