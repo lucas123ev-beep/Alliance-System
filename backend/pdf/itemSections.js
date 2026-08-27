@@ -57,9 +57,9 @@ function renderItemSections(items, currency, opts = {}) {
       ${showImage ? imageCell(item) : ""}
       ${nameCell(item)}
       ${descCell(item)}
-      <td class="center">${escapeHtml(item.color || "—")}</td>
+      <td class="center">${escapeHtml(item.color || "—")}${item.clientColorCode ? `<div style="font-size:10px; color:#666; margin-top:2px;">${escapeHtml(item.clientColorCode)}</div>` : ""}</td>
       <td class="center">${escapeHtml(item.weightSpec || "—")}</td>
-      <td class="num">${fmtNumber(item.totalLength, 3)}</td>
+      <td class="num">${fmtNumber(item.totalLength, 0)}</td>
       <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
       <td class="num">${fmtMoney(item.total, currency)}</td>
     </tr>
@@ -70,7 +70,7 @@ function renderItemSections(items, currency, opts = {}) {
       ${showImage ? imageCell(item) : ""}
       ${nameCell(item)}
       ${descCell(item)}
-      <td class="center">${escapeHtml(item.color || "—")}</td>
+      <td class="center">${escapeHtml(item.color || "—")}${item.clientColorCode ? `<div style="font-size:10px; color:#666; margin-top:2px;">${escapeHtml(item.clientColorCode)}</div>` : ""}</td>
       <td class="center">${escapeHtml(item.priceUnitLabel || item.width || "—")}</td>
       <td class="center">${item.quantityLabel
         ? escapeHtml(item.quantityLabel)
@@ -94,8 +94,8 @@ function renderItemSections(items, currency, opts = {}) {
       <thead>
         <tr>
           ${imgTh}
-          <th style="width:${11 - imgColAdjust * 0.4}%">Product</th>
-          <th style="width:${42 - imgColAdjust * 0.6}%">Description</th>
+          <th style="width:${15 - imgColAdjust * 0.4}%">Product</th>
+          <th style="width:${38 - imgColAdjust * 0.6}%">Description</th>
           <th style="width:8%">Color</th>
           <th style="width:9%">Weight</th>
           <th style="width:10%">Total Length</th>
@@ -117,8 +117,8 @@ function renderItemSections(items, currency, opts = {}) {
       <thead>
         <tr>
           ${imgTh}
-          <th style="width:${12 - imgColAdjust * 0.4}%">Product</th>
-          <th style="width:${32 - imgColAdjust * 0.6}%">Description</th>
+          <th style="width:${16 - imgColAdjust * 0.4}%">Product</th>
+          <th style="width:${28 - imgColAdjust * 0.6}%">Description</th>
           <th style="width:8%">Color</th>
           <th style="width:9%">Unit</th>
           <th style="width:10%">Quantity</th>

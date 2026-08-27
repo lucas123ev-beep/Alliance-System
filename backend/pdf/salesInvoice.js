@@ -102,7 +102,7 @@ function renderSalesInvoice(params) {
   // separate table below — when the order mixes both kinds of goods, Total
   // Length takes priority since it's the primary quoted measure.
   const summaryLabel = textileItems.length > 0
-    ? `Total Length: ${fmtNumber(totalLength, 3)} m`
+    ? `Total Length: ${fmtNumber(totalLength, 0)} m`
     : `Total Quantity: ${fmtNumber(totalQuantity, 2)}`;
 
   // Both totals share ONE cell (not split across two stretched-apart

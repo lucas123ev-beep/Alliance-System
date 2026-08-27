@@ -2316,11 +2316,15 @@ function Table({ cols, rows, emptyMsg = "No records found" }) {
                 <td key={c.key || c.label} style={{ padding: "12px 14px", color: "#cbd5e1", verticalAlign: "middle" }}>
                   {c.render
                     ? c.render(row)
-                    // Only "status"/"result" are safe to auto-translate here —
-                    // they're always controlled enum values (Draft/Paid/Pending…),
-                    // never free-typed registered data like a client or
-                    // supplier name, which must never be run through t().
-                    : (c.key === "status" || c.key === "result") && typeof row[c.key] === "string"
+                    // Only "status"/"result"/"category" are safe to auto-translate
+                    // here — they're always controlled enum values (Draft/Paid/
+                    // Pending/Textile…), never free-typed registered data like a
+                    // client or supplier name, which must never be run through t().
+                    // This is also what makes a record edited via the Chinese UI
+                    // display correctly once English is selected again (or vice
+                    // versa) instead of showing whichever language it happened to
+                    // be saved in — see the Select component's value/children fix.
+                    : (c.key === "status" || c.key === "result" || c.key === "category") && typeof row[c.key] === "string"
                       ? t(row[c.key])
                       : row[c.key]}
                 </td>
@@ -3958,6 +3962,11 @@ const handleSalePerLiterChange = (e) => {
     {PRODUCT_CATEGORIES.map(c => <option key={c}>{c}</option>)}
   </Select>
 </Field>
+      {/* The client's OWN color reference (e.g. a Pantone code or their
+          internal color name) — separate from Color above, which is this
+          company's own description of it. Printed under Color on the
+          Commercial Invoice/Proforma/Packing List PDFs. */}
+      <Field label="Client Color Code" half><Input value={f.client_color_code || ""} onChange={set("client_color_code")} placeholder="e.g. PMS 186 C" /></Field>
 
       <Field label="Supplier" half>
         <div style={{ position: "relative" }}>
@@ -6275,6 +6284,15 @@ const generateContract = (order) => {
   // tacking an unwanted tag onto every contract number/PDF filename.
   if (suppliers.length <= 1) {
     const number = baseNumber;
+    // A supplier Contract is the COST side of the deal (what's owed to the
+    // factory), not the sale side — order.value/order.currency are what the
+    // CLIENT pays, which used to leak in here and show e.g. a Chinese
+    // supplier's contract in USD instead of the RMB it was actually quoted
+    // in. Same cost-based total/currency calc the multi-supplier branch
+    // below already uses, just for the whole order's items at once.
+    const items = order.items || [];
+    const total = items.reduce((sum, i) => sum + ((parseFloat(i.cost_price) || parseFloat(i.unit_price) || 0) * (parseFloat(i.quantity) || 0)), 0);
+    const currency = items[0]?.cost_currency || items[0]?.currency || order.currency || "USD";
    setContractModal([{
   order_id: order.id,
   contract_number: number,
@@ -6289,8 +6307,8 @@ const generateContract = (order) => {
   supplier: suppliers[0] || "",
   sign_date: new Date().toISOString().slice(0, 10),
   delivery_date: order.shipment_date || "",
-  total: order.value || "",
-  currency: order.currency || "USD",
+  total: total.toFixed(2),
+  currency,
   status: "Draft",
   // Contract notes start blank — inheriting the order's notes (e.g. "Created
   // from Proforma PI-... (Quotation ...)") wasn't meaningful on a contract,
@@ -6746,6 +6764,7 @@ cols={[
   { label: "Code", sortValue: r => r.code, render: r => <span style={{ fontFamily: "monospace", color: "#60a5fa" }}>{r.code}</span> },
   { label: "Name", sortValue: r => r.name, render: r => <span style={{ fontWeight: 600 }}>{r.name}</span> },
   { label: "Category", key: "category" },
+  { label: "Color", sortValue: r => r.color, render: r => r.color || "—" },
   { label: "Supplier", key: "supplier" },
   { label: "Unit", key: "unit" },
   { label: "Width", sortValue: r => r.width, render: r => r.width || "—" },

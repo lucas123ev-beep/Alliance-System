@@ -445,12 +445,12 @@ function recordPriceHistory(productId, oldRow, newRow, actor) {
 }
 
 app.post('/api/products', guardScreen('products'), (req, res) => {
-  const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit } = req.body;
+  const { code, name, description, unit, ncm, hs_code, color, client_color_code, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO products (code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(code, name, description, unit || 'unit', ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', net_weight || null, tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost || 0, cost_currency || 'USD', category, supplier, sale_price || 0, sale_currency || 'USD', cost_per_meter || 0, sale_per_meter || 0, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, price_basis || 'liter', cost_per_ton || 0, sale_per_ton || 0, vat_pct || null, units_per_package || null, package_weight || null, selling_unit || null, actorName(req));
+      INSERT INTO products (code, name, description, unit, ncm, hs_code, color, client_color_code, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(code, name, description, unit || 'unit', ncm || '', hs_code || '', color || '', client_color_code || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', net_weight || null, tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost || 0, cost_currency || 'USD', category, supplier, sale_price || 0, sale_currency || 'USD', cost_per_meter || 0, sale_per_meter || 0, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, price_basis || 'liter', cost_per_ton || 0, sale_per_ton || 0, vat_pct || null, units_per_package || null, package_weight || null, selling_unit || null, actorName(req));
     const created = db.prepare('SELECT * FROM products WHERE id=?').get(result.lastInsertRowid);
     recordPriceHistory(result.lastInsertRowid, null, created, actorName(req));
     res.status(201).json(created);
@@ -460,12 +460,12 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 });
 
 app.put('/api/products/:id', guardScreen('products'), (req, res) => {
-  const { code, name, description, unit, ncm, hs_code, color, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit } = req.body;
+  const { code, name, description, unit, ncm, hs_code, color, client_color_code, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit } = req.body;
   const oldRow = db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id);
   db.prepare(`
-    UPDATE products SET code=?, name=?, description=?, unit=?, ncm=?, hs_code=?, color=?, width=?, width_unit=?, height=?, height_unit=?, thickness=?, thickness_unit=?, weight=?, weight_unit=?, net_weight=?, tube_weight=?, tube_weight_unit=?, roll_diameter=?, roll_diameter_unit=?, volume=?, volume_unit=?, unit_cost=?, cost_currency=?, category=?, supplier=?, sale_price=?, sale_currency=?, cost_per_meter=?, sale_per_meter=?, cost_per_liter=?, sale_per_liter=?, sale_pct=?, media=?, price_basis=?, cost_per_ton=?, sale_per_ton=?, vat_pct=?, units_per_package=?, package_weight=?, selling_unit=?, updated_by=?
+    UPDATE products SET code=?, name=?, description=?, unit=?, ncm=?, hs_code=?, color=?, client_color_code=?, width=?, width_unit=?, height=?, height_unit=?, thickness=?, thickness_unit=?, weight=?, weight_unit=?, net_weight=?, tube_weight=?, tube_weight_unit=?, roll_diameter=?, roll_diameter_unit=?, volume=?, volume_unit=?, unit_cost=?, cost_currency=?, category=?, supplier=?, sale_price=?, sale_currency=?, cost_per_meter=?, sale_per_meter=?, cost_per_liter=?, sale_per_liter=?, sale_pct=?, media=?, price_basis=?, cost_per_ton=?, sale_per_ton=?, vat_pct=?, units_per_package=?, package_weight=?, selling_unit=?, updated_by=?
 WHERE id=?
-`).run(code, name, description, unit, ncm || '', hs_code || '', color || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', net_weight || null, tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost, cost_currency || 'USD', category, supplier, sale_price, sale_currency || 'USD', cost_per_meter, sale_per_meter, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, price_basis || 'liter', cost_per_ton || 0, sale_per_ton || 0, vat_pct || null, units_per_package || null, package_weight || null, selling_unit || null, actorName(req), req.params.id);
+`).run(code, name, description, unit, ncm || '', hs_code || '', color || '', client_color_code || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', net_weight || null, tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost, cost_currency || 'USD', category, supplier, sale_price, sale_currency || 'USD', cost_per_meter, sale_per_meter, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, price_basis || 'liter', cost_per_ton || 0, sale_per_ton || 0, vat_pct || null, units_per_package || null, package_weight || null, selling_unit || null, actorName(req), req.params.id);
   const updated = db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id);
   recordPriceHistory(req.params.id, oldRow, updated, actorName(req));
   res.json(updated);
@@ -1585,6 +1585,7 @@ function normalizeSalesItem(item, fallbackCurrency) {
     bullets,
     ncm: product?.ncm || '',
     color: product?.color || '',
+    clientColorCode: product?.client_color_code || '',
     width: product?.width ? `${product.width}${product.width_unit || ''}` : '',
     // Non-textile items don't have a real Width, so their column shows what
     // unit the Quantity is expressed in instead (see priceUnitLabel above).
@@ -2083,6 +2084,7 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
       return {
         productName: product?.name || item.product_name || '—',
         color: product?.color || '',
+        clientColorCode: product?.client_color_code || '',
         code: item.product_code || product?.code || '',
         thickness: product?.thickness ? `${product.thickness}${product.thickness_unit || ''}` : '',
         width: product?.width ? `${product.width}${product.width_unit || ''}` : '',

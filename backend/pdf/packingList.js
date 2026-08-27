@@ -72,10 +72,10 @@ function renderItemSections(items) {
     <tr>
       ${nameCell(item)}
       ${descCell(item)}
-      <td class="center">${escapeHtml(item.color || "—")}</td>
+      <td class="center">${escapeHtml(item.color || "—")}${item.clientColorCode ? `<div style="font-size:10px; color:#666; margin-top:2px;">${escapeHtml(item.clientColorCode)}</div>` : ""}</td>
       <td class="center">${escapeHtml(item.width || "—")}</td>
       <td class="center">${escapeHtml(item.weightSpec || "—")}</td>
-      <td class="num">${fmtNumber(item.totalLength, 3)}</td>
+      <td class="num">${fmtNumber(item.totalLength, 0)}</td>
       <td class="num">${fmtNumber(item.roll, 0)}</td>
       <td class="num">${fmtNumber(item.grossWeight, 3)}</td>
       <td class="num">${fmtNumber(item.netWeight, 3)}</td>
@@ -87,7 +87,7 @@ function renderItemSections(items) {
     <tr>
       ${nameCell(item)}
       ${descCell(item)}
-      <td class="center">${escapeHtml(item.color || "—")}</td>
+      <td class="center">${escapeHtml(item.color || "—")}${item.clientColorCode ? `<div style="font-size:10px; color:#666; margin-top:2px;">${escapeHtml(item.clientColorCode)}</div>` : ""}</td>
       <td class="center">${escapeHtml(item.priceUnitLabel || item.width || "—")}</td>
       <td class="center">${item.quantityLabel
         ? escapeHtml(item.quantityLabel)
@@ -112,8 +112,8 @@ function renderItemSections(items) {
     <table class="items-table" style="margin-top:6px;">
       <thead>
         <tr>
-          <th style="width:10%">Product</th>
-          <th style="width:26%">Description</th>
+          <th style="width:14%">Product</th>
+          <th style="width:22%">Description</th>
           <th style="width:6%">Color</th>
           <th style="width:7%">Width</th>
           <th style="width:7%">Weight</th>
@@ -128,7 +128,7 @@ function renderItemSections(items) {
         ${textileRows}
         <tr class="totals-row">
           <td colspan="5">SUBTOTAL:</td>
-          <td class="num">${fmtNumber(sumOf(textileItems, "totalLength"), 3)}</td>
+          <td class="num">${fmtNumber(sumOf(textileItems, "totalLength"), 0)}</td>
           <td class="num">${fmtNumber(sumOf(textileItems, "roll"), 0)}</td>
           <td class="num">${fmtNumber(sumOf(textileItems, "grossWeight"), 3)}</td>
           <td class="num">${fmtNumber(sumOf(textileItems, "netWeight"), 3)}</td>
@@ -148,8 +148,8 @@ function renderItemSections(items) {
     <table class="items-table" style="margin-top:${isNewSection ? "12px" : "6px"};">
       <thead>
         <tr>
-          <th style="width:10%">Product</th>
-          <th style="width:27%">Description</th>
+          <th style="width:14%">Product</th>
+          <th style="width:23%">Description</th>
           <th style="width:7%">Color</th>
           <th style="width:8%">Unit</th>
           <th style="width:9%">Quantity</th>
@@ -207,7 +207,7 @@ function renderPackingList(params) {
           <tbody>
             <tr class="totals-row">
               <td>TOTAL:</td>
-              <td class="num">Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 3)}</td>
+              <td class="num">Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 0)}</td>
               <td class="num">${packageLabel(containerItems)}: ${fmtNumber(sumOf(containerItems, "roll"), 0)}</td>
               <td class="num">Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)}</td>
               <td class="num">Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)}</td>
@@ -230,7 +230,7 @@ function renderPackingList(params) {
       <tbody>
         <tr class="totals-row">
           <td>GRAND TOTAL:</td>
-          <td class="num">Length: ${fmtNumber(totals.totalLength, 3)}</td>
+          <td class="num">Length: ${fmtNumber(totals.totalLength, 0)}</td>
           <td class="num">${packageLabel(items)}: ${fmtNumber(totals.totalRoll, 0)}</td>
           <td class="num">Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}</td>
           <td class="num">Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}</td>

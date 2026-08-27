@@ -41,6 +41,13 @@ db.exec(`
     ncm TEXT DEFAULT '',
     hs_code TEXT DEFAULT '',
     color TEXT DEFAULT '',
+    -- The client's OWN color reference/code for this item (e.g. a Pantone
+    -- number or the client's internal color naming) — separate from the
+    -- color column above, which is this company's own description of the
+    -- color. Printed
+    -- directly under Color on the Commercial Invoice/Proforma/Packing List
+    -- PDFs so the client can match a line item to their own paperwork.
+    client_color_code TEXT DEFAULT '',
     width TEXT,
     width_unit TEXT DEFAULT 'cm',
     height TEXT,
@@ -548,6 +555,9 @@ const migrations = [
   // screen) carry the shipment ports straight into the new Proforma.
   ['quotations', 'port_of_loading', 'TEXT'],
   ['quotations', 'port_of_discharge', 'TEXT'],
+  // See the CREATE TABLE comment above — the client's own color reference,
+  // printed under Color on the sales PDFs.
+  ['products', 'client_color_code', "TEXT DEFAULT ''"],
   // Stamped by the PATCH /api/orders/:id/status route the moment status
   // becomes 'Completed' (cleared back to NULL if it's ever moved off
   // Completed again) — the real-profit calculation (computeOrderProfitability
@@ -815,6 +825,65 @@ db.prepare(`
       p.color != null ? p.color.toUpperCase() : p.color,
       p.id
     );
+  }
+}
+
+// One-time cleanup for status/category values that got saved in Chinese
+// before the shared Select component's language-desync bug was fixed —
+// every <option> without an explicit value="" prop (most of them, across
+// every status/category dropdown in the app) used to save the TRANSLATED
+// display text as the record's actual value instead of the real English
+// one, whenever that dropdown was changed from the Chinese UI. That made
+// the record look different depending on which language the next person
+// happened to view it in, and broke exact-string checks elsewhere (isDone
+// filters, status-change emails, etc). Safe to run on every boot: each
+// UPDATE only ever matches rows still holding one of these exact known
+// Chinese strings, so it's a no-op once a table's been cleaned once.
+const ZH_ENUM_FIXES = {
+  orders: { status: { '待处理': 'Pending', '生产中': 'In Production', '验货': 'Inspection', '发货': 'Shipment', '已完成': 'Completed' } },
+  quotations: { status: { '待处理': 'Pending', '已发送': 'Sent', '已收到': 'Received', '已接受': 'Accepted', '已拒绝': 'Rejected' } },
+  proformas: { status: { '草稿': 'Draft', '已发送': 'Sent', '已接受': 'Accepted', '已拒绝': 'Rejected' } },
+  commercial_invoices: { status: { '待处理': 'Pending' } },
+  supplier_contracts: { status: { '草稿': 'Draft', '已签署': 'Signed', '生效中': 'In Force', '已完成': 'Completed', '已取消': 'Cancelled' } },
+  inspections: { result: { '待处理': 'Pending', '已批准': 'Approved', '已拒绝': 'Rejected', '有条件': 'Conditional' } },
+  samples: { status: { '申请日期': 'Requested', '生产中': 'In Production', '已发送': 'Sent', '已收到反馈': 'Feedback Received', '已批准': 'Approved' } },
+  financial_suppliers: { status: { '待处理': 'Pending', '部分': 'Partial', '逾期': 'Overdue' } },
+  products: { category: { '纺织品': 'Textile', '机械': 'Machine', 'DTF 膜': 'DTF Film', '化工品': 'Chemical', '配件': 'Accessory', '包装': 'Packaging', '其他': 'Other' } },
+};
+for (const [table, columns] of Object.entries(ZH_ENUM_FIXES)) {
+  for (const [column, mapping] of Object.entries(columns)) {
+    for (const [zh, en] of Object.entries(mapping)) {
+      db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).run(en, zh);
+    }
+  }
+}
+
+// One-time correction for supplier_contracts saved with the ORDER's sale
+// value/currency (what the client pays) instead of the actual cost side of
+// the deal (what's owed to the factory) — a single-supplier order used to
+// copy order.value/order.currency straight onto its Contract instead of
+// summing each item's own cost_price/cost_currency, the same calculation
+// the multi-supplier branch already did correctly (see generateContract on
+// the frontend). Recomputed here from each contract's own items_json
+// snapshot — already a full copy of the order's items at the moment the
+// contract was generated — so this doesn't need to touch/trust the parent
+// order at all, and correctly leaves alone any contract that was already
+// generated via the (already-correct) multi-supplier path.
+{
+  const contractsToFix = db.prepare(`SELECT id, total, currency, items_json FROM supplier_contracts WHERE items_json IS NOT NULL AND items_json != ''`).all();
+  const fixContract = db.prepare(`UPDATE supplier_contracts SET total = ?, currency = ? WHERE id = ?`);
+  for (const c of contractsToFix) {
+    let items;
+    try { items = JSON.parse(c.items_json); } catch { continue; }
+    if (!Array.isArray(items) || items.length === 0) continue;
+    const total = items.reduce((sum, i) => sum + ((parseFloat(i.cost_price) || parseFloat(i.unit_price) || 0) * (parseFloat(i.quantity) || 0)), 0);
+    const currency = items[0]?.cost_currency || items[0]?.currency || c.currency || 'USD';
+    // Only touch rows where the correct figure actually differs — leaves
+    // already-correct contracts (and their updated_at-style audit trail)
+    // untouched instead of rewriting every row on every boot.
+    if (Math.abs(total - (parseFloat(c.total) || 0)) > 0.01 || currency !== c.currency) {
+      fixContract.run(total, currency, c.id);
+    }
   }
 }
 
