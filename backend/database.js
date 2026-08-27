@@ -887,4 +887,29 @@ for (const [table, columns] of Object.entries(ZH_ENUM_FIXES)) {
   }
 }
 
+// Follow-up to the supplier_contracts fix above — a Supplier Payment
+// created from a Contract is meant to be a straight copy of that Contract's
+// amount/currency (see the "New Supplier Payment" creation call right after
+// `api('/contracts', 'POST', ...)` on the frontend), so any Payment that
+// inherited the old wrong USD figure needs the same correction applied to
+// it, or it'd keep showing the sale-side amount even after its own Contract
+// was fixed. Skips anything already Paid — a settled payment's real-world
+// amount shouldn't be rewritten after the fact, even if it was computed
+// wrong at the time.
+{
+  const paymentsToFix = db.prepare(`
+    SELECT fs.id, fs.amount, fs.currency, sc.total AS contract_total, sc.currency AS contract_currency
+    FROM financial_suppliers fs
+    JOIN supplier_contracts sc ON sc.id = fs.contract_id
+    WHERE fs.status != 'Paid'
+  `).all();
+  const fixPayment = db.prepare(`UPDATE financial_suppliers SET amount = ?, currency = ? WHERE id = ?`);
+  for (const p of paymentsToFix) {
+    const contractTotal = parseFloat(p.contract_total) || 0;
+    if (Math.abs(contractTotal - (parseFloat(p.amount) || 0)) > 0.01 || p.contract_currency !== p.currency) {
+      fixPayment.run(contractTotal, p.contract_currency, p.id);
+    }
+  }
+}
+
 module.exports = db;
