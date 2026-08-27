@@ -3953,27 +3953,27 @@ const handleSalePerLiterChange = (e) => {
           every change covers both) per client convention for how these
           print on generated PDFs/labels. */}
       <Field label="Name" half><Input value={f.name} onChange={e => setF(p => ({ ...p, name: e.target.value.toUpperCase() }))} /></Field>
+      <Field label="NCM" half><Input value={f.ncm} onChange={e => setF(p => ({ ...p, ncm: maskNCM(e.target.value) }))} placeholder="0000.00.00" /></Field>
       {/* Chinese-language name, entered by hand alongside the English one —
           printed under Product Name on the bilingual Purchase Contract PDF
           sent to the Chinese factory. */}
       <Field label="Name (Chinese)" half><Input value={f.name_zh || ""} onChange={set("name_zh")} placeholder="产品名称" /></Field>
-      <Field label="NCM" half><Input value={f.ncm} onChange={e => setF(p => ({ ...p, ncm: maskNCM(e.target.value) }))} placeholder="0000.00.00" /></Field>
       <Field label="HS Code" half><Input value={f.hs_code || ""} onChange={set("hs_code")} placeholder="0000.00" /></Field>
       <Field label="Color" half><Input value={f.color || ""} onChange={e => setF(p => ({ ...p, color: e.target.value.toUpperCase() }))} placeholder="e.g. Red, Navy Blue" /></Field>
       {/* Chinese-language color, same purpose as Name (Chinese) above —
           printed under Color on the Purchase Contract PDF. */}
       <Field label="Color (Chinese)" half><Input value={f.color_zh || ""} onChange={set("color_zh")} placeholder="颜色" /></Field>
+      {/* The client's OWN color reference (e.g. a Pantone code or their
+          internal color name) — separate from Color above, which is this
+          company's own description of it. Printed under Color on the
+          Commercial Invoice/Proforma/Packing List PDFs. */}
+      <Field label="Client Color Code" half><Input value={f.client_color_code || ""} onChange={set("client_color_code")} placeholder="e.g. PMS 186 C" /></Field>
       <Field label="Category" half>
   <Select value={f.category} onChange={set("category")}>
     <option value="">Select...</option>
     {PRODUCT_CATEGORIES.map(c => <option key={c}>{c}</option>)}
   </Select>
 </Field>
-      {/* The client's OWN color reference (e.g. a Pantone code or their
-          internal color name) — separate from Color above, which is this
-          company's own description of it. Printed under Color on the
-          Commercial Invoice/Proforma/Packing List PDFs. */}
-      <Field label="Client Color Code" half><Input value={f.client_color_code || ""} onChange={set("client_color_code")} placeholder="e.g. PMS 186 C" /></Field>
 
       <Field label="Supplier" half>
         <div style={{ position: "relative" }}>
