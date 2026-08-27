@@ -514,6 +514,10 @@ const TRANSLATIONS = {
     "Sending": "发送内容",
     "Who should receive it by e-mail?": "谁应该通过邮件收到？",
     "Failed to prepare document: ": "准备文档失败：",
+    "Choose a format": "选择格式",
+    "Which format(s) to send?": "要发送哪种格式？",
+    "Spreadsheet": "表格",
+    "Continue": "继续",
     "Failed to save product: ": "保存产品失败：",
     "Profitability Report": "利润报告",
     "Profitability": "利润",
@@ -8083,7 +8087,8 @@ function CommercialInvoices() {
             return (
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                 <DocButtons url={authUrl(`${API}/commercial-invoices/${r.id}/pdf`)} filename={`CI-${r.number}.pdf`}
-                  entityType="commercial-invoices" recordLabel={r.number} label="📄 PDF" />
+                  xlsxUrl={authUrl(`${API}/commercial-invoices/${r.id}/xlsx`)} xlsxFilename={`CI-${r.number}.xlsx`}
+                  entityType="commercial-invoices" recordLabel={r.number} label="📄 Doc" />
                 <Btn small outline color="#64748b" onClick={() => { setEditing(r); setEditingOriginal(r); }}>Edit</Btn>
                 {order && (
                   <Btn small outline={!hasPackingList} color={hasPackingList ? "#06b6d4" : "#64748b"}
@@ -8154,7 +8159,8 @@ function PackingLists() {
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
               <DocButtons url={authUrl(`${API}/packing-lists/${r.id}/pdf`)} filename={`PackingList-${r.number}.pdf`}
-                entityType="packing-lists" recordLabel={r.number} label="📄 PDF" />
+                xlsxUrl={authUrl(`${API}/packing-lists/${r.id}/xlsx`)} xlsxFilename={`PackingList-${r.number}.xlsx`}
+                entityType="packing-lists" recordLabel={r.number} label="📄 Doc" />
               <Btn small outline color="#64748b" onClick={() => setEditList(r)}>Edit</Btn>
               <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/packing-lists/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
               <LastModifiedBy name={r.updated_by} />
