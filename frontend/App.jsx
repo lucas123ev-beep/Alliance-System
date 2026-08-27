@@ -3960,14 +3960,14 @@ const handleSalePerLiterChange = (e) => {
       <Field label="Name (Chinese)" half><Input value={f.name_zh || ""} onChange={set("name_zh")} placeholder="产品名称" /></Field>
       <Field label="HS Code" half><Input value={f.hs_code || ""} onChange={set("hs_code")} placeholder="0000.00" /></Field>
       <Field label="Color" half><Input value={f.color || ""} onChange={e => setF(p => ({ ...p, color: e.target.value.toUpperCase() }))} placeholder="e.g. Red, Navy Blue" /></Field>
-      {/* Chinese-language color, same purpose as Name (Chinese) above —
-          printed under Color on the Purchase Contract PDF. */}
-      <Field label="Color (Chinese)" half><Input value={f.color_zh || ""} onChange={set("color_zh")} placeholder="颜色" /></Field>
       {/* The client's OWN color reference (e.g. a Pantone code or their
           internal color name) — separate from Color above, which is this
           company's own description of it. Printed under Color on the
           Commercial Invoice/Proforma/Packing List PDFs. */}
       <Field label="Client Color Code" half><Input value={f.client_color_code || ""} onChange={set("client_color_code")} placeholder="e.g. PMS 186 C" /></Field>
+      {/* Chinese-language color, same purpose as Name (Chinese) above —
+          printed under Color on the Purchase Contract PDF. */}
+      <Field label="Color (Chinese)" half><Input value={f.color_zh || ""} onChange={set("color_zh")} placeholder="颜色" /></Field>
       <Field label="Category" half>
   <Select value={f.category} onChange={set("category")}>
     <option value="">Select...</option>
