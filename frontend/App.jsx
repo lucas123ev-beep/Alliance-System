@@ -507,6 +507,9 @@ const TRANSLATIONS = {
     "Don't notify": "不通知",
     "Send": "发送",
     "Sending…": "发送中…",
+    "Preparing…": "准备中…",
+    "Preparing attachment…": "正在准备附件…",
+    "Failed to prepare attachment. Close and try again.": "附件准备失败，请关闭后重试。",
     "Notify": "通知",
     "Message (optional)": "留言（可选）",
     "Add a note to include in the e-mail…": "添加要包含在邮件中的留言…",
@@ -1803,7 +1806,7 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
 // same /notifications/status-change route and recipient-eligibility rules
 // (e.g. Commercial Invoice documents are still restricted to
 // non-hideCommercialStatus users with screen access).
-function SendDocumentModal({ entityType, recordLabel, documentLabel, attachments, onClose }) {
+function SendDocumentModal({ entityType, recordLabel, documentLabel, attachments, ready = true, error, onClose }) {
   const t = useT();
   const [recipients, setRecipients] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
@@ -1833,7 +1836,7 @@ function SendDocumentModal({ entityType, recordLabel, documentLabel, attachments
   // it is (e.g. "PDF" vs "Spreadsheet") so it's clear they're not
   // duplicates. Results are combined across all the calls.
   async function send() {
-    if (selected.size === 0) { onClose(); return; }
+    if (!ready || selected.size === 0) { onClose(); return; }
     setSending(true);
     try {
       const results = await Promise.all((attachments || []).map(att => api("/notifications/status-change", "POST", {
@@ -1888,10 +1891,20 @@ function SendDocumentModal({ entityType, recordLabel, documentLabel, attachments
       {result && result.error && (
         <p style={{ fontSize: "13px", color: "#f87171", margin: "0 0 12px" }}>{t("Failed to send. Try again.")}</p>
       )}
+      {/* Attachment (PDF/xlsx) generation + Cloudinary upload happens in the
+          background while this modal is already open — recipients can be
+          picked and the message typed in the meantime. Send stays disabled
+          until it's ready. */}
+      {!result && error && (
+        <p style={{ fontSize: "13px", color: "#f87171", margin: "0 0 12px" }}>{t("Failed to prepare attachment. Close and try again.")}</p>
+      )}
+      {!result && !error && !ready && (
+        <p style={{ fontSize: "13px", color: "#64748b", margin: "0 0 12px" }}>{t("Preparing attachment…")}</p>
+      )}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose} disabled={sending}>{t("Cancel")}</Btn>
-        <Btn onClick={send} disabled={sending || recipients === null || recipients.length === 0}>
-          {sending ? t("Sending…") : t("Send")}
+        <Btn onClick={send} disabled={sending || !ready || recipients === null || recipients.length === 0}>
+          {sending ? t("Sending…") : !ready ? t("Preparing…") : t("Send")}
         </Btn>
       </div>
     </Modal>
@@ -1948,9 +1961,14 @@ function FormatPickerModal({ mode, onPick, onClose }) {
 // original single-button behavior — the format picker never appears.
 function DocButtons({ url, filename, xlsxUrl, xlsxFilename, entityType, recordLabel, documentLabel = "PDF", label, color = "#10b981", small = true }) {
   const t = useT();
-  const [preparing, setPreparing] = useState(false);
   const [picker, setPicker] = useState(null); // "download" | "email" | null
-  const [sendDoc, setSendDoc] = useState(null); // { attachments: [{ url, name, label }] }
+  // { attachments: [{ url, name, label }], ready, error } — the modal opens
+  // the instant the user picks a format, showing a "preparing…" state while
+  // the PDF/xlsx is generated server-side and uploaded to Cloudinary in the
+  // background, instead of blocking on that (often multi-second, sometimes
+  // much longer on a cold Render instance) round trip before showing
+  // anything at all.
+  const [sendDoc, setSendDoc] = useState(null);
 
   const urlFor = fmt => (fmt === "xlsx" ? xlsxUrl : url);
   const nameFor = fmt => (fmt === "xlsx" ? (xlsxFilename || filename) : filename);
@@ -1971,32 +1989,30 @@ function DocButtons({ url, filename, xlsxUrl, xlsxFilename, entityType, recordLa
     prepareAndSend(["pdf"]);
   }
 
-  async function prepareAndSend(formats) {
+  function prepareAndSend(formats) {
     setPicker(null);
-    setPreparing(true);
-    try {
-      const attachments = [];
-      for (const fmt of formats) {
-        const res = await fetch(urlFor(fmt));
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
-        const file = new File([blob], nameFor(fmt), { type: blob.type });
-        const uploaded = await uploadToCloudinary(file);
-        attachments.push({ ...uploaded, formatLabel: labelFor(fmt) });
-      }
-      setSendDoc({ attachments });
-    } catch (err) {
-      alert(t("Failed to prepare document: ") + err.message);
-    }
-    setPreparing(false);
+    // Show the recipient-picker screen right away — recipients load
+    // independently of the attachment, so there's no reason to make the
+    // user stare at a frozen button while both formats fetch/upload one
+    // after another. Fetches for multiple formats also now run in
+    // parallel instead of sequentially.
+    setSendDoc({ attachments: [], ready: false });
+    Promise.all(formats.map(async fmt => {
+      const res = await fetch(urlFor(fmt));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const file = new File([blob], nameFor(fmt), { type: blob.type });
+      const uploaded = await uploadToCloudinary(file);
+      return { ...uploaded, formatLabel: labelFor(fmt) };
+    }))
+      .then(attachments => setSendDoc({ attachments, ready: true }))
+      .catch(err => setSendDoc({ attachments: [], ready: false, error: err.message }));
   }
 
   return (
     <>
       <Btn small={small} outline color={color} onClick={handleMainClick}>{label || `📄 ${documentLabel}`}</Btn>
-      <Btn small={small} outline color="#3b82f6" disabled={preparing} onClick={handleEmailClick} title={t("Send by e-mail")}>
-        {preparing ? "…" : "✉️"}
-      </Btn>
+      <Btn small={small} outline color="#3b82f6" onClick={handleEmailClick} title={t("Send by e-mail")}>✉️</Btn>
       {picker && (
         <FormatPickerModal
           mode={picker}
@@ -2010,6 +2026,8 @@ function DocButtons({ url, filename, xlsxUrl, xlsxFilename, entityType, recordLa
           recordLabel={recordLabel}
           documentLabel={documentLabel}
           attachments={sendDoc.attachments}
+          ready={sendDoc.ready}
+          error={sendDoc.error}
           onClose={() => setSendDoc(null)}
         />
       )}
