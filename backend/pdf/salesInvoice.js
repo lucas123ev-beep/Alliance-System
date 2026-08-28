@@ -1,4 +1,4 @@
-const { wrapDocument, icon } = require("./layout");
+const { wrapDocument, icon, applyTheme } = require("./layout");
 const { escapeHtml, fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLabel } = require("./helpers");
 const { renderItemSections } = require("./itemSections");
 
@@ -61,6 +61,11 @@ function renderSalesInvoice(params) {
     paymentTerms, productionDays, deliveryDays, importer, consignee, notifyParty,
     extraShipmentLine, extraShipmentLineLabel, validity, freightValue,
   } = params;
+
+  // Picks navy/HKAG vs. gray/Ningbo for every icon() call below (icon()
+  // reads this via a module-level default in layout.js) — must run before
+  // any of the body-building template literals below execute.
+  applyTheme(acq);
 
   // CIF freight charged to the client — separate line, folded into every
   // "grand total" shown below (the summary row and the Total Invoice Value

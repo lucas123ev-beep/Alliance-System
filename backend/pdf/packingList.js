@@ -1,4 +1,4 @@
-const { wrapDocument, icon } = require("./layout");
+const { wrapDocument, icon, applyTheme } = require("./layout");
 const { escapeHtml, fmtDateLong, fmtNumber } = require("./helpers");
 
 // Packing List — generated alongside the Commercial Invoice. Items carry
@@ -182,6 +182,10 @@ function renderPackingList(params) {
     number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
     incoterm, acq, manufacturer, items, totals, importer, containers,
   } = params;
+
+  // Picks navy/HKAG vs. gray/Ningbo for every icon() call below — must run
+  // before any of the body-building template literals execute.
+  applyTheme(acq);
 
   // Every registered container — even just one — gets its own "Container
   // 0N: <code>" header and TOTAL row; this used to only kick in above 1

@@ -7,13 +7,28 @@
 // param-gathering logic to keep in sync.
 const ExcelJS = require("exceljs");
 const LOGO = require("../pdf/logo");
+const LOGO_NINGBO = require("../pdf/logoNingbo");
 const { fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLabel } = require("../pdf/helpers");
 
 const NAVY_ARGB = "FF0D1627";
-const HEADER_RULE = { style: "medium", color: { argb: NAVY_ARGB } };
+// Second, lighter-palette theme for documents issued under the Ningbo
+// entity — same #58595B accent as the PDF version (pdf/layout.js), sampled
+// from the client's own uploaded Alliance wordmark (pdf/logoNingbo.js).
+const GRAY_ARGB = "FF58595B";
 const THIN_SEP = { style: "thin", color: { argb: "FFCCCCCC" } };
 const LABEL_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF2F7" } };
-const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY_ARGB } };
+
+// Which theme (accent ARGB + logo) this workbook should use — same
+// acq.code-driven rule as pdf/layout.js's themeFor(). logoWidth/logoHeight
+// keep each logo's own real aspect ratio at the same ~150px placement
+// width — the Ningbo wordmark (1600x378, ~4.23:1) is noticeably flatter
+// than the HKAG one (~900x297, ~3.03:1), so a single fixed height for both
+// would stretch one of them.
+function themeForXlsx(acq) {
+  return acq && acq.code === "NINGBO"
+    ? { accentArgb: GRAY_ARGB, logo: LOGO_NINGBO, logoWidth: 150, logoHeight: 35 }
+    : { accentArgb: NAVY_ARGB, logo: LOGO, logoWidth: 150, logoHeight: 50 };
+}
 
 // Widest item table (the "other goods" one) needs 8 columns — every other
 // block on the sheet merges across however many of these 8 it needs.
@@ -37,6 +52,11 @@ function buildSalesInvoiceWorkbook(params) {
   const freight = parseFloat(freightValue) || 0;
   const grandTotal = (parseFloat(totalAmount) || 0) + freight;
 
+  // Navy/HKAG vs. gray/Ningbo — same acq.code rule as the PDF version.
+  const theme = themeForXlsx(acq);
+  const HEADER_RULE = { style: "medium", color: { argb: theme.accentArgb } };
+  const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: theme.accentArgb } };
+
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(title === "PROFORMA INVOICE" ? "Proforma Invoice" : "Commercial Invoice", {
     views: [{ showGridLines: false }],
@@ -47,15 +67,12 @@ function buildSalesInvoiceWorkbook(params) {
   sheet.mergeCells(1, 1, 1, NUM_COLS);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = title;
-  titleCell.font = { bold: true, size: 15, color: { argb: NAVY_ARGB } };
+  titleCell.font = { bold: true, size: 15, color: { argb: theme.accentArgb } };
   titleCell.alignment = { vertical: "middle", horizontal: "right" };
   sheet.getRow(1).height = 46;
   for (let c = 1; c <= NUM_COLS; c++) sheet.getCell(1, c).border = { bottom: HEADER_RULE };
-  const imageId = workbook.addImage({ base64: LOGO, extension: "png" });
-  // Real logo artwork is ~900x297px (~3.03:1) — width/height below keep that
-  // ratio, just scaled up from the original 88x29 (looked too small next to
-  // the title per the client's own feedback after seeing the first version).
-  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: 150, height: 50 } });
+  const imageId = workbook.addImage({ base64: theme.logo, extension: "png" });
+  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: theme.logoWidth, height: theme.logoHeight } });
 
   sheet.getRow(2).height = 6; // spacer
 
@@ -253,7 +270,7 @@ function buildSalesInvoiceWorkbook(params) {
       cell.value = line.text;
       cell.alignment = { wrapText: true, vertical: "top" };
       if (line.style === "title") {
-        cell.font = { bold: true, size: 12, color: { argb: NAVY_ARGB } };
+        cell.font = { bold: true, size: 12, color: { argb: theme.accentArgb } };
         cell.border = { bottom: HEADER_RULE, top: HEADER_RULE };
       } else if (line.style === "bold") {
         cell.font = { bold: true };

@@ -36,5 +36,16 @@ module.exports = {
       swift: "CITIHKHX / CITIHKHXXXX",
       beneficiaryAddress: "26/F., Tower One, Time Square, 1 Matheson Street, Causeway Bay HK",
     },
+    // Domestic RMB account used specifically on Supplier Purchase Contracts
+    // (see pdf/contract.js) — factories in China are paid via this Bank of
+    // China account, not the CITIBANK HK account above (that one is for
+    // international/client-facing wires on Proforma/Commercial Invoice).
+    domesticBank: {
+      taxId: "91330200MA2AGNFT2Q",
+      bankName: "中国银行宁波市鄞州分行营业部",
+      account: "357174002806",
+      address: "浙江省宁波市江北区长兴路715号501室",
+      tel: "15888552349",
+    },
   },
 };

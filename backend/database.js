@@ -152,6 +152,11 @@ db.exec(`
     number TEXT UNIQUE NOT NULL,
     client TEXT,
     suppliers TEXT,
+    -- Which of the two trading entities (HK / NINGBO) this quote is under —
+    -- same field as proformas/orders. Set here so "Generate Proforma" can
+    -- carry it straight over instead of making someone re-pick it a second
+    -- time for a deal already scoped at the Quotation stage.
+    acquisition_company TEXT DEFAULT '',
     currency TEXT DEFAULT 'USD',
     deadline TEXT,
     -- When the supplier's quoted price itself expires — separate from the
@@ -581,6 +586,7 @@ const migrations = [
   // See the CREATE TABLE comment above — freight charged to the client on
   // CIF deals, shown on the docs and counted as revenue in the profit report.
   ['quotations', 'freight_value', "TEXT DEFAULT ''"],
+  ['quotations', 'acquisition_company', "TEXT DEFAULT ''"],
   ['orders', 'freight_value', "TEXT DEFAULT ''"],
   // See the CREATE TABLE comment above — the client's own color reference,
   // printed under Color on the sales PDFs.

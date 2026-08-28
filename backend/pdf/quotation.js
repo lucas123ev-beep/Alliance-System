@@ -1,4 +1,4 @@
-const { wrapDocument, icon, renderMultiCompanyHeader } = require("./layout");
+const { wrapDocument, icon, renderMultiCompanyHeader, applyTheme } = require("./layout");
 const { escapeHtml, fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLabel } = require("./helpers");
 const { renderItemSections } = require("./itemSections");
 const { partyCard } = require("./salesInvoice");
@@ -22,8 +22,18 @@ const ACQ = require("./acquisitionCompanies");
 //     plus imageUrl (set by the caller)
 //   totalAmount, freightValue: optional CIF freight charged to the client,
 //     shown as its own line and folded into the Grand Total below it
+//   acq: optional acquisition company (see acquisitionCompanies.js) — once
+//     the Quotation screen's own Acquisition Company field is filled in,
+//     this shows that single entity's own header/theme (navy/HKAG or
+//     gray/Ningbo, matching Proforma/Commercial Invoice/Packing List)
+//     instead of the older ambiguous "both companies stacked" header used
+//     when no decision has been made yet at Quotation stage.
 function renderQuotation(params) {
-  const { number, date, client, priceValidity, portOfLoading, portOfDischarge, currency, items, totalAmount, freightValue } = params;
+  const { number, date, client, priceValidity, portOfLoading, portOfDischarge, currency, items, totalAmount, freightValue, acq } = params;
+
+  // Picks navy/HKAG vs. gray/Ningbo for every icon() call below — no-op
+  // (stays navy) when acq is null, matching the multi-company header case.
+  applyTheme(acq);
 
   const sectionsHtml = renderItemSections(items, currency, { showImage: true });
   const freight = parseFloat(freightValue) || 0;
@@ -72,8 +82,13 @@ function renderQuotation(params) {
     <div class="footer-note">This Quotation is issued for reference purposes only, does not constitute a sales contract, and is subject to change without prior notice${priceValidity ? ` after ${escapeHtml(fmtDateLong(priceValidity))}` : ""}.</div>
   `;
 
-  const header = renderMultiCompanyHeader([ACQ.HK.name, ACQ.NINGBO.name]);
-  return wrapDocument({ title: "QUOTATION", header, body });
+  // Once an Acquisition Company has actually been chosen on the Quotation,
+  // show that single entity's own header (address/bank contact/logo, themed
+  // navy or gray) instead of the older "both companies" placeholder header —
+  // still falls back to that for older Quotations saved before this field
+  // existed, or ones left blank.
+  const header = acq ? undefined : renderMultiCompanyHeader([ACQ.HK.name, ACQ.NINGBO.name]);
+  return wrapDocument({ title: "QUOTATION", acq, header, body });
 }
 
 module.exports = { renderQuotation };

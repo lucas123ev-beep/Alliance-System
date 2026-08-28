@@ -993,12 +993,12 @@ app.get('/api/quotations', (req, res) => {
 });
 
 app.post('/api/quotations', guardScreen('quotations'), (req, res) => {
- const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, specifications, notes, status, media, items, total, target_price } = req.body;
+ const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, acquisition_company, specifications, notes, status, media, items, total, target_price } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO quotations (number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, specifications, notes, status, media, items, total, target_price, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(number, client, suppliers, currency || 'USD', deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, specifications, notes, status || 'Open', media || null, items || null, total || null, target_price || null, actorName(req));
+      INSERT INTO quotations (number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, acquisition_company, specifications, notes, status, media, items, total, target_price, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(number, client, suppliers, currency || 'USD', deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, acquisition_company || '', specifications, notes, status || 'Open', media || null, items || null, total || null, target_price || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM quotations WHERE id=?').get(result.lastInsertRowid));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -1006,11 +1006,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 });
 
 app.put('/api/quotations/:id', guardScreen('quotations'), (req, res) => {
-  const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, specifications, notes, status, media, items, total, target_price } = req.body;
+  const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, acquisition_company, specifications, notes, status, media, items, total, target_price } = req.body;
   db.prepare(`
-    UPDATE quotations SET number=?, client=?, suppliers=?, currency=?, deadline=?, price_validity=?, port_of_loading=?, port_of_discharge=?, freight_value=?, specifications=?, notes=?, status=?, media=?, items=?, total=?, target_price=?, updated_by=?
+    UPDATE quotations SET number=?, client=?, suppliers=?, currency=?, deadline=?, price_validity=?, port_of_loading=?, port_of_discharge=?, freight_value=?, acquisition_company=?, specifications=?, notes=?, status=?, media=?, items=?, total=?, target_price=?, updated_by=?
     WHERE id=?
-  `).run(number, client, suppliers, currency, deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, specifications, notes, status, media || null, items || null, total || null, target_price || null, actorName(req), req.params.id);
+  `).run(number, client, suppliers, currency, deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, acquisition_company || '', specifications, notes, status, media || null, items || null, total || null, target_price || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM quotations WHERE id=?').get(req.params.id));
 });
 
@@ -1032,6 +1032,10 @@ app.get('/api/quotations/:id/pdf', async (req, res) => {
     });
     const totalAmount = q.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
     const clientRow = findClientByName(q.client);
+    // Only resolved once an Acquisition Company has actually been chosen on
+    // the Quotation itself — renderQuotation falls back to the older
+    // "both companies" header when this is null (blank/legacy Quotations).
+    const acq = q.acquisition_company ? getAcq(q.acquisition_company) : null;
 
     const html = renderQuotation({
       number: q.number,
@@ -1044,6 +1048,7 @@ app.get('/api/quotations/:id/pdf', async (req, res) => {
       items,
       totalAmount,
       freightValue: q.freight_value,
+      acq,
     });
 
     const pdf = await renderPdfBuffer(html);
@@ -2272,7 +2277,10 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
           ? parseFloat(item.total_meterage)
           : (metersPerRoll ? qty * metersPerRoll : null);
         quantityValue = totalMeters;
-        quantityUnit = 'm';
+        // Chinese unit (米) instead of "m" — this document is Chinese-facing
+        // (the supplier/factory), unlike the client-facing Proforma/CI which
+        // use the Latin "m" abbreviation.
+        quantityUnit = '米';
         // Whole meters only on the Contract PDF — "30,000.000 m" read as
         // confusingly precise to the factory, who only ever deal in whole
         // meters for a cut order like this.

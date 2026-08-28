@@ -5179,6 +5179,7 @@ function QuotationForm({ onSave, onClose, initial }) {
   const t = useT();
   const [f, setF] = useState(initial || {
   number: "", client: "", currency: "USD", deadline: "", price_validity: "",
+  acquisition_company: "",
   port_of_loading: "", port_of_discharge: "",
   freight_value: "",
   total: "",
@@ -5328,6 +5329,18 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
               </div>
             )}
           </div>
+        </Field>
+
+        {/* Which trading entity this quote is under — same field as
+            Proforma/Order, carried straight over when "Generate Proforma"
+            is used, so it doesn't need re-picking for a deal already
+            scoped here. */}
+        <Field label="Acquisition Company" half>
+          <Select value={f.acquisition_company} onChange={set("acquisition_company")}>
+            <option value="">Select...</option>
+            <option value="HK">HONG KONG ALLIANCE GLOBAL TRADING CO., LTD</option>
+            <option value="NINGBO">NINGBO WORLD ALLIANCE TRADING. CO. LTD.</option>
+          </Select>
         </Field>
 
         <Field label="Deadline" half><Input type="date" value={f.deadline} onChange={set("deadline")} /></Field>
@@ -5668,6 +5681,7 @@ console.log('quotations set:', quotations?.length);
           // someone re-pick both ports a second time for a shipment that
           // was already scoped at the Quotation stage — still fully
           // editable afterwards like every other field here.
+          acquisition_company: r.acquisition_company || "",
           port_of_loading: r.port_of_loading || "",
           port_of_discharge: r.port_of_discharge || "",
           // Same carry-over as the ports above — the CIF freight already

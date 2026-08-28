@@ -1,17 +1,54 @@
 const LOGO = require("./logo");
+const LOGO_NINGBO = require("./logoNingbo");
 const { escapeHtml } = require("./helpers");
 
-// Shared page shell used by every English-language template (Proforma,
-// Commercial Invoice, Packing List). Redesigned to match the client's own
-// HKAG-branded reference documents: navy (#0D1627) letterhead rule + title
-// bar, a full contact block (address/phone/email/website) opposite the
-// logo, small inline icons in front of every meta-info label, a light-grey
-// "Country of origin / acquisition" checkmark band, and a navy items-table
-// header. Every icon below is a hand-drawn inline SVG (no external font/
-// icon library — Puppeteer renders this server-side with no guarantee an
-// external CDN request finishes before the PDF is captured, so nothing
-// here depends on the network).
+// Shared page shell used by every English-language template (Quotation,
+// Proforma, Commercial Invoice, Packing List). Redesigned to match the
+// client's own HKAG-branded reference documents: navy (#0D1627) letterhead
+// rule + title bar, a full contact block (address/phone/email/website)
+// opposite the logo, small inline icons in front of every meta-info label, a
+// light-grey "Country of origin / acquisition" checkmark band, and a navy
+// items-table header. Every icon below is a hand-drawn inline SVG (no
+// external font/icon library — Puppeteer renders this server-side with no
+// guarantee an external CDN request finishes before the PDF is captured, so
+// nothing here depends on the network).
 const NAVY = "#0D1627";
+
+// Second, lighter-palette theme for documents issued under the Ningbo
+// entity — same layout/structure as the navy HKAG documents, just the
+// accent color and letterhead logo swapped out, per the client's request
+// for a visually distinct "Ningbo" version of these four documents.
+// #58595B sampled directly from the client's own uploaded Alliance
+// wordmark (pdf/logoNingbo.js) so the accent color and the logo always
+// read as one consistent gray, not two slightly-different grays.
+const GRAY = "#58595B";
+
+// Which theme (accent color + logo) a document should use — driven by the
+// acquisition_company code already threaded through every one of these
+// routes (see acquisitionCompanies.js: acq.code is "HK" or "NINGBO").
+// Falls back to the navy/HKAG theme for anything else, including the
+// pre-Order Quotation case where no acquisition_company has been chosen
+// yet (acq is null there — see renderMultiCompanyHeader below).
+function themeFor(acq) {
+  return acq && acq.code === "NINGBO" ? { accent: GRAY, logo: LOGO_NINGBO } : { accent: NAVY, logo: LOGO };
+}
+
+// icon() is called from salesInvoice.js/packingList.js/quotation.js dozens
+// of times per document, almost always without an explicit color (letting
+// it default to whatever the current document's accent is) — rather than
+// thread an accent argument through every one of those call sites, each
+// render function calls applyTheme(acq) once, synchronously, before it
+// starts building its body string; every icon() call made after that point
+// (and before the function returns) picks up the right color. This is safe
+// because these render functions are plain synchronous string builders with
+// no awaits inside — one request's render call always finishes end-to-end
+// before another can start.
+let currentAccent = NAVY;
+function applyTheme(acq) {
+  const theme = themeFor(acq);
+  currentAccent = theme.accent;
+  return theme;
+}
 
 // Minimal Tabler-style outline icons, 14x14, stroke=currentColor. Kept as a
 // lookup so both layout.js and the template files (salesInvoice.js,
@@ -31,12 +68,12 @@ const ICONS = {
   calendar: '<svg viewBox="0 0 14 14" width="11" height="11"><rect x="1.5" y="2.5" width="11" height="10" fill="none" stroke="currentColor" stroke-width="1.1"/><path d="M1.5 5.5h11M4 1v3M10 1v3" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>',
 };
 
-function icon(name, color = NAVY) {
+function icon(name, color) {
   const svg = ICONS[name] || ICONS.file;
-  return `<span style="display:inline-block;vertical-align:-1.5px;margin-right:5px;color:${color};">${svg}</span>`;
+  return `<span style="display:inline-block;vertical-align:-1.5px;margin-right:5px;color:${color || currentAccent};">${svg}</span>`;
 }
 
-function baseCss() {
+function baseCss(accent = NAVY) {
   return `
     * { box-sizing: border-box; }
     body {
@@ -48,9 +85,9 @@ function baseCss() {
     .header img.logo { height: 68px; }
     .header .company { text-align: right; font-size: 8px; line-height: 1.7; color: #333; }
     .header .company div { white-space: nowrap; }
-    .header .company .company-name { font-size: 13px; font-weight: bold; color: ${NAVY}; margin-bottom: 3px; }
+    .header .company .company-name { font-size: 13px; font-weight: bold; color: ${accent}; margin-bottom: 3px; }
     .title-bar {
-      background: ${NAVY}; color: #fff; text-align: center; font-weight: bold;
+      background: ${accent}; color: #fff; text-align: center; font-weight: bold;
       font-size: 12px; letter-spacing: 1.2px; padding: 6px 0; margin-bottom: 8px;
     }
     /* "Label: value" pairs, two per row, icon in front of the label — matches
@@ -59,7 +96,7 @@ function baseCss() {
     .meta-table { border-top: 1px solid #333; border-bottom: 1px solid #333; margin-bottom: 0; }
     .meta-table td { padding: 5px 10px; font-size: 9px; vertical-align: top; width: 50%; }
     .meta-table tr + tr td { border-top: 1px solid #e6e6e6; }
-    .meta-table .icon-label { color: ${NAVY}; }
+    .meta-table .icon-label { color: ${accent}; }
     /* Number/Date row sits directly under the title bar, above the icon
        grid, without the icon treatment (matches the reference: plain bold
        label/value pair, full-width rule under it). */
@@ -72,7 +109,7 @@ function baseCss() {
     .check-band .col { flex: 1; padding: 7px 12px; }
     .check-band .col + .col { border-left: 1px solid #d5d5d5; }
     .section-bar {
-      background: ${NAVY}; color: #fff; text-align: center; font-weight: bold; font-size: 9.5px;
+      background: ${accent}; color: #fff; text-align: center; font-weight: bold; font-size: 9.5px;
       padding: 4px 0;
     }
     /* Fixed line-height (not just padding) is what actually keeps every
@@ -82,7 +119,7 @@ function baseCss() {
        than a neighboring one-line header, which read as inconsistent
        between the Textile and Other-goods tables. */
     .items-table th {
-      background: ${NAVY}; color: #fff; padding: 3px 6px; font-size: 7.5px; line-height: 1.25;
+      background: ${accent}; color: #fff; padding: 3px 6px; font-size: 7.5px; line-height: 1.25;
       text-transform: uppercase; text-align: center; font-weight: bold;
     }
     .items-table td { border-bottom: 0.75px solid #ddd; padding: 4px 7px; font-size: 9px; vertical-align: middle; }
@@ -96,24 +133,24 @@ function baseCss() {
        prints as its own plain line underneath — NOT a bulleted/indented
        list, matching the client's own reference documents. */
     .items-table .desc-text, .items-table .desc-line { margin: 0.5px 0; font-size: 7.5px; line-height: 1.15; color: #222; }
-    .totals-row td { font-weight: bold; border-top: 1.5px solid ${NAVY}; border-bottom: none; }
+    .totals-row td { font-weight: bold; border-top: 1.5px solid ${accent}; border-bottom: none; }
     /* Footer: up to three columns (Payment & Terms / Bank Information /
        Importer-Consignee), each its own light card with a navy heading row
        — matches the reference's card-style footer instead of a plain
        bordered two-column table. */
     .footer-grid { display: flex; gap: 12px; margin-top: 12px; align-items: stretch; }
     .footer-grid .card { flex: 1; background: #f7f8fa; border-radius: 8px; padding: 10px 12px; }
-    .footer-grid .card-title { font-weight: bold; color: ${NAVY}; margin: 0 0 5px; font-size: 9px; }
+    .footer-grid .card-title { font-weight: bold; color: ${accent}; margin: 0 0 5px; font-size: 9px; }
     .footer-grid .card p { margin: 2px 0; }
     /* Total Invoice Value — its own bordered callout instead of a plain
        paragraph, matching the reference's boxed total. */
-    .total-box { border: 1.5px solid ${NAVY}; border-radius: 8px; padding: 8px 12px; text-align: center; margin-top: 8px; }
+    .total-box { border: 1.5px solid ${accent}; border-radius: 8px; padding: 8px 12px; text-align: center; margin-top: 8px; }
     .total-box .label { font-size: 7.5px; color: #666; }
-    .total-box .value { font-weight: bold; color: ${NAVY}; font-size: 15px; margin-top: 1px; }
+    .total-box .value { font-weight: bold; color: ${accent}; font-size: 15px; margin-top: 1px; }
     .total-box .words { font-size: 6.8px; color: #777; font-style: italic; margin-top: 2px; }
     .sig-box { border: 1px solid #ccc; border-radius: 8px; padding: 10px 12px; text-align: center; margin-top: 8px; }
     .sig-box .label { font-size: 6.8px; color: #666; text-transform: uppercase; letter-spacing: 0.4px; }
-    .sig-box .name { font-weight: bold; font-size: 8px; color: ${NAVY}; margin: 4px 0; }
+    .sig-box .name { font-weight: bold; font-size: 8px; color: ${accent}; margin: 4px 0; }
     .sig-box .line { border-top: 1px solid #999; margin-top: 14px; padding-top: 3px; font-size: 7px; color: #888; }
     .bank-block p { margin: 1px 0; }
     .small { font-size: 8px; color: #444; }
@@ -122,9 +159,10 @@ function baseCss() {
 }
 
 function renderHeader(acq) {
+  const { logo } = themeFor(acq);
   return `
     <div class="header">
-      <img class="logo" src="${LOGO}" alt="${escapeHtml(acq.name)}" />
+      <img class="logo" src="${logo}" alt="${escapeHtml(acq.name)}" />
       <div class="company">
         <div class="company-name">${escapeHtml(acq.name)}</div>
         ${acq.addressLine ? `<div>${icon("pin", "#333")}${escapeHtml(acq.addressLine)}</div>` : ""}
@@ -155,11 +193,12 @@ function renderMultiCompanyHeader(names) {
 }
 
 function wrapDocument({ title, acq, body, extraCss = "", header }) {
+  const { accent } = themeFor(acq);
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8" />
-<style>${baseCss()}${extraCss}</style>
+<style>${baseCss(accent)}${extraCss}</style>
 </head>
 <body>
   ${header || renderHeader(acq)}
@@ -169,4 +208,4 @@ function wrapDocument({ title, acq, body, extraCss = "", header }) {
 </html>`;
 }
 
-module.exports = { baseCss, renderHeader, renderMultiCompanyHeader, wrapDocument, icon, ICONS, NAVY };
+module.exports = { baseCss, renderHeader, renderMultiCompanyHeader, wrapDocument, icon, ICONS, NAVY, GRAY, themeFor, applyTheme };

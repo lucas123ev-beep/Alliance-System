@@ -5,13 +5,28 @@
 // server.js already assembles.
 const ExcelJS = require("exceljs");
 const LOGO = require("../pdf/logo");
+const LOGO_NINGBO = require("../pdf/logoNingbo");
 const { fmtDateLong, fmtNumber } = require("../pdf/helpers");
 
 const NAVY_ARGB = "FF0D1627";
-const HEADER_RULE = { style: "medium", color: { argb: NAVY_ARGB } };
+// Second, lighter-palette theme for documents issued under the Ningbo
+// entity — same #58595B accent as the PDF version (pdf/layout.js), sampled
+// from the client's own uploaded Alliance wordmark (pdf/logoNingbo.js).
+const GRAY_ARGB = "FF58595B";
 const THIN_SEP = { style: "thin", color: { argb: "FFCCCCCC" } };
 const LABEL_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF2F7" } };
-const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY_ARGB } };
+
+// Which theme (accent ARGB + logo) this workbook should use — same
+// acq.code-driven rule as pdf/layout.js's themeFor(). logoWidth/logoHeight
+// keep each logo's own real aspect ratio at the same ~150px placement
+// width — the Ningbo wordmark (1600x378, ~4.23:1) is noticeably flatter
+// than the HKAG one (~900x297, ~3.03:1), so a single fixed height for both
+// would stretch one of them.
+function themeForXlsx(acq) {
+  return acq && acq.code === "NINGBO"
+    ? { accentArgb: GRAY_ARGB, logo: LOGO_NINGBO, logoWidth: 150, logoHeight: 35 }
+    : { accentArgb: NAVY_ARGB, logo: LOGO, logoWidth: 150, logoHeight: 50 };
+}
 
 // Widest item table (Textile/DTF Film — 10 columns) sets the sheet width.
 const NUM_COLS = 10;
@@ -37,19 +52,24 @@ function buildPackingListWorkbook(params) {
   const sheet = workbook.addWorksheet("Packing List", { views: [{ showGridLines: false }] });
   sheet.columns = Array.from({ length: NUM_COLS }, (_, i) => ({ key: `c${i}`, width: i === 1 ? 26 : 12 }));
 
+  // Navy/HKAG vs. gray/Ningbo — same acq.code rule as the PDF version.
+  const theme = themeForXlsx(acq);
+  const HEADER_RULE = { style: "medium", color: { argb: theme.accentArgb } };
+  const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: theme.accentArgb } };
+
   // ── Letterhead ───────────────────────────────────────────────────────
   sheet.mergeCells(1, 1, 1, NUM_COLS);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = "PACKING LIST";
-  titleCell.font = { bold: true, size: 15, color: { argb: NAVY_ARGB } };
+  titleCell.font = { bold: true, size: 15, color: { argb: theme.accentArgb } };
   titleCell.alignment = { vertical: "middle", horizontal: "right" };
   sheet.getRow(1).height = 46;
   for (let c = 1; c <= NUM_COLS; c++) sheet.getCell(1, c).border = { bottom: HEADER_RULE };
-  const imageId = workbook.addImage({ base64: LOGO, extension: "png" });
+  const imageId = workbook.addImage({ base64: theme.logo, extension: "png" });
   // Same size bump as the Proforma/Commercial Invoice workbook — see
   // salesInvoiceXlsx.js for the reasoning (client felt the original 88x29
   // read too small next to the title).
-  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: 150, height: 50 } });
+  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: theme.logoWidth, height: theme.logoHeight } });
 
   sheet.getRow(2).height = 6;
 
@@ -185,7 +205,7 @@ function buildPackingListWorkbook(params) {
   // ── Shipment Details ─────────────────────────────────────────────────
   const shipTitleRow = sheet.addRow(["Shipment Details"]);
   sheet.mergeCells(shipTitleRow.number, 1, shipTitleRow.number, NUM_COLS);
-  shipTitleRow.font = { bold: true, size: 12, color: { argb: NAVY_ARGB } };
+  shipTitleRow.font = { bold: true, size: 12, color: { argb: theme.accentArgb } };
   shipTitleRow.getCell(1).border = { bottom: HEADER_RULE, top: HEADER_RULE };
 
   const addCenteredLine = text => {

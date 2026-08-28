@@ -16,7 +16,6 @@ function renderContract(params) {
       <td class="num">${i + 1}</td>
       <td>${escapeHtml(item.productNameZh || item.productName)}</td>
       <td>${escapeHtml(item.colorZh || item.color || "—")}</td>
-      <td>${escapeHtml(item.code || "—")}</td>
       <td>${escapeHtml(item.thickness || "—")}</td>
       <td>${escapeHtml(item.width || "—")}</td>
       <td>${escapeHtml(item.gramatura || "—")}</td>
@@ -76,14 +75,14 @@ function renderContract(params) {
     <table class="items-table">
       <thead>
         <tr>
-          <th>项目 No.</th><th>品名 Product Name</th><th>颜色 Color</th><th>编号 Code</th><th>厚度 Thickness</th><th>有效门幅 Width</th>
+          <th>项目 No.</th><th>品名 Product Name</th><th>颜色 Color</th><th>厚度 Thickness</th><th>有效门幅 Width</th>
           <th>克重 Weight</th><th>数量 Quantity</th><th>含税单价 Unit Price</th><th>金额 Amount</th>
         </tr>
       </thead>
       <tbody>
         ${rows}
         <tr class="totals-row">
-          <td colspan="7" style="text-align:right;">总计 (Total)</td>
+          <td colspan="6" style="text-align:right;">总计 (Total)</td>
           <td class="num">${totalQuantity != null ? `${fmtNumber(totalQuantity, totalQuantityDecimals ?? 0)}${totalQuantityUnit ? " " + escapeHtml(totalQuantityUnit) : ""}` : ""}</td>
           <td></td>
           <td class="num">${fmtMoney(total, currency)}</td>
@@ -99,8 +98,11 @@ function renderContract(params) {
     <div class="sign-block">
       <div class="party">
         <div class="role">买方 / Buyer: ${escapeHtml(acq.chineseName || acq.name)}</div>
-        <div>帐号 / Account: ${escapeHtml(acq.bank.account)}</div>
-        <div>开户 / Bank: ${escapeHtml(acq.bank.bankName)}</div>
+        <div>税号 / Tax ID: ${escapeHtml(acq.domesticBank.taxId)}</div>
+        <div>开户行 / Bank: ${escapeHtml(acq.domesticBank.bankName)}</div>
+        <div>账号 / Account: ${escapeHtml(acq.domesticBank.account)}</div>
+        <div>地址 / Address: ${escapeHtml(acq.domesticBank.address)}</div>
+        <div>电话 / Tel: ${escapeHtml(acq.domesticBank.tel)}</div>
         <div class="sign-line">签名 / 公司盖章 Signature / Company Seal &nbsp;&nbsp;&nbsp;&nbsp; 日期 Date:</div>
       </div>
       <div class="party">
