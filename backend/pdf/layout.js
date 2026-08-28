@@ -29,8 +29,17 @@ const GRAY = "#58595B";
 // Falls back to the navy/HKAG theme for anything else, including the
 // pre-Order Quotation case where no acquisition_company has been chosen
 // yet (acq is null there — see renderMultiCompanyHeader below).
+// logoWidth: the Ningbo/ALLIANCE wordmark (1600x378, ~4.23:1) is much wider
+// per unit height than the HKAG one (~900x297, ~3.03:1) — at the same fixed
+// height used for HKAG (see .header img.logo below), it rendered oversized
+// in the letterhead. Constraining Ningbo's logo to a fixed width instead
+// (height auto, so its own aspect ratio is preserved) keeps it visually in
+// line with the HKAG logo's footprint. HKAG keeps its original height-based
+// sizing (undefined here) since that was never reported as an issue.
 function themeFor(acq) {
-  return acq && acq.code === "NINGBO" ? { accent: GRAY, logo: LOGO_NINGBO } : { accent: NAVY, logo: LOGO };
+  return acq && acq.code === "NINGBO"
+    ? { accent: GRAY, logo: LOGO_NINGBO, logoWidth: 150 }
+    : { accent: NAVY, logo: LOGO };
 }
 
 // icon() is called from salesInvoice.js/packingList.js/quotation.js dozens
@@ -159,10 +168,13 @@ function baseCss(accent = NAVY) {
 }
 
 function renderHeader(acq) {
-  const { logo } = themeFor(acq);
+  const { logo, logoWidth } = themeFor(acq);
+  // logoWidth (Ningbo only) overrides the CSS class's fixed height so the
+  // wider wordmark scales down by width instead — see themeFor() above.
+  const logoStyle = logoWidth ? ` style="width:${logoWidth}px; height:auto;"` : "";
   return `
     <div class="header">
-      <img class="logo" src="${logo}" alt="${escapeHtml(acq.name)}" />
+      <img class="logo" src="${logo}" alt="${escapeHtml(acq.name)}"${logoStyle} />
       <div class="company">
         <div class="company-name">${escapeHtml(acq.name)}</div>
         ${acq.addressLine ? `<div>${icon("pin", "#333")}${escapeHtml(acq.addressLine)}</div>` : ""}
