@@ -15,12 +15,12 @@ const { renderItemSections } = require("./itemSections");
 // can start counting from) — terms with no advance at all ("100%DP BL",
 // "100% ARRIVAL", "100% AFTER D. SALE": the client only pays once goods are
 // already produced/shipped/resold) don't have a TT payment to count days
-// from, so those fall back to the Commercial Invoice being signed instead
+// from, so those fall back to the Proforma Invoice being signed instead
 // of a nonsensical "TT payment" trigger.
 function daysOrNote(value, fallback, paymentTerms) {
   const v = (value === undefined || value === null || value === "") ? fallback : value;
   if (!/^\d+$/.test(String(v).trim())) return String(v);
-  const trigger = /ADV/i.test(paymentTerms || "") ? "TT payment" : "the Commercial Invoice is signed";
+  const trigger = /ADV/i.test(paymentTerms || "") ? "TT payment" : "the Proforma Invoice is signed";
   return `${v} days after ${trigger}.`;
 }
 

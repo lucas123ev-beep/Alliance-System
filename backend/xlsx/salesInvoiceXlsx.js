@@ -37,11 +37,11 @@ const NUM_COLS = 8;
 // "TT payment" is only a sensible trigger when the chosen Payment Terms
 // actually has an advance/deposit leg — see pdf/salesInvoice.js's daysOrNote
 // for the full reasoning. Terms with no advance (100%DP BL, 100% ARRIVAL,
-// 100% AFTER D. SALE) fall back to the Commercial Invoice being signed.
+// 100% AFTER D. SALE) fall back to the Proforma Invoice being signed.
 function daysOrNote(value, fallback, paymentTerms) {
   const v = (value === undefined || value === null || value === "") ? fallback : value;
   if (!/^\d+$/.test(String(v).trim())) return String(v);
-  const trigger = /ADV/i.test(paymentTerms || "") ? "TT payment" : "the Commercial Invoice is signed";
+  const trigger = /ADV/i.test(paymentTerms || "") ? "TT payment" : "the Proforma Invoice is signed";
   return `${v} days after ${trigger}.`;
 }
 
