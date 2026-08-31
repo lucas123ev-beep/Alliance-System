@@ -34,9 +34,15 @@ function themeForXlsx(acq) {
 // block on the sheet merges across however many of these 8 it needs.
 const NUM_COLS = 8;
 
-function daysOrNote(value, fallback) {
+// "TT payment" is only a sensible trigger when the chosen Payment Terms
+// actually has an advance/deposit leg — see pdf/salesInvoice.js's daysOrNote
+// for the full reasoning. Terms with no advance (100%DP BL, 100% ARRIVAL,
+// 100% AFTER D. SALE) fall back to the Commercial Invoice being signed.
+function daysOrNote(value, fallback, paymentTerms) {
   const v = (value === undefined || value === null || value === "") ? fallback : value;
-  return /^\d+$/.test(String(v).trim()) ? `${v} days after TT payment.` : String(v);
+  if (!/^\d+$/.test(String(v).trim())) return String(v);
+  const trigger = /ADV/i.test(paymentTerms || "") ? "TT payment" : "the Commercial Invoice is signed";
+  return `${v} days after ${trigger}.`;
 }
 
 function buildSalesInvoiceWorkbook(params) {
@@ -194,9 +200,9 @@ function buildSalesInvoiceWorkbook(params) {
   const orderLines = [
     { text: "Order Information", ...title_ },
     { text: `1. Payment terms: ${paymentTerms || "100% on BL copy"}.` },
-    { text: `2. End date of production: ${daysOrNote(productionDays, "28")}` },
+    { text: `2. End date of production: ${daysOrNote(productionDays, "28", paymentTerms)}` },
     { text: `3. Goods delivered: ${portOfOrigin || "—"}.` },
-    { text: `4. Delivery date at ${(portOfOrigin || "origin port").split(",")[0]}: ${daysOrNote(deliveryDays, "33")}` },
+    { text: `4. Delivery date at ${(portOfOrigin || "origin port").split(",")[0]}: ${daysOrNote(deliveryDays, "33", paymentTerms)}` },
   ];
   if (extraShipmentLine) {
     orderLines.push({ text: `5. Packing List Description${extraShipmentLineLabel ? `: ${extraShipmentLineLabel}` : ""}`, ...bold_ });

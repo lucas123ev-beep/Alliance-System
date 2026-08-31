@@ -9,9 +9,19 @@ const { renderItemSections } = require("./itemSections");
 // suffix glued onto the end of it. Only append the suffix when the value
 // actually looks like a bare number; anything else prints as-is, already a
 // complete sentence on its own.
-function daysOrNote(value, fallback) {
+//
+// "TT payment" is only a sensible trigger when the chosen Payment Terms
+// actually has an advance/deposit leg (an upfront TT wire that production
+// can start counting from) — terms with no advance at all ("100%DP BL",
+// "100% ARRIVAL", "100% AFTER D. SALE": the client only pays once goods are
+// already produced/shipped/resold) don't have a TT payment to count days
+// from, so those fall back to the Commercial Invoice being signed instead
+// of a nonsensical "TT payment" trigger.
+function daysOrNote(value, fallback, paymentTerms) {
   const v = (value === undefined || value === null || value === "") ? fallback : value;
-  return /^\d+$/.test(String(v).trim()) ? `${v} days after TT payment.` : String(v);
+  if (!/^\d+$/.test(String(v).trim())) return String(v);
+  const trigger = /ADV/i.test(paymentTerms || "") ? "TT payment" : "the Commercial Invoice is signed";
+  return `${v} days after ${trigger}.`;
 }
 
 // One "party" card (Importer / Consignee / Notify Party / the combined
@@ -167,9 +177,9 @@ function renderSalesInvoice(params) {
         <div class="card" style="flex:1;">
           <div class="card-title">${icon("file")}Order Information</div>
           <p><strong>1. Payment terms:</strong> ${escapeHtml(paymentTerms || "100% on BL copy")}.</p>
-          <p><strong>2. End date of production:</strong> ${escapeHtml(daysOrNote(productionDays, "28"))}</p>
+          <p><strong>2. End date of production:</strong> ${escapeHtml(daysOrNote(productionDays, "28", paymentTerms))}</p>
           <p><strong>3. Goods delivered:</strong> ${escapeHtml(portOfOrigin || "—")}.</p>
-          <p><strong>4. Delivery date at ${escapeHtml((portOfOrigin || "origin port").split(",")[0])}:</strong> ${escapeHtml(daysOrNote(deliveryDays, "33"))}</p>
+          <p><strong>4. Delivery date at ${escapeHtml((portOfOrigin || "origin port").split(",")[0])}:</strong> ${escapeHtml(daysOrNote(deliveryDays, "33", paymentTerms))}</p>
           ${extraShipmentLine ? `
           <p style="margin-bottom:2px;"><strong>5. Packing List Description${extraShipmentLineLabel ? `: ${escapeHtml(extraShipmentLineLabel)}` : ""}</strong></p>
           ${
