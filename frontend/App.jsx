@@ -7350,9 +7350,13 @@ function Financial({ type }) {
         <Btn color={color} onClick={() => setModal(true)}>+ New Entry</Btn>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
-        <StatCard label="Total" value={fmt(totals.total)} color={color} />
-        <StatCard label="Pending" value={fmt(totals.pending)} color="#f59e0b" />
-        <StatCard label={isClient ? "Received" : "Paid"} value={fmt(totals.paid)} color="#10b981" />
+        {/* Supplier payments are always RMB (Purchase Contracts with Chinese
+            factories are priced in RMB and paid through Ningbo — see
+            NINGBO_ACQ in server.js), unlike Client Cash Flow entries, whose
+            currency follows whatever the linked Order was invoiced in. */}
+        <StatCard label="Total" value={fmt(totals.total, isClient ? undefined : "CNY")} color={color} />
+        <StatCard label="Pending" value={fmt(totals.pending, isClient ? undefined : "CNY")} color="#f59e0b" />
+        <StatCard label={isClient ? "Received" : "Paid"} value={fmt(totals.paid, isClient ? undefined : "CNY")} color="#10b981" />
       </div>
       {modal && (
         <Modal title={isClient ? t("New Client Payment") : t("New Supplier Payment")} onClose={() => setModal(false)}>
