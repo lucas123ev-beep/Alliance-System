@@ -3538,6 +3538,7 @@ useEffect(() => {
                     <div style={{ flex: 1, fontSize: "13px" }}>
                       <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
                       <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
+                      {product?.color && <span style={{ color: "#94a3b8", marginLeft: "8px" }}>{product.color}</span>}
                       <span style={{ color: "#64748b", marginLeft: "8px" }}>{displayQtyUnit(item)}</span>
                     </div>
                     {/* Pulls the current registered price/spec from the Product
@@ -4878,6 +4879,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
                   <div style={{ flex: 1, fontSize: "13px" }}>
                     <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
                     <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
+                    {product?.color && <span style={{ color: "#94a3b8", marginLeft: "8px" }}>{product.color}</span>}
                     <span style={{ color: "#64748b", marginLeft: "8px" }}>{displayQtyUnit(item)}</span>
                   </div>
                   <Btn small outline color="#64748b" onClick={() => { setEditingItemIdx(idx); setItemModal("edit"); }}>Edit</Btn>
@@ -5402,6 +5404,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
                     <div style={{ flex: 1, fontSize: "13px" }}>
                       <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
                       <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
+                      {product?.color && <span style={{ color: "#94a3b8", marginLeft: "8px" }}>{product.color}</span>}
                       <span style={{ color: "#64748b", marginLeft: "8px" }}>{displayQtyUnit(item)}</span>
                     </div>
                     {/* Pulls the current registered price/spec from the Product
