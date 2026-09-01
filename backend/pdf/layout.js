@@ -131,6 +131,15 @@ function baseCss(accent = NAVY) {
       background: ${accent}; color: #fff; padding: 3px 6px; font-size: 7.5px; line-height: 1.25;
       text-transform: uppercase; text-align: center; font-weight: bold;
     }
+    /* Without this, a row whose Description cell wraps onto several lines
+       (the common case — product description + bullets + NCM line) can get
+       sliced in half by the page boundary, e.g. the NCM line printing alone
+       at the top of the next page instead of staying with the rest of its
+       own row. break-inside/page-break-inside (both needed — Chrome's PDF
+       renderer, which Puppeteer drives, only recognizes the older
+       page-break-inside) keep each row atomic: it moves to the next page
+       whole rather than splitting across the boundary. */
+    .items-table tr { break-inside: avoid; page-break-inside: avoid; }
     .items-table td { border-bottom: 0.75px solid #ddd; padding: 4px 7px; font-size: 9px; vertical-align: middle; }
     .items-table .num { text-align: right; }
     /* Short single-value columns (Color, Width/Unit, Quantity, weight

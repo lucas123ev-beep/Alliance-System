@@ -43,6 +43,9 @@ function renderContract(params) {
     .header .company .en { font-weight: bold; font-size: 10px; color: ${NAVY}; }
     .title-bar { text-align: center; font-weight: bold; font-size: 15px; letter-spacing: 4px; margin: 4px 0 10px; color: ${NAVY}; }
     .meta-row { display: flex; justify-content: space-between; font-size: 10.5px; margin-bottom: 8px; }
+    /* Same page-break fix as the client-facing documents (see layout.js) —
+       keeps a row from being sliced across a page boundary. */
+    .items-table tr { break-inside: avoid; page-break-inside: avoid; }
     .items-table td, .items-table th { border: 1px solid #333; padding: 5px 6px; font-size: 9.5px; }
     .items-table th { background: ${NAVY}; color: #fff; font-size: 9px; }
     .items-table .num { text-align: right; }
