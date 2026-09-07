@@ -209,6 +209,12 @@ db.exec(`
     production_days INTEGER,
     delivery_days INTEGER,
     items TEXT,
+    -- Internal Ningbo -> Hong Kong back-to-back Proforma data — see the
+    -- matching migration entries further down for the full explanation.
+    ningbo_way_of_shipment TEXT DEFAULT '',
+    ningbo_incoterm TEXT DEFAULT '',
+    ningbo_payment_terms TEXT DEFAULT '',
+    ningbo_items TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -680,6 +686,27 @@ const migrations = [
   // are copied in at creation time; from then on they're independently
   // editable, same as Order items already are.
   ['proformas', 'items', 'TEXT'],
+  // Internal Ningbo -> Hong Kong "back-to-back" Proforma data — only ever
+  // filled in when this Proforma's own acquisition_company is "HK": the
+  // real document goes to the client under the HKAG entity, but since the
+  // goods themselves are procured/exported through Ningbo, the client wants
+  // a second, internal-only Proforma showing Ningbo as the seller and HKAG
+  // as the buyer (their own transfer-pricing paperwork between the two
+  // entities). Kept as its own set of fields on the SAME Proforma record
+  // (not a separate Proforma row) since it's edited from a small popup
+  // right next to the Acquisition Company field, not its own screen — see
+  // the "Ningbo -> HKAG" button in ProformaForm and the
+  // /api/proformas/:id/internal-pdf route in server.js, which is the only
+  // place these get read.
+  // ningbo_items mirrors the Proforma's own `items` shape exactly (same
+  // product_id/quantity/category/etc.) but with unit_price/sale_per_meter/
+  // total overwritten per item to whatever internal transfer price was set
+  // in that popup — letting the PDF route reuse the exact same
+  // normalizeSalesItem() pipeline as the real client-facing document.
+  ['proformas', 'ningbo_way_of_shipment', "TEXT DEFAULT ''"],
+  ['proformas', 'ningbo_incoterm', "TEXT DEFAULT ''"],
+  ['proformas', 'ningbo_payment_terms', "TEXT DEFAULT ''"],
+  ['proformas', 'ningbo_items', 'TEXT'],
   // Mirrors proformas.delivery_days on the Order, so Commercial Invoice PDFs
   // (which read from the Order, not the Proforma) also get a real value
   // instead of the hardcoded fallback.

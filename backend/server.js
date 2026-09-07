@@ -630,16 +630,19 @@ app.get('/api/proformas', (req, res) => {
 app.post('/api/proformas', (req, res) => {
   const { order_id, quotation_id, number, issue_date, validity, client, total, currency, status, notes,
     acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, freight_value, supplier,
-    payment_terms, production_days, delivery_days, items, consignee, notify_party } = req.body;
+    payment_terms, production_days, delivery_days, items, consignee, notify_party,
+    ningbo_way_of_shipment, ningbo_incoterm, ningbo_payment_terms, ningbo_items } = req.body;
   try {
     const result = db.prepare(`
 INSERT INTO proformas (order_id, quotation_id, number, issue_date, validity, client, total, currency, status, notes,
   acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, freight_value, supplier,
-  payment_terms, production_days, delivery_days, items, consignee, notify_party, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  payment_terms, production_days, delivery_days, items, consignee, notify_party,
+  ningbo_way_of_shipment, ningbo_incoterm, ningbo_payment_terms, ningbo_items, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `).run(order_id || null, quotation_id || null, number, issue_date, validity, client, total, currency || 'USD', status || 'Draft', notes,
       acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', freight_value || '', supplier || '',
-      payment_terms || null, production_days || null, delivery_days || null, items || null, consignee || null, notify_party || null, actorName(req));
+      payment_terms || null, production_days || null, delivery_days || null, items || null, consignee || null, notify_party || null,
+      ningbo_way_of_shipment || '', ningbo_incoterm || '', ningbo_payment_terms || '', ningbo_items || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM proformas WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -649,15 +652,18 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 app.put('/api/proformas/:id', (req, res) => {
   const { order_id, number, issue_date, validity, client, total, currency, status, notes,
     acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, freight_value, supplier,
-    payment_terms, production_days, delivery_days, items, consignee, notify_party } = req.body;
+    payment_terms, production_days, delivery_days, items, consignee, notify_party,
+    ningbo_way_of_shipment, ningbo_incoterm, ningbo_payment_terms, ningbo_items } = req.body;
   db.prepare(`
     UPDATE proformas SET order_id=?, number=?, issue_date=?, validity=?, client=?, total=?, currency=?, status=?, notes=?,
       acquisition_company=?, incoterm=?, way_of_shipment=?, port_of_loading=?, port_of_discharge=?, freight_value=?, supplier=?,
-      payment_terms=?, production_days=?, delivery_days=?, items=?, consignee=?, notify_party=?, updated_by=?
+      payment_terms=?, production_days=?, delivery_days=?, items=?, consignee=?, notify_party=?,
+      ningbo_way_of_shipment=?, ningbo_incoterm=?, ningbo_payment_terms=?, ningbo_items=?, updated_by=?
     WHERE id=?
   `).run(order_id || null, number, issue_date, validity, client, total, currency, status, notes,
     acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', freight_value || '', supplier || '',
-    payment_terms || null, production_days || null, delivery_days || null, items || null, consignee || null, notify_party || null, actorName(req), req.params.id);
+    payment_terms || null, production_days || null, delivery_days || null, items || null, consignee || null, notify_party || null,
+    ningbo_way_of_shipment || '', ningbo_incoterm || '', ningbo_payment_terms || '', ningbo_items || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM proformas WHERE id=?').get(req.params.id));
 });
 
@@ -2051,6 +2057,78 @@ app.get('/api/proformas/:id/xlsx', async (req, res) => {
     res.send(Buffer.from(buffer));
   } catch (err) {
     console.error('Proforma xlsx error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Internal Ningbo -> Hong Kong "back-to-back" Proforma — only meaningful
+// when this Proforma's own acquisition_company is HK (the real document
+// goes to the client under the HKAG entity, but the goods themselves are
+// procured/exported through Ningbo, so the client wants a second,
+// internal-only Proforma showing that leg: Ningbo as seller, HKAG as
+// buyer). Reuses the exact same renderSalesInvoice template as the real
+// client-facing Proforma, just with the roles flipped and fed from the
+// ningbo_* fields (set via the "Ningbo -> HKAG" popup on the Proforma form)
+// instead of the real client-facing ones. PDF only — no Excel/email-format
+// picker for this one, matching how Quotation/Contract's simpler DocButtons
+// mode already works.
+app.get('/api/proformas/:id/internal-pdf', async (req, res) => {
+  try {
+    const pf = db.prepare('SELECT * FROM proformas WHERE id=?').get(req.params.id);
+    if (!pf) return res.status(404).json({ error: 'Proforma not found' });
+    if (pf.acquisition_company !== 'HK') {
+      return res.status(400).json({ error: 'This document only applies to Proformas issued under the Hong Kong entity.' });
+    }
+
+    const order = pf.order_id ? db.prepare('SELECT * FROM orders WHERE id=?').get(pf.order_id) : null;
+    const rawItems = parseJsonSafe(pf.ningbo_items, []);
+    const currency = pf.currency || 'USD';
+    const items = rawItems.map(i => normalizeSalesItem(i, currency));
+    const totalLength = items.reduce((s, i) => s + (parseFloat(i.totalLength) || 0), 0);
+    const totalWeight = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.totalWeight) || 0), 0);
+    const totalQuantity = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
+    const totalAmount = items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+    const hkAcq = getAcq('HK');
+
+    const html = renderSalesInvoice({
+      title: 'PROFORMA INVOICE',
+      // "-NGB" suffix keeps this visually distinct from the real client-
+      // facing Proforma's own number (e.g. "Alliance 1202-NGB") without
+      // needing a separate numbering sequence of its own.
+      number: `${pf.number}-NGB`,
+      date: pf.issue_date,
+      wayOfShipment: pf.ningbo_way_of_shipment || pf.way_of_shipment || order?.way_of_shipment,
+      countryOfOrigin: 'China',
+      portOfOrigin: pf.port_of_loading || order?.port_of_loading,
+      portOfDestination: pf.port_of_discharge || order?.port_of_discharge,
+      incoterm: pf.ningbo_incoterm || pf.incoterm || order?.incoterm,
+      // Issued BY Ningbo — its own gray letterhead/theme (see themeFor in
+      // pdf/layout.js), not whichever entity is invoicing the real client.
+      acq: NINGBO_ACQ,
+      // Same "real factory" manufacturer line as the client-facing document
+      // — the goods themselves aren't handled any differently just because
+      // this is the internal paperwork between the two Alliance entities.
+      manufacturer: { name: NINGBO_ACQ.name, address: NINGBO_ACQ.addressLine, tel: NINGBO_ACQ.tel },
+      items,
+      totalLength,
+      totalWeight,
+      totalQuantity,
+      totalAmount,
+      currency,
+      paymentTerms: pf.ningbo_payment_terms || pf.payment_terms || order?.payment_terms,
+      productionDays: pf.production_days || order?.production_lead_time,
+      deliveryDays: pf.delivery_days || order?.delivery_days,
+      // HKAG is the buyer on this internal document — the whole point of it.
+      importer: { name: hkAcq.name, address: hkAcq.addressLine, tel: hkAcq.tel },
+      validity: pf.validity,
+    });
+
+    const pdf = await renderPdfBuffer(html);
+    const filename = `Proforma-${safeFilenamePart(pf.number)}-Internal-Ningbo.pdf`;
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': contentDisposition(filename) });
+    res.send(pdf);
+  } catch (err) {
+    console.error('Internal Proforma PDF error:', err);
     res.status(500).json({ error: err.message });
   }
 });

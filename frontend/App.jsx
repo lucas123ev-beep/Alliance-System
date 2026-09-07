@@ -95,6 +95,13 @@ const TRANSLATIONS = {
     "Consignee (optional)": "收货人（可选）",
     "Notify Party (optional)": "通知方（可选）",
     "Acquisition Company": "采购公司",
+    "Ningbo → HKAG": "宁波 → HKAG",
+    "Ningbo → HKAG Internal Proforma": "宁波 → HKAG 内部形式发票",
+    "Used only to generate a second, internal PDF documenting Ningbo selling these same items to Hong Kong — saved on this Proforma, doesn't affect the real client-facing document.": "仅用于生成第二份内部PDF，记录宁波向香港销售相同货品的情况——保存在此形式发票中，不影响面向客户的正式文件。",
+    "Item Values (Ningbo → HKAG)": "货品金额（宁波 → HKAG）",
+    "No products on this Proforma yet.": "此形式发票尚无货品。",
+    "Client document (HKAG/Ningbo)": "客户文件（HKAG/宁波）",
+    "Internal document (Ningbo → HKAG)": "内部文件（宁波 → HKAG）",
     "Value": "金额",
     "Currency": "货币",
     "Prod. Lead Time (days)": "生产周期（天）",
@@ -4726,6 +4733,9 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
   const [itemModal, setItemModal] = useState(null);
   const [editingItemIdx, setEditingItemIdx] = useState(null);
   const [showPaymentList, setShowPaymentList] = useState(false);
+  // Internal Ningbo -> Hong Kong "back-to-back" Proforma editor — only
+  // relevant when Acquisition Company is HK. See NingboInternalForm below.
+  const [showNingboInternal, setShowNingboInternal] = useState(false);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const filteredPayments = PAYMENT_TERMS_OPTIONS.filter(p => p.toLowerCase().includes((f.payment_terms || "").toLowerCase()));
 
@@ -4939,17 +4949,39 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
         {t("Shipment Details (for PDF)")}
       </div>
       <Field label="Acquisition Company" half>
-        <Select value={f.acquisition_company} onChange={set("acquisition_company")} disabled={!!f.order_id}>
-          <option value="">Select...</option>
-          <option value="HK">HONG KONG ALLIANCE GLOBAL TRADING CO., LTD</option>
-          <option value="NINGBO">NINGBO WORLD ALLIANCE TRADING. CO. LTD.</option>
-        </Select>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <div style={{ flex: 1 }}>
+            <Select value={f.acquisition_company} onChange={set("acquisition_company")} disabled={!!f.order_id}>
+              <option value="">Select...</option>
+              <option value="HK">HONG KONG ALLIANCE GLOBAL TRADING CO., LTD</option>
+              <option value="NINGBO">NINGBO WORLD ALLIANCE TRADING. CO. LTD.</option>
+            </Select>
+          </div>
+          {/* Only meaningful when HKAG is invoicing the client — Ningbo is
+              the entity actually procuring/exporting the goods, so this
+              opens a small editor for the internal-only Proforma that
+              documents that Ningbo -> HKAG leg (see NingboInternalForm). */}
+          {f.acquisition_company === "HK" && (
+            <Btn small outline color="#94a3b8" onClick={() => setShowNingboInternal(true)}>
+              🇨🇳 {t("Ningbo → HKAG")}
+            </Btn>
+          )}
+        </div>
         {f.order_id && (
           <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
             {t("Locked to the linked Order's Acquisition Company — change it on the Order to update this.")}
           </div>
         )}
       </Field>
+      {showNingboInternal && (
+        <NingboInternalForm
+          items={items}
+          currency={f.currency}
+          initial={f}
+          onSave={(data) => { setF(p => ({ ...p, ...data })); setShowNingboInternal(false); }}
+          onClose={() => setShowNingboInternal(false)}
+        />
+      )}
       <Field label="Incoterm" half>
         <Select value={f.incoterm} onChange={set("incoterm")}>
           <option value="">Select...</option>
@@ -5007,11 +5039,31 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
       </Field>
 
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
+      {/* Two documents, stacked one below the other and each labeled, when
+          this Proforma is under HKAG: the real client-facing one, and the
+          internal-only Ningbo -> HKAG one (PDF only — no Excel, same
+          simpler mode Quotation/Contract already use for single-format
+          docs). See onSave below for the internal one's own 400 guard on
+          the backend if ningbo_items was never filled in. */}
+      {f.id && (
+        <div style={{ gridColumn: "span 2", display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-end" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "11px", color: "#64748b" }}>{t("Client document (HKAG/Ningbo)")}</span>
+            <DocButtons url={authUrl(`${API}/proformas/${f.id}/pdf`)} filename={`Proforma-${f.number}.pdf`}
+              xlsxUrl={authUrl(`${API}/proformas/${f.id}/xlsx`)} xlsxFilename={`Proforma-${f.number}.xlsx`}
+              entityType="proformas" recordLabel={f.number} label="📄 Download" small={false} />
+          </div>
+          {f.acquisition_company === "HK" && (
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "11px", color: "#64748b" }}>{t("Internal document (Ningbo → HKAG)")}</span>
+              <DocButtons url={authUrl(`${API}/proformas/${f.id}/internal-pdf`)} filename={`Proforma-${f.number}-Internal-Ningbo.pdf`}
+                entityType="proformas" recordLabel={`${f.number}-NGB`} label="📄 Ningbo → HKAG" small={false} color="#8b5cf6" />
+            </div>
+          )}
+        </div>
+      )}
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        {f.id && <DocButtons url={authUrl(`${API}/proformas/${f.id}/pdf`)} filename={`Proforma-${f.number}.pdf`}
-          xlsxUrl={authUrl(`${API}/proformas/${f.id}/xlsx`)} xlsxFilename={`Proforma-${f.number}.xlsx`}
-          entityType="proformas" recordLabel={f.number} label="📄 Download" small={false} />}
         <Btn onClick={async () => {
           // Same BR-formatted-text cleanup as QuotationForm/OrderForm — the
           // items here go through the same PricingRow editor.
@@ -5035,6 +5087,130 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
       </div>
     </div>
     </>
+  );
+}
+
+// Internal Ningbo -> Hong Kong "back-to-back" Proforma editor — only shown
+// (via the "Ningbo → HKAG" button next to Acquisition Company above) when
+// this Proforma's Acquisition Company is HK. The real Proforma goes to the
+// client under the HKAG entity, but Ningbo is the one actually procuring
+// and exporting the goods — this data generates a second, internal-only
+// PDF documenting that Ningbo -> HKAG leg (Ningbo as seller, HKAG as
+// buyer), saved directly onto this same Proforma record (the ningbo_*
+// columns) rather than as a separate Proforma of its own. See the
+// /internal-pdf route in server.js for how it's rendered.
+function NingboInternalForm({ items, currency, initial, onSave, onClose }) {
+  const t = useT();
+  const [wayOfShipment, setWayOfShipment] = useState(initial.ningbo_way_of_shipment || initial.way_of_shipment || "By Sea");
+  const [incoterm, setIncoterm] = useState(initial.ningbo_incoterm || initial.incoterm || "");
+  const [paymentTerms, setPaymentTerms] = useState(initial.ningbo_payment_terms || initial.payment_terms || "");
+
+  // Seed the per-item value table from any previously saved ningbo_items
+  // (matched by index — same items array, same order, since both come from
+  // this same Proforma), falling back to each item's own real (client-
+  // facing) total the first time this popup is opened for a given item.
+  const savedNingboItems = (() => {
+    if (Array.isArray(initial.ningbo_items)) return initial.ningbo_items;
+    if (typeof initial.ningbo_items === "string" && initial.ningbo_items) {
+      try { return JSON.parse(initial.ningbo_items); } catch { return []; }
+    }
+    return [];
+  })();
+  const [rows, setRows] = useState(() => items.map((item, idx) => {
+    const saved = savedNingboItems[idx];
+    const total = saved && saved.total != null ? saved.total : item.total;
+    return { total: total === "" || total == null ? "" : String(total) };
+  }));
+
+  const setRowTotal = (idx, value) => {
+    const masked = maskMoney(value);
+    setRows(prev => { const u = [...prev]; u[idx] = { total: masked }; return u; });
+  };
+
+  const rowsTotal = rows.reduce((sum, r) => sum + (parseLocaleNumber(r.total) || 0), 0);
+
+  const handleSave = () => {
+    const ningboItems = items.map((item, idx) => {
+      const total = parseLocaleNumber(rows[idx]?.total);
+      const qty = parseFloat(item.quantity) || 0;
+      const isTextile = item.category === "Textile" || item.category === "DTF Film";
+      const next = { ...item, total: total != null ? total : item.total };
+      if (total != null) {
+        if (isTextile) {
+          // Textile items show a per-meter rate on the PDF (see
+          // normalizeSalesItem in server.js) — total_meterage (falling
+          // back to quantity, same convention used everywhere else) is the
+          // length this edited total is spread across.
+          const length = parseFloat(item.total_meterage ?? item.quantity) || 0;
+          next.sale_per_meter = length > 0 ? total / length : item.sale_per_meter;
+        } else {
+          next.unit_price = qty > 0 ? total / qty : item.unit_price;
+        }
+      }
+      return next;
+    });
+    onSave({
+      ningbo_way_of_shipment: wayOfShipment,
+      ningbo_incoterm: incoterm,
+      ningbo_payment_terms: paymentTerms,
+      ningbo_items: JSON.stringify(ningboItems),
+    });
+  };
+
+  return (
+    <Modal title={t("Ningbo → HKAG Internal Proforma")} onClose={onClose} wide>
+      <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "16px", lineHeight: 1.5 }}>
+        {t("Used only to generate a second, internal PDF documenting Ningbo selling these same items to Hong Kong — saved on this Proforma, doesn't affect the real client-facing document.")}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px", marginBottom: "20px" }}>
+        <Field label="Way of Shipment">
+          <Select value={wayOfShipment} onChange={e => setWayOfShipment(e.target.value)}>
+            <option>By Sea</option><option>By Air</option><option>By Land</option>
+          </Select>
+        </Field>
+        <Field label="Incoterm">
+          <Select value={incoterm} onChange={e => setIncoterm(e.target.value)}>
+            <option value="">Select...</option>
+            {["FOB","CIF","CFR","EXW","DAP","DDP","FCA"].map(x => <option key={x}>{x}</option>)}
+          </Select>
+        </Field>
+        <Field label="Payment Terms">
+          <Input value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} placeholder="e.g. 30% deposit, 70% before shipment" />
+        </Field>
+      </div>
+
+      <div style={{ fontSize: "11px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>
+        {t("Item Values (Ningbo → HKAG)")}
+      </div>
+      <div style={{ background: "#1e293b", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden", marginBottom: "16px" }}>
+        {items.length === 0 && (
+          <div style={{ padding: "12px 14px", color: "#475569", fontSize: "13px" }}>{t("No products on this Proforma yet.")}</div>
+        )}
+        {items.map((item, idx) => (
+          <div key={idx} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", borderBottom: "1px solid #0f172a" }}>
+            <div style={{ flex: 1, fontSize: "13px" }}>
+              <span style={{ color: "#60a5fa", fontFamily: "monospace", fontSize: "11px" }}>{item.product_code}</span>
+              <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
+              <span style={{ color: "#64748b", marginLeft: "8px" }}>{displayQtyUnit(item)}</span>
+            </div>
+            <div style={{ width: "160px" }}>
+              <Input type="text" inputMode="decimal" value={rows[idx]?.total ?? ""} onChange={e => setRowTotal(idx, e.target.value)} placeholder="0.00" />
+            </div>
+          </div>
+        ))}
+      </div>
+      {items.length > 0 && (
+        <div style={{ background: "#0f172a", borderRadius: "8px", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+          <span style={{ color: "#64748b", fontSize: "13px" }}>{t("Items Total")}</span>
+          <span style={{ color: "#10b981", fontWeight: 700, fontSize: "18px" }}>{fmt(rowsTotal, currency)}</span>
+        </div>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+        <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={handleSave}>Save</Btn>
+      </div>
+    </Modal>
   );
 }
 
@@ -7286,6 +7462,13 @@ cols={[
       <DocButtons url={authUrl(`${API}/proformas/${r.id}/pdf`)} filename={`Proforma-${r.number}.pdf`}
         xlsxUrl={authUrl(`${API}/proformas/${r.id}/xlsx`)} xlsxFilename={`Proforma-${r.number}.xlsx`}
         entityType="proformas" recordLabel={r.number} label="📄 Doc" />
+      {/* Second, internal-only document — Ningbo -> HKAG — only for
+          Proformas issued under the HK entity. PDF only, same simpler mode
+          Quotation/Contract already use (no xlsxUrl). */}
+      {r.acquisition_company === "HK" && (
+        <DocButtons url={authUrl(`${API}/proformas/${r.id}/internal-pdf`)} filename={`Proforma-${r.number}-Internal-Ningbo.pdf`}
+          entityType="proformas" recordLabel={`${r.number}-NGB`} label="📄 Ningbo → HKAG" color="#8b5cf6" />
+      )}
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
       <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/proformas/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
       <LastModifiedBy name={r.updated_by} />
