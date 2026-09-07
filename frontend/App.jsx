@@ -5105,10 +5105,19 @@ function NingboInternalForm({ items, currency, initial, onSave, onClose }) {
   const [incoterm, setIncoterm] = useState(initial.ningbo_incoterm || initial.incoterm || "");
   const [paymentTerms, setPaymentTerms] = useState(initial.ningbo_payment_terms || initial.payment_terms || "");
 
-  // Seed the per-item value table from any previously saved ningbo_items
-  // (matched by index — same items array, same order, since both come from
-  // this same Proforma), falling back to each item's own real (client-
-  // facing) total the first time this popup is opened for a given item.
+  // Isolates "how much of this item" the unit price multiplies against —
+  // meters for Textile/DTF Film (matches the per-meter rate normalizeSalesItem
+  // shows on the PDF), plain quantity for everything else. Same convention
+  // used throughout server.js.
+  const isTextileItem = (item) => item.category === "Textile" || item.category === "DTF Film";
+  const qtyBasisFor = (item) => isTextileItem(item)
+    ? (parseFloat(item.total_meterage ?? item.quantity) || 0)
+    : (parseFloat(item.quantity) || 0);
+
+  // Seed the per-item unit-price table from any previously saved
+  // ningbo_items (matched by index — same items array, same order, since
+  // both come from this same Proforma), falling back to each item's own
+  // real (client-facing) unit price the first time this popup is opened.
   const savedNingboItems = (() => {
     if (Array.isArray(initial.ningbo_items)) return initial.ningbo_items;
     if (typeof initial.ningbo_items === "string" && initial.ningbo_items) {
@@ -5118,34 +5127,41 @@ function NingboInternalForm({ items, currency, initial, onSave, onClose }) {
   })();
   const [rows, setRows] = useState(() => items.map((item, idx) => {
     const saved = savedNingboItems[idx];
-    const total = saved && saved.total != null ? saved.total : item.total;
-    return { total: total === "" || total == null ? "" : String(total) };
+    const textile = isTextileItem(item);
+    let unitPrice = textile
+      ? (saved?.sale_per_meter ?? item.sale_per_meter)
+      : (saved?.unit_price ?? item.unit_price);
+    if (unitPrice == null || unitPrice === "") {
+      // Older items may only have a line total saved, no per-unit rate —
+      // derive one from total/basis so the field isn't left blank.
+      const basis = qtyBasisFor(item);
+      const total = saved?.total ?? item.total;
+      unitPrice = basis > 0 && total != null ? (parseFloat(total) || 0) / basis : "";
+    }
+    return { unitPrice: unitPrice === "" || unitPrice == null ? "" : String(unitPrice) };
   }));
 
-  const setRowTotal = (idx, value) => {
+  const setRowUnitPrice = (idx, value) => {
     const masked = maskMoney(value);
-    setRows(prev => { const u = [...prev]; u[idx] = { total: masked }; return u; });
+    setRows(prev => { const u = [...prev]; u[idx] = { unitPrice: masked }; return u; });
   };
 
-  const rowsTotal = rows.reduce((sum, r) => sum + (parseLocaleNumber(r.total) || 0), 0);
+  // Total is always derived, never typed directly — Unit Price × the
+  // item's meters/quantity, same math the real PDF ends up doing.
+  const totalFor = (item, idx) => {
+    const unitPrice = parseLocaleNumber(rows[idx]?.unitPrice) || 0;
+    return unitPrice * qtyBasisFor(item);
+  };
+  const rowsTotal = items.reduce((sum, item, idx) => sum + totalFor(item, idx), 0);
 
   const handleSave = () => {
     const ningboItems = items.map((item, idx) => {
-      const total = parseLocaleNumber(rows[idx]?.total);
-      const qty = parseFloat(item.quantity) || 0;
-      const isTextile = item.category === "Textile" || item.category === "DTF Film";
-      const next = { ...item, total: total != null ? total : item.total };
-      if (total != null) {
-        if (isTextile) {
-          // Textile items show a per-meter rate on the PDF (see
-          // normalizeSalesItem in server.js) — total_meterage (falling
-          // back to quantity, same convention used everywhere else) is the
-          // length this edited total is spread across.
-          const length = parseFloat(item.total_meterage ?? item.quantity) || 0;
-          next.sale_per_meter = length > 0 ? total / length : item.sale_per_meter;
-        } else {
-          next.unit_price = qty > 0 ? total / qty : item.unit_price;
-        }
+      const unitPrice = parseLocaleNumber(rows[idx]?.unitPrice);
+      const total = totalFor(item, idx);
+      const next = { ...item, total };
+      if (unitPrice != null) {
+        if (isTextileItem(item)) next.sale_per_meter = unitPrice;
+        else next.unit_price = unitPrice;
       }
       return next;
     });
@@ -5193,8 +5209,15 @@ function NingboInternalForm({ items, currency, initial, onSave, onClose }) {
               <span style={{ color: "#f1f5f9", marginLeft: "6px" }}>{item.product_name}</span>
               <span style={{ color: "#64748b", marginLeft: "8px" }}>{displayQtyUnit(item)}</span>
             </div>
-            <div style={{ width: "160px" }}>
-              <Input type="text" inputMode="decimal" value={rows[idx]?.total ?? ""} onChange={e => setRowTotal(idx, e.target.value)} placeholder="0.00" />
+            <div style={{ width: "130px" }}>
+              <div style={{ fontSize: "10px", color: "#64748b", marginBottom: "3px" }}>{t("Unit Price")}</div>
+              <Input type="text" inputMode="decimal" value={rows[idx]?.unitPrice ?? ""} onChange={e => setRowUnitPrice(idx, e.target.value)} placeholder="0.00" />
+            </div>
+            <div style={{ width: "130px" }}>
+              <div style={{ fontSize: "10px", color: "#64748b", marginBottom: "3px" }}>{t("Total")}</div>
+              <div style={{ padding: "10px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: "8px", color: "#94a3b8", fontSize: "14px" }}>
+                {fmt(totalFor(item, idx), currency)}
+              </div>
             </div>
           </div>
         ))}
