@@ -181,6 +181,17 @@ db.exec(`
     items TEXT,
     total REAL,
     target_price REAL,
+    -- Supplier questionnaire builder (see the "Questionnaire" button on the
+    -- Quotations list) — a JSON blob: { language: "pt"|"en"|"zh", photos: [
+    -- { title, imageUrl, questions: [{ presetKey, text, options: [...] }] }
+    -- ] }. presetKey (when set) points into the STANDARD_QUESTIONS
+    -- dictionary in server.js so a standard question's text always follows
+    -- whatever language is picked; text is only used for custom (freely
+    -- typed) questions, which never get auto-translated. Generated into a
+    -- fillable .xlsx (checkboxes per option + an Observation column) via
+    -- GET /api/quotations/:id/questionnaire-xlsx, meant to be sent to the
+    -- supplier for them to fill in and send back.
+    questionnaire TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -625,6 +636,8 @@ const migrations = [
   // CIF deals, shown on the docs and counted as revenue in the profit report.
   ['quotations', 'freight_value', "TEXT DEFAULT ''"],
   ['quotations', 'acquisition_company', "TEXT DEFAULT ''"],
+  // See the CREATE TABLE comment above — supplier questionnaire builder.
+  ['quotations', 'questionnaire', 'TEXT'],
   ['orders', 'freight_value', "TEXT DEFAULT ''"],
   // See the CREATE TABLE comment above — the client's own color reference,
   // printed under Color on the sales PDFs.

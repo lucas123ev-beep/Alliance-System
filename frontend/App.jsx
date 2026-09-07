@@ -102,6 +102,22 @@ const TRANSLATIONS = {
     "No products on this Proforma yet.": "此形式发票尚无货品。",
     "Client document (HKAG/Ningbo)": "客户文件（HKAG/宁波）",
     "Internal document (Ningbo → HKAG)": "内部文件（宁波 → HKAG）",
+    "Questionnaire": "问卷",
+    "Supplier Questionnaire": "供应商问卷",
+    "Questionnaire Language": "问卷语言",
+    "Only standard questions are translated automatically — anything you type stays exactly as written.": "只有标准问题会自动翻译——您自己输入的内容将保持原样。",
+    "No photos added yet — add one below to start building the questionnaire.": "尚未添加照片——在下方添加一张开始创建问卷。",
+    "📎 Add Photo": "📎 添加照片",
+    "Remove this photo block": "删除此照片区块",
+    "Remove Block": "删除区块",
+    "Option": "选项",
+    "Add Option": "添加选项",
+    "+ Add standard question…": "+ 添加标准问题…",
+    "Custom Question": "自定义问题",
+    "Add Photo": "添加照片",
+    "Saved": "已保存",
+    "Download Spreadsheet": "下载表格",
+    "Upload failed": "上传失败",
     "Value": "金额",
     "Currency": "货币",
     "Prod. Lead Time (days)": "生产周期（天）",
@@ -1356,6 +1372,70 @@ const PAYMENT_TERMS_OPTIONS = [
   "30% ADV 70% BS – 30% Advance and 70% Before Shipment",
   "30%ADV/70%DP B. SHIP – 30% Advance, 70%DP Before Shipment",
   "30%ADV/70%DP BL – 30% Advance, 70%DP Under BL Copy",
+];
+
+// Standard/preset question list for the Supplier Questionnaire builder (see
+// QuestionnaireForm below). A question added from this list is saved with
+// just its stable key (not the text) — so switching the questionnaire's
+// own output language (independent of the app's own en/zh UI language —
+// see the picker inside QuestionnaireForm) re-translates every standard
+// question used, while anything typed by hand stays exactly as typed. Kept
+// in sync by hand with backend/questionnaireQuestions.js, which resolves
+// the same keys when the final spreadsheet is generated — no shared module
+// between frontend/backend in this app, same as every other static list
+// duplicated on both sides (currency labels, etc.).
+const QUESTIONNAIRE_STANDARD_QUESTIONS = {
+  pt: {
+    moq: "Qual é o MOQ (quantidade mínima de pedido)?",
+    unit_price: "Qual é o preço unitário?",
+    lead_time: "Qual é o prazo de produção?",
+    payment_terms: "Quais são as condições de pagamento aceitas?",
+    packaging: "Como é a embalagem do produto?",
+    colors: "Quais cores estão disponíveis?",
+    sizes: "Quais tamanhos estão disponíveis?",
+    sample: "Há amostra disponível? Quanto tempo leva e qual o custo?",
+    certification: "Este produto possui alguma certificação (CE, ISO, etc.)?",
+    material: "Qual é a composição do material?",
+    customization: "É possível personalizar com marca/logo do cliente?",
+    port_of_loading: "De qual porto esse produto será embarcado?",
+  },
+  en: {
+    moq: "What is the MOQ (Minimum Order Quantity)?",
+    unit_price: "What is the unit price?",
+    lead_time: "What is the production lead time?",
+    payment_terms: "What payment terms are accepted?",
+    packaging: "How is the product packaged?",
+    colors: "What colors are available?",
+    sizes: "What sizes are available?",
+    sample: "Is a sample available? How long does it take and how much does it cost?",
+    certification: "Does this product have any certifications (CE, ISO, etc.)?",
+    material: "What is the material composition?",
+    customization: "Is custom branding/logo printing available?",
+    port_of_loading: "Which port will this be shipped from?",
+  },
+  zh: {
+    moq: "起订量（MOQ）是多少？",
+    unit_price: "单价是多少？",
+    lead_time: "生产周期是多久？",
+    payment_terms: "可接受的付款方式是什么？",
+    packaging: "产品的包装方式是怎样的？",
+    colors: "有哪些颜色可选？",
+    sizes: "有哪些尺寸可选？",
+    sample: "是否可以提供样品？需要多长时间，费用是多少？",
+    certification: "该产品是否有认证（CE、ISO等）？",
+    material: "材质成分是什么？",
+    customization: "是否可以定制客户品牌/印刷logo？",
+    port_of_loading: "该产品将从哪个港口发货？",
+  },
+};
+const QUESTIONNAIRE_STANDARD_KEYS = [
+  "moq", "unit_price", "lead_time", "payment_terms", "packaging", "colors",
+  "sizes", "sample", "certification", "material", "customization", "port_of_loading",
+];
+const QUESTIONNAIRE_LANGUAGES = [
+  { code: "pt", label: "Português (BR)" },
+  { code: "en", label: "English" },
+  { code: "zh", label: "中文" },
 ];
 
 // Split-payment presets for Supplier Payments — each `parts` entry gets its
@@ -5749,6 +5829,210 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
     </>
   );
 }
+
+// Supplier Questionnaire builder — organized by photo, per the client's
+// spec: add a photo, and next to it the title + the questions to ask about
+// it. Each question can carry any number of custom answer-option checkboxes
+// (e.g. question "What's the quantity?" with options "MOQ" / "500 units" /
+// "1000 units"), plus a blank Observation column the supplier fills in —
+// see backend/xlsx/questionnaireXlsx.js for how this renders into the
+// actual spreadsheet. Saved directly onto the Quotation record
+// (quotations.questionnaire) so it can be reopened and edited later, same
+// pattern as ProformaForm's Ningbo -> HKAG popup (NingboInternalForm).
+function QuestionnaireForm({ quotation, onSave, onClose }) {
+  const t = useT();
+  const initial = (() => {
+    if (!quotation.questionnaire) return {};
+    if (typeof quotation.questionnaire === "string") {
+      try { return JSON.parse(quotation.questionnaire) || {}; } catch { return {}; }
+    }
+    return quotation.questionnaire;
+  })();
+  const [language, setLanguage] = useState(initial.language || "en");
+  const [photos, setPhotos] = useState(() => Array.isArray(initial.photos) ? initial.photos : []);
+  const [uploadingIdx, setUploadingIdx] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  const updatePhoto = (idx, patch) => setPhotos(prev => prev.map((p, i) => i === idx ? { ...p, ...patch } : p));
+  const addPhotoBlock = () => setPhotos(prev => [...prev, { title: "", imageUrl: "", questions: [] }]);
+  const removePhotoBlock = (idx) => setPhotos(prev => prev.filter((_, i) => i !== idx));
+
+  const handlePhotoUpload = async (idx, file) => {
+    if (!file) return;
+    setUploadingIdx(idx);
+    try {
+      const uploaded = await uploadToCloudinary(file);
+      updatePhoto(idx, { imageUrl: uploaded.url });
+    } catch (err) {
+      alert(`${t("Upload failed")}: ${err.message}`);
+    } finally {
+      setUploadingIdx(null);
+    }
+  };
+
+  const addStandardQuestion = (photoIdx, key) => {
+    if (!key) return;
+    updatePhoto(photoIdx, { questions: [...photos[photoIdx].questions, { presetKey: key, text: "", options: [] }] });
+  };
+  const addCustomQuestion = (photoIdx) => {
+    updatePhoto(photoIdx, { questions: [...photos[photoIdx].questions, { presetKey: null, text: "", options: [] }] });
+  };
+  const updateQuestion = (photoIdx, qIdx, patch) => {
+    const questions = photos[photoIdx].questions.map((q, i) => i === qIdx ? { ...q, ...patch } : q);
+    updatePhoto(photoIdx, { questions });
+  };
+  const removeQuestion = (photoIdx, qIdx) => {
+    updatePhoto(photoIdx, { questions: photos[photoIdx].questions.filter((_, i) => i !== qIdx) });
+  };
+  const addOption = (photoIdx, qIdx) => {
+    const q = photos[photoIdx].questions[qIdx];
+    updateQuestion(photoIdx, qIdx, { options: [...(q.options || []), ""] });
+  };
+  const updateOption = (photoIdx, qIdx, optIdx, value) => {
+    const q = photos[photoIdx].questions[qIdx];
+    const options = q.options.map((o, i) => i === optIdx ? value : o);
+    updateQuestion(photoIdx, qIdx, { options });
+  };
+  const removeOption = (photoIdx, qIdx, optIdx) => {
+    const q = photos[photoIdx].questions[qIdx];
+    updateQuestion(photoIdx, qIdx, { options: q.options.filter((_, i) => i !== optIdx) });
+  };
+
+  const buildPayload = () => ({
+    language,
+    photos: photos.map(p => ({
+      title: p.title || "",
+      imageUrl: p.imageUrl || "",
+      questions: (p.questions || []).map(q => ({
+        presetKey: q.presetKey || null,
+        text: q.presetKey ? "" : (q.text || ""),
+        options: (q.options || []).filter(o => (o || "").trim() !== ""),
+      })),
+    })),
+  });
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(buildPayload());
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 2000);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const handleDownload = async () => {
+    setSaving(true);
+    try {
+      await onSave(buildPayload());
+      window.open(authUrl(`${API}/quotations/${quotation.id}/questionnaire-xlsx`), "_blank");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
+        <div style={{ fontSize: "11px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          {t("Questionnaire Language")}
+        </div>
+        <Select value={language} onChange={e => setLanguage(e.target.value)} style={{ width: "200px" }}>
+          {QUESTIONNAIRE_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+        </Select>
+        <div style={{ fontSize: "11px", color: "#64748b" }}>
+          {t("Only standard questions are translated automatically — anything you type stays exactly as written.")}
+        </div>
+      </div>
+
+      {photos.length === 0 && (
+        <div style={{ padding: "24px", textAlign: "center", color: "#475569", fontSize: "13px", background: "#1e293b", borderRadius: "8px", border: "1px dashed #334155", marginBottom: "16px" }}>
+          {t("No photos added yet — add one below to start building the questionnaire.")}
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "16px" }}>
+        {photos.map((photo, idx) => {
+          const usedKeys = new Set((photo.questions || []).map(q => q.presetKey).filter(Boolean));
+          const availableKeys = QUESTIONNAIRE_STANDARD_KEYS.filter(k => !usedKeys.has(k));
+          return (
+            <div key={idx} style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "10px", padding: "16px", display: "flex", gap: "16px" }}>
+              {/* Photo — upload + preview, one image per block */}
+              <div style={{ width: "150px", flexShrink: 0 }}>
+                {photo.imageUrl ? (
+                  <div style={{ position: "relative" }}>
+                    <img src={photo.imageUrl} alt="" style={{ width: "150px", height: "150px", objectFit: "contain", background: "#1e293b", borderRadius: "8px", border: "1px solid #334155" }} />
+                    <button onClick={() => updatePhoto(idx, { imageUrl: "" })} style={{ position: "absolute", top: "-6px", right: "-6px", background: "#ef4444", border: "none", borderRadius: "50%", width: "20px", height: "20px", color: "#fff", fontSize: "11px", cursor: "pointer" }}>✕</button>
+                  </div>
+                ) : (
+                  <label style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "150px", height: "150px", background: "#1e293b", border: "1px dashed #334155", borderRadius: "8px", cursor: "pointer", fontSize: "12px", color: "#64748b", textAlign: "center", padding: "8px" }}>
+                    {uploadingIdx === idx ? t("⏳ Uploading...") : t("📎 Add Photo")}
+                    <input type="file" accept="image/*" onChange={e => handlePhotoUpload(idx, e.target.files[0])} style={{ display: "none" }} disabled={uploadingIdx === idx} />
+                  </label>
+                )}
+                <Btn small outline color="#ef4444" onClick={() => removePhotoBlock(idx)} title={t("Remove this photo block")} >
+                  🗑 {t("Remove Block")}
+                </Btn>
+              </div>
+
+              {/* Title + questions */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Input value={photo.title} onChange={e => updatePhoto(idx, { title: e.target.value })}
+                  placeholder="Title (e.g. product/photo name)" style={{ marginBottom: "10px", fontWeight: 600 }} />
+
+                {(photo.questions || []).map((q, qIdx) => (
+                  <div key={qIdx} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 12px", marginBottom: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginBottom: "8px" }}>
+                      {q.presetKey ? (
+                        <div style={{ flex: 1, fontSize: "13px", color: "#f1f5f9", padding: "10px 0" }}>
+                          🔒 {QUESTIONNAIRE_STANDARD_QUESTIONS[language]?.[q.presetKey] || q.presetKey}
+                        </div>
+                      ) : (
+                        <Input value={q.text} onChange={e => updateQuestion(idx, qIdx, { text: e.target.value })}
+                          placeholder="Type your question…" style={{ flex: 1 }} />
+                      )}
+                      <Btn small outline color="#ef4444" onClick={() => removeQuestion(idx, qIdx)}>✕</Btn>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
+                      {(q.options || []).map((opt, optIdx) => (
+                        <div key={optIdx} style={{ display: "flex", alignItems: "center", gap: "4px", background: "#0f172a", border: "1px solid #334155", borderRadius: "6px", padding: "2px 4px 2px 8px" }}>
+                          <span style={{ fontSize: "12px", color: "#64748b" }}>☐</span>
+                          <input value={opt} onChange={e => updateOption(idx, qIdx, optIdx, e.target.value)}
+                            placeholder={t("Option")} style={{ background: "transparent", border: "none", outline: "none", color: "#f1f5f9", fontSize: "12px", width: "90px" }} />
+                          <button onClick={() => removeOption(idx, qIdx, optIdx)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: "11px", padding: "2px" }}>✕</button>
+                        </div>
+                      ))}
+                      <Btn small outline color="#3b82f6" onClick={() => addOption(idx, qIdx)}>+ {t("Add Option")}</Btn>
+                    </div>
+                  </div>
+                ))}
+
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
+                  <Select value="" onChange={e => addStandardQuestion(idx, e.target.value)} style={{ width: "auto", flex: "1 1 220px" }}>
+                    <option value="">{t("+ Add standard question…")}</option>
+                    {availableKeys.map(k => <option key={k} value={k}>{QUESTIONNAIRE_STANDARD_QUESTIONS[language]?.[k]}</option>)}
+                  </Select>
+                  <Btn small outline color="#8b5cf6" onClick={() => addCustomQuestion(idx)}>+ {t("Custom Question")}</Btn>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <Btn outline color="#3b82f6" onClick={addPhotoBlock}>+ {t("Add Photo")}</Btn>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "10px", marginTop: "24px" }}>
+        {savedFlash && <span style={{ fontSize: "12px", color: "#10b981" }}>✓ {t("Saved")}</span>}
+        <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
+        <Btn outline color="#10b981" disabled={saving} onClick={handleSave}>💾 {t("Save")}</Btn>
+        <Btn color="#8b5cf6" disabled={saving || photos.length === 0} onClick={handleDownload}>⬇️ {t("Download Spreadsheet")}</Btn>
+      </div>
+    </div>
+  );
+}
+
 function Quotations() {
 const t = useT();
 const [proformas, setProformas] = useState([]);
@@ -5761,6 +6045,7 @@ const [search, setSearch] = useState("");
 const [orders, setOrders] = useState([]);
 const [notify, setNotify] = useState(null);
 const [acqFilter, setAcqFilter] = useState("All");
+const [questionnaireModal, setQuestionnaireModal] = useState(null); // the Quotation row currently being built/edited, or null
   const load = useCallback(async () => {
   try {
     console.log('loading quotations...');
@@ -5857,6 +6142,20 @@ console.log('quotations set:', quotations?.length);
     />
   </Modal>
 )}
+{questionnaireModal && (
+  <Modal title={t("Supplier Questionnaire")} onClose={() => setQuestionnaireModal(null)} wide>
+    <QuestionnaireForm
+      quotation={questionnaireModal}
+      onSave={async (questionnaireData) => {
+        const updated = await api(`/quotations/${questionnaireModal.id}`, "PUT", { ...questionnaireModal, questionnaire: JSON.stringify(questionnaireData) });
+        setQuestionnaireModal(updated);
+        load();
+        return updated;
+      }}
+      onClose={() => setQuestionnaireModal(null)}
+    />
+  </Modal>
+)}
 {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
       <Table
         cols={[
@@ -5934,6 +6233,12 @@ console.log('quotations set:', quotations?.length);
           items: r.items || "[]",
         })}>
         📋 {hasProforma ? t("Proforma ✓") : t("Proforma")}
+      </Btn>
+      {/* Supplier Questionnaire builder — organized by photo, saved on the
+          Quotation itself (r.questionnaire), generates a fillable .xlsx to
+          send to the supplier. See QuestionnaireForm above. */}
+      <Btn small outline color="#8b5cf6" onClick={() => setQuestionnaireModal(r)}>
+        🗒️ {t("Questionnaire")}
       </Btn>
       <DocButtons url={authUrl(`${API}/quotations/${r.id}/pdf`)} filename={`Quotation-${r.number}.pdf`}
         entityType="quotations" recordLabel={r.number} label="📄 PDF" />

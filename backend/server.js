@@ -38,6 +38,8 @@ const { buildSupplierEvaluationReportWorkbook } = require('./xlsx/supplierEvalua
 const { buildPaymentNoticeWorkbook } = require('./xlsx/paymentNotice');
 const { buildSalesInvoiceWorkbook } = require('./xlsx/salesInvoiceXlsx');
 const { buildPackingListWorkbook } = require('./xlsx/packingListXlsx');
+const { buildQuestionnaireWorkbook } = require('./xlsx/questionnaireXlsx');
+const { STANDARD_QUESTIONS } = require('./questionnaireQuestions');
 const { PROBLEM_OPTIONS, SOLUTION_OPTIONS, findProblem, findSolution, computeRating } = require('./supplierEvaluationOptions');
 const {
   hashPassword, verifyPassword, generateToken, generateTempPassword, requireAuth, guardScreen, actorName,
@@ -1023,12 +1025,12 @@ app.get('/api/quotations', (req, res) => {
 });
 
 app.post('/api/quotations', guardScreen('quotations'), (req, res) => {
- const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, acquisition_company, specifications, notes, status, media, items, total, target_price } = req.body;
+ const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, acquisition_company, specifications, notes, status, media, items, total, target_price, questionnaire } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO quotations (number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, acquisition_company, specifications, notes, status, media, items, total, target_price, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(number, client, suppliers, currency || 'USD', deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, acquisition_company || '', specifications, notes, status || 'Open', media || null, items || null, total || null, target_price || null, actorName(req));
+      INSERT INTO quotations (number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, acquisition_company, specifications, notes, status, media, items, total, target_price, questionnaire, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(number, client, suppliers, currency || 'USD', deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, acquisition_company || '', specifications, notes, status || 'Open', media || null, items || null, total || null, target_price || null, questionnaire || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM quotations WHERE id=?').get(result.lastInsertRowid));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -1036,11 +1038,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 });
 
 app.put('/api/quotations/:id', guardScreen('quotations'), (req, res) => {
-  const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, acquisition_company, specifications, notes, status, media, items, total, target_price } = req.body;
+  const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, acquisition_company, specifications, notes, status, media, items, total, target_price, questionnaire } = req.body;
   db.prepare(`
-    UPDATE quotations SET number=?, client=?, suppliers=?, currency=?, deadline=?, price_validity=?, port_of_loading=?, port_of_discharge=?, freight_value=?, acquisition_company=?, specifications=?, notes=?, status=?, media=?, items=?, total=?, target_price=?, updated_by=?
+    UPDATE quotations SET number=?, client=?, suppliers=?, currency=?, deadline=?, price_validity=?, port_of_loading=?, port_of_discharge=?, freight_value=?, acquisition_company=?, specifications=?, notes=?, status=?, media=?, items=?, total=?, target_price=?, questionnaire=?, updated_by=?
     WHERE id=?
-  `).run(number, client, suppliers, currency, deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, acquisition_company || '', specifications, notes, status, media || null, items || null, total || null, target_price || null, actorName(req), req.params.id);
+  `).run(number, client, suppliers, currency, deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, acquisition_company || '', specifications, notes, status, media || null, items || null, total || null, target_price || null, questionnaire || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM quotations WHERE id=?').get(req.params.id));
 });
 
@@ -1087,6 +1089,72 @@ app.get('/api/quotations/:id/pdf', async (req, res) => {
     res.send(pdf);
   } catch (err) {
     console.error('Quotation PDF error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fetches a questionnaire photo (a Cloudinary URL, same upload flow as
+// every other attachment in this app — see uploadToCloudinary on the
+// frontend) for embedding into the generated .xlsx. Requesting Cloudinary's
+// f_jpg transformation normalizes whatever format was actually uploaded
+// (png/webp/heic from a phone camera...) down to a plain JPEG — both so
+// exceljs's addImage always gets a format it accepts, and so
+// questionnaireXlsx.js's own dimension reader only has to understand one
+// format. Never throws — a broken/slow photo just falls back to the
+// "No photo" placeholder cell instead of failing the whole document.
+async function fetchQuestionnaireImage(url) {
+  if (!url) return null;
+  try {
+    const jpgUrl = url.includes('/upload/') ? url.replace('/upload/', '/upload/f_jpg,q_auto/') : url;
+    const res = await fetch(jpgUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+    return { buffer, extension: 'jpeg' };
+  } catch (err) {
+    console.error('Questionnaire image fetch failed:', err.message);
+    return null;
+  }
+}
+
+// Supplier Questionnaire spreadsheet — see the "Questionnaire" button on
+// the Quotations list (App.jsx) and xlsx/questionnaireXlsx.js for the full
+// explanation. Builds a fresh .xlsx every time from whatever's currently
+// saved on quotations.questionnaire, rather than caching one — cheap to
+// regenerate, and this way an edit to the questions/photos always shows up
+// in the very next download.
+app.get('/api/quotations/:id/questionnaire-xlsx', async (req, res) => {
+  try {
+    const q = db.prepare('SELECT * FROM quotations WHERE id=?').get(req.params.id);
+    if (!q) return res.status(404).json({ error: 'Quotation not found' });
+    const questionnaire = parseJsonSafe(q.questionnaire, null);
+    if (!questionnaire || !Array.isArray(questionnaire.photos) || questionnaire.photos.length === 0) {
+      return res.status(400).json({ error: 'This Quotation has no questionnaire saved yet.' });
+    }
+    const language = ['pt', 'en', 'zh'].includes(questionnaire.language) ? questionnaire.language : 'en';
+
+    const photos = await Promise.all(questionnaire.photos.map(async photo => {
+      const image = await fetchQuestionnaireImage(photo.imageUrl);
+      const questions = (Array.isArray(photo.questions) ? photo.questions : []).map(item => ({
+        options: Array.isArray(item.options) ? item.options.filter(Boolean) : [],
+        // presetKey (standard question) always follows the chosen language;
+        // free-typed text (no presetKey) is used exactly as written.
+        resolvedText: item.presetKey && STANDARD_QUESTIONS[language]?.[item.presetKey]
+          ? STANDARD_QUESTIONS[language][item.presetKey]
+          : (item.text || ''),
+      }));
+      return { title: photo.title || '', questions, imageBuffer: image?.buffer, imageExt: image?.extension };
+    }));
+
+    const workbook = buildQuestionnaireWorkbook({ quotationNumber: q.number, language, photos });
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `Questionnaire-${safeFilenamePart(q.number)}.xlsx`;
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': contentDisposition(filename),
+    });
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('Questionnaire xlsx error:', err);
     res.status(500).json({ error: err.message });
   }
 });
