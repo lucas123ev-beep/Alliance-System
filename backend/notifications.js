@@ -49,15 +49,19 @@ const ENTITY_LABELS = {
   samples: 'Sample',
   'financial-suppliers': 'Supplier Payment',
   'financial-clients': 'Client Payment',
+  'swift-hkag': 'Swift Transfer',
 };
 
-// Client payment status on Commercial Invoices is the one case the team
-// wants restricted — only people who already have access to that screen
-// AND aren't on the hideCommercialStatus list can be picked as recipients
-// or actually receive the e-mail, even if someone tried to force it via
-// the API directly. Every other entity type has no restriction: any of
-// the 9 accounts can be picked.
-const RESTRICTED_ENTITY_TYPES = new Set(['commercial-invoices']);
+// Client payment status on Commercial Invoices, and the HKAG->Ningbo Swift
+// transfer tracker, are the two cases the team wants restricted — only
+// people who already have access to that screen (and, for Commercial
+// Invoices specifically, aren't on the hideCommercialStatus list) can be
+// picked as recipients or actually receive the e-mail, even if someone
+// tried to force it via the API directly. Every other entity type has no
+// restriction: any of the 9 accounts can be picked. See
+// isEligibleForEntityType in server.js for the actual per-type permission
+// check this only flags as needing one.
+const RESTRICTED_ENTITY_TYPES = new Set(['commercial-invoices', 'swift-hkag']);
 
 let resendClient = null;
 function getResend() {

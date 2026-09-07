@@ -447,6 +447,42 @@ function buildFullReportWorkbook(db, since, selectedCategories) {
     }),
   });
 
+  // ─── Swift HKAG ────────────────────────────────────────────────────────
+  // Intercompany wire HKAG owes Ningbo per Commercial Invoice — see the
+  // CREATE TABLE comment in database.js. Access to this category is gated
+  // one level up, in server.js's /api/reports/full route (only included in
+  // `selectedCategories` for the four people with the "swift-hkag" screen),
+  // not here — this function has no idea who's asking.
+  if (include("swift-hkag")) addCategorySheets(workbook, {
+    label: "Swift HKAG",
+    since,
+    rawRows: db.prepare(`
+      SELECT s.*, o.order_number AS order_number
+      FROM swift_transfers s LEFT JOIN orders o ON o.id = s.order_id
+      WHERE s.created_at >= ? ORDER BY s.created_at DESC
+    `).all(sinceValue),
+    isDone: r => r.status === "Paid",
+    totals: ["amount"],
+    columns: [
+      { key: "number", header: "Number", width: 18 },
+      { key: "order_number", header: "Order Number", width: 18 },
+      { key: "amount", header: "Amount", width: 14, type: "money" },
+      { key: "currency", header: "Currency", width: 10 },
+      { key: "status", header: "Status", width: 12 },
+      { key: "date", header: "Date", width: 14, type: "date" },
+      { key: "paid_date", header: "Paid Date", width: 14, type: "date" },
+      { key: "notes", header: "Notes", width: 30 },
+      { key: "created_at", header: "Created At", width: 14, type: "date" },
+    ],
+    mapRow: r => ({
+      _raw: r,
+      number: r.number, order_number: r.order_number,
+      amount: toNumber(r.amount), currency: currencyLabel(r.currency), status: r.status,
+      date: toExcelDate(r.date), paid_date: toExcelDate(r.paid_date), notes: r.notes,
+      created_at: toExcelDate(r.created_at),
+    }),
+  });
+
   // ─── Supplier Flow ─────────────────────────────────────────────────────
   // Due Date leads the row (and picks up the standard bold-first-column
   // styling), and the sheet is sorted by it, earliest-first — this tab
@@ -570,9 +606,13 @@ function buildFullReportWorkbook(db, since, selectedCategories) {
   return workbook;
 }
 
-// Single source of truth for the 9 category keys/labels — the frontend's
+// Single source of truth for the category keys/labels — the frontend's
 // Reports screen checkboxes are built from this same list (via
 // GET /api/reports/categories) so the two sides can't drift apart.
+// "swift-hkag" is filtered out of this list server-side (see
+// /api/reports/categories and /api/reports/full in server.js) for anyone
+// without that screen — it isn't a plain always-visible category like the
+// rest, so don't rely on this array alone to decide who sees it.
 const CATEGORIES = [
   { key: "quotations", label: "Quotations" },
   { key: "proformas", label: "Proformas" },
@@ -580,6 +620,7 @@ const CATEGORIES = [
   { key: "commercial", label: "Commercial Invoices" },
   { key: "contracts", label: "Contracts" },
   { key: "inspections", label: "Inspections" },
+  { key: "swift-hkag", label: "Swift HKAG" },
   { key: "supplier-flow", label: "Supplier Flow" },
   { key: "samples", label: "Samples" },
   { key: "shipment", label: "Shipment" },

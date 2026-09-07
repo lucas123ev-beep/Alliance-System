@@ -264,6 +264,38 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- Tracks the international wire (SWIFT copy) the Hong Kong entity has to
+  -- send Ningbo for goods it collected payment for from the client — a
+  -- separate intercompany settlement from what the client itself pays HKAG
+  -- (Commercial Invoice) or what Ningbo pays the factory (Supplier Flow).
+  -- One row is created automatically whenever a Commercial Invoice is
+  -- generated for an Order whose acquisition_company is "HK" (see the
+  -- POST /api/commercial-invoices handler in server.js) — never for Ningbo
+  -- orders, since there's no HK->Ningbo transfer to track on those.
+  -- Deliberately its own table rather than reusing financial_suppliers/
+  -- financial_clients: this is neither a client receivable nor a supplier
+  -- payable, and it also needs the media/attachment behavior those two
+  -- tables don't have (see Inspections above, which this otherwise mirrors
+  -- for the "attach the proof, flag Missing if absent" part).
+  CREATE TABLE IF NOT EXISTS swift_transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+    commercial_invoice_id INTEGER REFERENCES commercial_invoices(id) ON DELETE SET NULL,
+    -- Same number as the Commercial Invoice that triggered this row (e.g.
+    -- "HKAG 084") — easy to match the two up visually, no separate
+    -- numbering sequence to maintain.
+    number TEXT,
+    date TEXT,
+    amount REAL,
+    currency TEXT DEFAULT 'USD',
+    status TEXT DEFAULT 'Pending',
+    paid_date TEXT,
+    media TEXT,
+    notes TEXT,
+    updated_by TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS financial_clients (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,

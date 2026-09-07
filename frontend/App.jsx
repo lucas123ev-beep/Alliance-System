@@ -27,6 +27,12 @@ const TRANSLATIONS = {
     "Packing Lists": "装箱单",
     "Contracts": "合同",
     "Inspections": "验货",
+    "Swift HKAG": "Swift HKAG",
+    "New Swift Transfer": "新建Swift付款",
+    "Edit Swift Transfer": "编辑Swift付款",
+    "Linked Commercial Invoice": "关联商业发票",
+    "Swift Copy / Proof": "Swift水单",
+    "Swift Copy": "Swift水单",
     "Supplier Flow": "供应商付款",
     "Samples": "样品",
     "Products": "产品",
@@ -363,6 +369,8 @@ const TRANSLATIONS = {
     "Pending Inspections": "待验货",
     "Pending Samples": "待处理样品",
     "Pending Supplier Payments": "待付供应商款项",
+    "Pending Swift HKAG": "待处理Swift HKAG付款",
+    "All Companies": "所有公司",
     "Active Contracts": "生效中合同",
     // Reports screen
     "Generates one Excel workbook. Each screen you pick below becomes two sheets — everything still open/pending first, everything already completed second — with status, key dates and values for that screen.": "生成一个 Excel 工作簿。下方勾选的每个模块会生成两个工作表 — 先是仍在处理中的，然后是已完成的 — 包含该模块的状态、关键日期和金额。",
@@ -5552,6 +5560,7 @@ const [editing, setEditing] = useState(null);
 const [search, setSearch] = useState("");
 const [orders, setOrders] = useState([]);
 const [notify, setNotify] = useState(null);
+const [acqFilter, setAcqFilter] = useState("All");
   const load = useCallback(async () => {
   try {
     console.log('loading quotations...');
@@ -5571,17 +5580,28 @@ console.log('quotations set:', quotations?.length);
     useEffect(() => { load(); }, [load]);
   
   const filtered = quotations.filter(q =>
-    (q.number || "").toLowerCase().includes(search.toLowerCase()) ||
+    (acqFilter === "All" || q.acquisition_company === acqFilter) &&
+    ((q.number || "").toLowerCase().includes(search.toLowerCase()) ||
     (q.product_name || "").toLowerCase().includes(search.toLowerCase()) ||
     (q.client || "").toLowerCase().includes(search.toLowerCase()) ||
-    (q.status || "").toLowerCase().includes(search.toLowerCase())
+    (q.status || "").toLowerCase().includes(search.toLowerCase()))
   );
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Quotations")}</h2>
-        <Btn onClick={() => setModal(true)}>+ New Quotation</Btn>
+        <div style={{ display: "flex", gap: "10px" }}>
+          {/* Which Acquisition Company (HKAG/Ningbo) each row was issued
+              under — client's own filter request, same 3-option select
+              repeated identically on Proformas/Orders/Commercial Invoices. */}
+          <Select value={acqFilter} onChange={e => setAcqFilter(e.target.value)} style={{ width: "180px" }}>
+            <option value="All">All Companies</option>
+            <option value="HK">HKAG</option>
+            <option value="NINGBO">Ningbo</option>
+          </Select>
+          <Btn onClick={() => setModal(true)}>+ New Quotation</Btn>
+        </div>
       </div>
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by number, product, client or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
@@ -5736,6 +5756,13 @@ console.log('quotations set:', quotations?.length);
       
 function Dashboard() {
   const t = useT();
+  // Unlike every other "pending" card here (visible to anyone with
+  // Dashboard access), Pending Swift HKAG is gated to the same four people
+  // who have the dedicated screen — the backend already only computes/sends
+  // pendingSwiftTransfers for them (see /api/dashboard in server.js), but
+  // this check is what keeps the card itself from rendering an empty "0
+  // pending" for everyone else instead of just not showing at all.
+  const { screens } = usePermissions();
   const [data, setData] = useState(null);
   useEffect(() => { api("/dashboard").then(setData); }, []);
   if (!data) return <div style={{ color: "#475569", padding: "40px", textAlign: "center" }}>{t("Loading...")}</div>;
@@ -5868,6 +5895,23 @@ function Dashboard() {
               { label: "Status", key: "status" },
             ]}
             rows={data.pendingSupplierPayments}
+          />
+        </div>
+      )}
+
+      {/* Pending Swift HKAG — gated to the four people with that screen, see
+          the comment on the `screens` destructure above. */}
+      {screens.includes("swift-hkag") && data.pendingSwiftTransfers?.length > 0 && (
+        <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", padding: "20px" }}>
+          <h3 style={{ margin: "0 0 16px", fontSize: "14px", fontWeight: 600, color: "#94a3b8" }}>🏦 {t("Pending Swift HKAG")}</h3>
+          <Table
+            cols={[
+              { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 600, color: "#60a5fa" }}>{r.number}</span> },
+              { label: "Order", key: "order_number" },
+              { label: "Amount", sortValue: r => r.amount, render: r => <span style={{ fontWeight: 600, color: "#8b5cf6" }}>{fmt(r.amount, r.currency)}</span> },
+              { label: "Date", sortValue: r => r.date, render: r => fmtDate(r.date) },
+            ]}
+            rows={data.pendingSwiftTransfers}
           />
         </div>
       )}
@@ -6395,6 +6439,7 @@ const [notify, setNotify] = useState(null);
 const [inspections, setInspections] = useState([]);
   const [products, setProducts] = useState([]);
   const [suppliersList, setSuppliersList] = useState([]);
+  const [acqFilter, setAcqFilter] = useState("All");
 
  const load = useCallback(async () => {
     const [orders, contracts, commercials, inspections, products, suppliersList] = await Promise.all([
@@ -6421,10 +6466,11 @@ setSuppliersList(suppliersList);
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
 
   const filtered = orders.filter(o =>
-    o.order_number.toLowerCase().includes(search.toLowerCase()) ||
+    (acqFilter === "All" || o.acquisition_company === acqFilter) &&
+    (o.order_number.toLowerCase().includes(search.toLowerCase()) ||
     o.client.toLowerCase().includes(search.toLowerCase()) ||
     (o.status || "").toLowerCase().includes(search.toLowerCase()) ||
-    (o.incoterm || "").toLowerCase().includes(search.toLowerCase())
+    (o.incoterm || "").toLowerCase().includes(search.toLowerCase()))
   );
 
   const createOrder = (f) => api("/orders", "POST", f).then(() => {
@@ -6607,6 +6653,11 @@ const inspectionStatusFor = (order) => {
           {canViewProfit && (
             <Btn outline color="#10b981" onClick={() => setShowProfitReport(true)}>📊 {t("Profitability Report")}</Btn>
           )}
+          <Select value={acqFilter} onChange={e => setAcqFilter(e.target.value)} style={{ width: "180px" }}>
+            <option value="All">All Companies</option>
+            <option value="HK">HKAG</option>
+            <option value="NINGBO">Ningbo</option>
+          </Select>
           <Btn onClick={() => setModal("new")}>+ New Order</Btn>
         </div>
       </div>
@@ -7096,6 +7147,7 @@ const [proformas, setProformas] = useState([]);
   const [editing, setEditing] = useState(null);
   const [orderNotification, setOrderNotification] = useState(null);
   const [notify, setNotify] = useState(null);
+  const [acqFilter, setAcqFilter] = useState("All");
   useEscapeToClose(!!orderNotification, () => setOrderNotification(null));
   const load = useCallback(() => {
     api("/proformas").then(setProformas);
@@ -7105,9 +7157,10 @@ const [proformas, setProformas] = useState([]);
   useEffect(() => { load(); }, [load]);
 
   const filtered = proformas.filter(p =>
-    p.number.toLowerCase().includes(search.toLowerCase()) ||
+    (acqFilter === "All" || p.acquisition_company === acqFilter) &&
+    (p.number.toLowerCase().includes(search.toLowerCase()) ||
     p.client.toLowerCase().includes(search.toLowerCase()) ||
-    (p.status || "").toLowerCase().includes(search.toLowerCase())
+    (p.status || "").toLowerCase().includes(search.toLowerCase()))
   );
 
   // Builds an Order from the Proforma's own shipment fields plus its items
@@ -7155,7 +7208,14 @@ const [proformas, setProformas] = useState([]);
     <div>
 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Proforma Invoices")}</h2>
-        <Btn onClick={() => setModal(true)}>+ New Proforma</Btn>
+        <div style={{ display: "flex", gap: "10px" }}>
+          <Select value={acqFilter} onChange={e => setAcqFilter(e.target.value)} style={{ width: "180px" }}>
+            <option value="All">All Companies</option>
+            <option value="HK">HKAG</option>
+            <option value="NINGBO">Ningbo</option>
+          </Select>
+          <Btn onClick={() => setModal(true)}>+ New Proforma</Btn>
+        </div>
       </div>
       {modal && (
         <Modal title={t("New Proforma")} onClose={() => setModal(false)} wide>
@@ -8078,6 +8138,7 @@ function CommercialInvoices() {
   // mutated field-by-field as the form is edited.
   const [editingOriginal, setEditingOriginal] = useState(null);
   const [notify, setNotify] = useState(null);
+  const [acqFilter, setAcqFilter] = useState("All");
   const load = useCallback(async () => {
     api("/commercial-invoices").then(setInvoices);
     api("/products").then(setProducts);
@@ -8101,15 +8162,21 @@ function CommercialInvoices() {
   const generatePackingList = (order) => setPackingListModal(buildPackingListDraft(order, products));
 
   const filtered = invoices.filter(i =>
-    (i.number || "").toLowerCase().includes(search.toLowerCase()) ||
+    (acqFilter === "All" || i.acquisition_company === acqFilter) &&
+    ((i.number || "").toLowerCase().includes(search.toLowerCase()) ||
     (i.client || "").toLowerCase().includes(search.toLowerCase()) ||
-    (i.status || "").toLowerCase().includes(search.toLowerCase())
+    (i.status || "").toLowerCase().includes(search.toLowerCase()))
   );
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Commercial Invoices")}</h2>
+        <Select value={acqFilter} onChange={e => setAcqFilter(e.target.value)} style={{ width: "180px" }}>
+          <option value="All">All Companies</option>
+          <option value="HK">HKAG</option>
+          <option value="NINGBO">Ningbo</option>
+        </Select>
       </div>
       {editing && (
         <Modal title={t("Edit Commercial Invoice")} onClose={() => setEditing(null)} wide>
@@ -8485,6 +8552,238 @@ function Inspections() {
   );
 }
 
+// Tracks the international wire (SWIFT copy) HKAG owes Ningbo per
+// Commercial Invoice — one row is created automatically whenever a
+// Commercial Invoice is generated for an Order billed under the Hong Kong
+// entity (see the POST /api/commercial-invoices handler in server.js).
+// Structurally mirrors InspectionForm: same media-attach behavior, same
+// "Missing" flag when nothing's attached — plus an Amount/Currency and a
+// Pending/Paid Status, since this screen also doubles as the tracker for
+// whether that transfer actually went out.
+function SwiftForm({ onSave, onClose, initial, orders, commercialInvoices }) {
+  const t = useT();
+  const [f, setF] = useState(initial || {
+    order_id: "", commercial_invoice_id: "", number: "", date: "",
+    amount: "", currency: "USD", status: "Pending", notes: "",
+  });
+  const [media, setMedia] = useState(() => {
+    if (!initial?.media) return [];
+    let parsed = initial.media;
+    if (typeof parsed === 'string') {
+      try { parsed = JSON.parse(parsed); } catch { return []; }
+    }
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(item => typeof item === 'string' ? { url: item, name: item.split('/').pop() } : item);
+  });
+  const [uploading, setUploading] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+  useEscapeToClose(!!lightbox, () => setLightbox(null));
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const currencies = ["USD", "BRL", "CNY", "EUR", "GBP", "JPY", "HKD"];
+
+  const handleUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    setUploading(true);
+    try {
+      const results = await Promise.all(files.map(uploadToCloudinary));
+      setMedia(prev => [...prev, ...results.filter(Boolean)]);
+    } catch (err) { alert(t("Upload failed: ") + err.message); }
+    setUploading(false);
+  };
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+      <Field label="Linked Order" half>
+        <Select value={f.order_id} onChange={set("order_id")}>
+          <option value="">None</option>
+          {(orders || []).map(o => <option key={o.id} value={o.id}>{o.order_number} – {o.client}</option>)}
+        </Select>
+      </Field>
+      <Field label="Linked Commercial Invoice" half>
+        <Select value={f.commercial_invoice_id} onChange={set("commercial_invoice_id")}>
+          <option value="">None</option>
+          {(commercialInvoices || []).map(ci => <option key={ci.id} value={ci.id}>{ci.number} – {ci.client}</option>)}
+        </Select>
+      </Field>
+      <Field label="Number" half><Input value={f.number} onChange={set("number")} placeholder="HKAG 084" /></Field>
+      <Field label="Date" half><Input type="date" value={f.date} onChange={set("date")} /></Field>
+      <Field label={`Amount (${currencyLabel(f.currency)})`} half>
+        <Input type="text" inputMode="decimal" value={f.amount}
+          onChange={e => setF(p => ({ ...p, amount: maskMoney(e.target.value) }))} placeholder="0.00" />
+      </Field>
+      <Field label="Currency" half>
+        <Select value={f.currency} onChange={set("currency")}>
+          {currencies.map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
+        </Select>
+      </Field>
+      <Field label="Status" half>
+        <Select value={f.status} onChange={set("status")}>
+          <option value="Pending">Pending</option>
+          <option value="Paid">Paid</option>
+        </Select>
+      </Field>
+      <Field label="Notes"><Textarea value={f.notes || ""} onChange={set("notes")} /></Field>
+
+      <Field label="Swift Copy / Proof">
+        <div>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 16px", cursor: "pointer", fontSize: "13px", color: "#94a3b8", marginBottom: "12px" }}>
+            {uploading ? t("⏳ Uploading...") : t("📎 Add Photos / PDFs")}
+            <input type="file" multiple accept="image/*,application/pdf" onChange={handleUpload} style={{ display: "none" }} disabled={uploading} />
+          </label>
+          {lightbox && (
+            <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <img src={lightbox} style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: "8px", objectFit: "contain" }} alt="" onClick={e => e.stopPropagation()} />
+              <button onClick={() => setLightbox(null)} style={{ position: "fixed", top: "20px", right: "20px", background: "#ef4444", border: "none", borderRadius: "50%", width: "36px", height: "36px", color: "#fff", fontSize: "18px", cursor: "pointer" }}>✕</button>
+            </div>
+          )}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+            {media.filter(Boolean).map((item, i) => {
+              const url = typeof item === 'string' ? item : item.url;
+              const name = typeof item === 'string' ? url.split('/').pop() : item.name;
+              return (
+                <div key={i} style={{ position: "relative" }}>
+                  {url.match(/\.pdf$/i) || name.match(/\.pdf$/i) ? (
+                    <a href={url} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "80px", height: "80px", background: "#1e293b", borderRadius: "6px", border: "1px solid #334155", color: "#f1f5f9", fontSize: "28px", textDecoration: "none" }}>📄</a>
+                  ) : (
+                    <img src={url} onClick={() => setLightbox(url)} style={{ width: "80px", height: "80px", objectFit: "cover", borderRadius: "6px", border: "1px solid #334155", cursor: "pointer" }} alt="" />
+                  )}
+                  <button onClick={async () => {
+                    const res = await fetch(url);
+                    const blob = await res.blob();
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = name;
+                    a.click();
+                  }} style={{ position: "absolute", bottom: "-6px", left: "-6px", background: "#3b82f6", border: "none", borderRadius: "50%", width: "18px", height: "18px", color: "#fff", fontSize: "10px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⬇</button>
+                  <button onClick={() => setMedia(prev => prev.filter((_, idx) => idx !== i))} style={{ position: "absolute", top: "-6px", right: "-6px", background: "#ef4444", border: "none", borderRadius: "50%", width: "18px", height: "18px", color: "#fff", fontSize: "10px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </Field>
+
+      <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+        <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={async () => {
+          await onSave({ ...f, amount: parseLocaleNumber(f.amount) ?? 0, media: JSON.stringify(media) });
+          onClose();
+        }}>Save Swift Transfer</Btn>
+      </div>
+    </div>
+  );
+}
+
+// Intercompany wire tracker — HKAG has to actually transfer Ningbo the
+// funds it collected from the client on a Commercial Invoice, and this is
+// where that gets logged/proven (Swift copy attached) and marked Paid once
+// it's gone out. Only reachable by the four people with the "swift-hkag"
+// screen (see permissions.js) — everyone else never sees this tab at all.
+function SwiftHkag() {
+  const t = useT();
+  const [swiftTransfers, setSwiftTransfers] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [commercialInvoices, setCommercialInvoices] = useState([]);
+  const [modal, setModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [search, setSearch] = useState("");
+  const [notify, setNotify] = useState(null);
+  const load = useCallback(async () => {
+    const [swiftTransfers, orders, commercialInvoices] = await Promise.all([
+      api("/swift-transfers"), api("/orders"), api("/commercial-invoices"),
+    ]);
+    setSwiftTransfers(swiftTransfers || []);
+    setOrders(orders || []);
+    setCommercialInvoices(commercialInvoices || []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = swiftTransfers.filter(r =>
+    (r.number || "").toLowerCase().includes(search.toLowerCase()) ||
+    (r.order_number || "").toLowerCase().includes(search.toLowerCase()) ||
+    (r.status || "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Swift HKAG")}</h2>
+        <Btn onClick={() => setModal(true)}>+ New Swift Transfer</Btn>
+      </div>
+      <Input value={search} onChange={e => setSearch(e.target.value)}
+        placeholder="Search by number, order or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
+      {modal && (
+        <Modal title={t("New Swift Transfer")} onClose={() => setModal(false)} wide>
+          <SwiftForm orders={orders} commercialInvoices={commercialInvoices} onSave={async b => {
+            await api("/swift-transfers", "POST", b);
+            load();
+            setNotify({ entityType: "swift-hkag", recordLabel: b.number, eventType: "created" });
+          }} onClose={() => setModal(false)} />
+        </Modal>
+      )}
+      {editing && (
+        <Modal title={t("Edit Swift Transfer")} onClose={() => setEditing(null)} wide>
+          <SwiftForm orders={orders} commercialInvoices={commercialInvoices}
+            initial={{ ...editing, media: editing.media ? (typeof editing.media === 'string' ? JSON.parse(editing.media) : editing.media) : [] }}
+            onSave={async b => {
+              const oldStatus = editing.status;
+              await api(`/swift-transfers/${editing.id}`, "PUT", b); load();
+              if (b.status !== oldStatus) setNotify({ entityType: "swift-hkag", recordLabel: b.number || editing.number, oldStatus, newStatus: b.status });
+            }}
+            onClose={() => setEditing(null)} />
+        </Modal>
+      )}
+      {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
+      <Table
+        cols={[
+          { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
+          { label: "Order", sortValue: r => r.order_number, render: r => r.order_number ? `${r.order_number} – ${r.client || ""}` : "—" },
+          { label: "Amount", sortValue: r => r.amount, render: r => <span style={{ fontWeight: 600, color: "#8b5cf6" }}>{fmt(r.amount, r.currency)}</span> },
+          { label: "Date", sortValue: r => r.date, render: r => fmtDate(r.date) },
+          { label: "Status", sortValue: r => r.status, render: r => (
+            <Select value={r.status}
+              onChange={async e => {
+                const oldStatus = r.status, newStatus = e.target.value;
+                await api(`/swift-transfers/${r.id}`, "PUT", {
+                  ...r, status: newStatus,
+                  paid_date: newStatus === "Paid" ? new Date().toISOString().slice(0, 10) : r.paid_date,
+                });
+                load();
+                setNotify({ entityType: "swift-hkag", recordLabel: r.number, oldStatus, newStatus });
+              }}
+              style={{ padding: "4px 8px", fontSize: "12px", width: "auto", color: r.status === "Paid" ? "#10b981" : "#f59e0b" }}>
+              <option value="Pending">Pending</option>
+              <option value="Paid">Paid</option>
+            </Select>
+          )},
+          { label: "Swift Copy", render: r => {
+            let hasMedia = false;
+            try {
+              const media = typeof r.media === 'string' ? JSON.parse(r.media) : (r.media || []);
+              hasMedia = media.filter(Boolean).length > 0;
+            } catch { hasMedia = false; }
+            return (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 600, color: hasMedia ? "#10b981" : "#ef4444" }}>
+                <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: hasMedia ? "#10b981" : "#ef4444", display: "inline-block" }} />
+                {hasMedia ? "Attached" : "Missing"}
+              </span>
+            );
+          }},
+          { label: "Actions", render: r => (
+            <div style={{ display: "flex", gap: "6px" }}>
+              <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
+              <Btn small outline color="#ef4444" onClick={async () => { if (confirm(t("Delete?"))) { await api(`/swift-transfers/${r.id}`, "DELETE"); load(); } }}>Del</Btn>
+              <LastModifiedBy name={r.updated_by} />
+            </div>
+          )},
+        ]}
+        rows={filtered}
+        emptyMsg="No Swift transfers yet."
+      />
+    </div>
+  );
+}
+
 // Full cross-module Excel report — one button, one optional "since" date
 // filter, downloads a workbook covering every tracking screen (Quotations,
 // Proformas, Orders, Commercial, Contracts, Inspections, Supplier Flow,
@@ -8582,6 +8881,7 @@ const TABS = [
   { id: "proformas", label: "Proformas", icon: "📄" },
   { id: "orders", label: "Orders", icon: "📋" },
   { id: "commercial", label: "Commercial", icon: "🧾" },
+  { id: "swift-hkag", label: "Swift HKAG", icon: "🏦" },
   { id: "packing-lists", label: "Packing Lists", icon: "📑" },
   { id: "contracts", label: "Contracts", icon: "🤝" },
   { id: "inspections", label: "Inspections", icon: "🔍" },
@@ -8911,6 +9211,7 @@ const renderTab = () => {
       case "inspections": return <Inspections />;
       case "proformas": return <Proformas />;
       case "commercial": return <CommercialInvoices />;
+      case "swift-hkag": return <SwiftHkag />;
       case "packing-lists": return <PackingLists />;
       case "contracts": return <Contracts />;
       case "fin-suppliers": return <Financial type="supplier" />;

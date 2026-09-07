@@ -37,11 +37,20 @@ const ALL_SCREENS = [
   "products", "clients", "suppliers", "freight-agents", "reports",
 ];
 
+// "swift-hkag" is deliberately NOT part of ALL_SCREENS — it tracks the
+// intercompany wire HKAG owes Ningbo per Commercial Invoice, which the
+// client wants visible to only these four named people, not to every
+// otherwise-full-access account (yukin has `screens: ALL_SCREENS` too, and
+// must NOT pick this up automatically the way adding it to ALL_SCREENS
+// itself would cause). So it's appended by hand onto just these four
+// `screens` arrays instead.
+const SWIFT_HKAG_SCREEN = "swift-hkag";
+
 const PERMISSIONS = {
-  lucas:     { screens: ALL_SCREENS, hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
-  martiello: { screens: ALL_SCREENS, hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
-  gabriel:   { screens: ALL_SCREENS, hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
-  juliana:   { screens: ALL_SCREENS, hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
+  lucas:     { screens: [...ALL_SCREENS, SWIFT_HKAG_SCREEN], hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
+  martiello: { screens: [...ALL_SCREENS, SWIFT_HKAG_SCREEN], hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
+  gabriel:   { screens: [...ALL_SCREENS, SWIFT_HKAG_SCREEN], hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
+  juliana:   { screens: [...ALL_SCREENS, SWIFT_HKAG_SCREEN], hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
 
   // Full access, but never sees Commercial Invoice status (screen or
   // Dashboard card) or the Product Real Margin indicator.
@@ -80,4 +89,4 @@ function permissionsFor(username) {
   return PERMISSIONS[String(username || "").toLowerCase()] || NO_ACCESS;
 }
 
-module.exports = { PERMISSIONS, ALL_SCREENS, permissionsFor };
+module.exports = { PERMISSIONS, ALL_SCREENS, SWIFT_HKAG_SCREEN, permissionsFor };

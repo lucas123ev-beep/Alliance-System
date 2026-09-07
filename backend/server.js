@@ -823,7 +823,8 @@ function redactCommercialStatus(req, row) {
 
 app.get('/api/commercial-invoices', (req, res) => {
   const rows = db.prepare(`
-    SELECT ci.*, o.shipment_date AS shipment_date, o.arrival_date AS arrival_date
+    SELECT ci.*, o.shipment_date AS shipment_date, o.arrival_date AS arrival_date,
+      o.acquisition_company AS acquisition_company
     FROM commercial_invoices ci
     LEFT JOIN orders o ON o.id = ci.order_id
     ORDER BY ci.created_at DESC
@@ -860,6 +861,21 @@ app.post('/api/commercial-invoices', (req, res) => {
       INSERT INTO commercial_invoices (order_id, number, issue_date, client, total, currency, status, notes, updated_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, number, issue_date, client, total, currency || 'USD', status || 'Pending', notes, actorName(req));
+
+    // Whenever a Commercial Invoice is generated for an Order billed under
+    // the Hong Kong entity, HKAG owes Ningbo the corresponding intercompany
+    // wire — auto-create the Swift HKAG tracking row here instead of relying
+    // on someone to remember to log it by hand from that dedicated screen.
+    // Ningbo orders never get one: there's no HK->Ningbo transfer to track
+    // when Ningbo already is the entity that was paid directly.
+    const order = order_id ? db.prepare('SELECT acquisition_company FROM orders WHERE id=?').get(order_id) : null;
+    if (order && order.acquisition_company === 'HK') {
+      db.prepare(`
+        INSERT INTO swift_transfers (order_id, commercial_invoice_id, number, date, amount, currency, status, updated_by)
+        VALUES (?, ?, ?, ?, ?, ?, 'Pending', ?)
+      `).run(order_id, result.lastInsertRowid, number, issue_date, total, currency || 'USD', actorName(req));
+    }
+
     res.status(201).json(redactCommercialStatus(req, getCommercialInvoiceWithDates(result.lastInsertRowid)));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -1103,14 +1119,67 @@ app.delete('/api/inspections/:id', guardScreen('inspections'), (req, res) => {
   res.json({ success: true });
 });
 
+// ─── SWIFT HKAG ───────────────────────────────────────────────────────────────
+// Tracks the international wire (SWIFT copy) the Hong Kong entity owes
+// Ningbo per Commercial Invoice — see the CREATE TABLE comment in
+// database.js for the full reasoning. Rows are normally created
+// automatically (see the POST /api/commercial-invoices handler further
+// down), but every route here still exists/works for manual entries and
+// corrections, same as Inspections. Unlike Inspections' POST/PUT, these are
+// ALL guarded by "swift-hkag" — there's no other screen's flow that
+// legitimately needs to call them, only the dedicated Swift HKAG screen
+// itself, which only Lucas/Martiello/Gabriel/Juliana have access to.
+app.get('/api/swift-transfers', guardScreen('swift-hkag'), (req, res) => {
+  res.json(db.prepare(`
+    SELECT s.*, o.order_number AS order_number, o.client AS client
+    FROM swift_transfers s LEFT JOIN orders o ON o.id = s.order_id
+    ORDER BY s.created_at DESC
+  `).all());
+});
+
+app.post('/api/swift-transfers', guardScreen('swift-hkag'), (req, res) => {
+  const { order_id, commercial_invoice_id, number, date, amount, currency, status, paid_date, media, notes } = req.body;
+  try {
+    const r = db.prepare(`
+      INSERT INTO swift_transfers (order_id, commercial_invoice_id, number, date, amount, currency, status, paid_date, media, notes, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(order_id || null, commercial_invoice_id || null, number, date, amount || 0, currency || 'USD', status || 'Pending', paid_date || null, media || null, notes, actorName(req));
+    res.status(201).json(db.prepare('SELECT * FROM swift_transfers WHERE id=?').get(r.lastInsertRowid));
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+app.put('/api/swift-transfers/:id', guardScreen('swift-hkag'), (req, res) => {
+  const { order_id, commercial_invoice_id, number, date, amount, currency, status, paid_date, media, notes } = req.body;
+  db.prepare(`
+    UPDATE swift_transfers SET order_id=?, commercial_invoice_id=?, number=?, date=?, amount=?, currency=?, status=?, paid_date=?, media=?, notes=?, updated_by=?
+    WHERE id=?
+  `).run(order_id || null, commercial_invoice_id || null, number, date, amount || 0, currency || 'USD', status, paid_date || null, media || null, notes, actorName(req), req.params.id);
+  res.json(db.prepare('SELECT * FROM swift_transfers WHERE id=?').get(req.params.id));
+});
+
+app.delete('/api/swift-transfers/:id', guardScreen('swift-hkag'), (req, res) => {
+  db.prepare('DELETE FROM swift_transfers WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
 // ─── REPORTS ─────────────────────────────────────────────────────────────────
 // Single cross-module Excel export — every tracking screen (Quotations,
 // Proformas, Orders, Commercial, Contracts, Inspections, Supplier Flow,
 // Samples, Packing Lists), each as a pair of sheets (still open / already
 // completed), filtered from ?since=YYYY-MM-DD onward. See
 // xlsx/reportBuilder.js for the per-category queries and column layouts.
+// "swift-hkag" is a category like any other in REPORT_CATEGORIES, but it
+// covers intercompany data restricted to the four people with that screen
+// (see permissions.js) — stripped out here for everyone else so it never
+// shows up as a checkbox option, and can't be requested directly by hand-
+// crafting ?categories=swift-hkag either (see /reports/full below).
+function reportCategoriesFor(req) {
+  const screens = (req.user && req.user.permissions && req.user.permissions.screens) || [];
+  return screens.includes('swift-hkag') ? REPORT_CATEGORIES : REPORT_CATEGORIES.filter(c => c.key !== 'swift-hkag');
+}
+
 app.get('/api/reports/categories', guardScreen('reports'), (req, res) => {
-  res.json(REPORT_CATEGORIES);
+  res.json(reportCategoriesFor(req));
 });
 
 app.get('/api/reports/full', guardScreen('reports'), async (req, res) => {
@@ -1118,8 +1187,14 @@ app.get('/api/reports/full', guardScreen('reports'), async (req, res) => {
     const since = req.query.since && /^\d{4}-\d{2}-\d{2}$/.test(req.query.since) ? req.query.since : null;
     // Empty/missing ?categories= means "everything" (buildFullReportWorkbook
     // treats a null Set as no filter) — only build a Set when the frontend
-    // actually sent a subset.
-    const categories = req.query.categories ? new Set(req.query.categories.split(',').filter(Boolean)) : null;
+    // actually sent a subset. When it's still "everything" for someone
+    // without swift-hkag access, that has to become an explicit set (every
+    // allowed category) rather than staying null, since null would still
+    // include the restricted one.
+    const allowedKeys = reportCategoriesFor(req).map(c => c.key);
+    const categories = req.query.categories
+      ? new Set(req.query.categories.split(',').filter(Boolean).filter(k => allowedKeys.includes(k)))
+      : (allowedKeys.length === REPORT_CATEGORIES.length ? null : new Set(allowedKeys));
     const workbook = buildFullReportWorkbook(db, since, categories);
     const buffer = await workbook.xlsx.writeBuffer();
     const filename = `AllianceFlow-Report${since ? `-since-${since}` : ""}.xlsx`;
@@ -1206,6 +1281,19 @@ const supplierPaid = db.prepare(`
     SELECT * FROM financial_suppliers WHERE status != 'Paid' ORDER BY due_date ASC
   `).all();
 
+  // Unlike every other "pending" list above (visible to anyone with
+  // Dashboard access, regardless of whether they also have the underlying
+  // screen), Swift HKAG is intercompany financial data the client wants
+  // limited to only the four people who have the "swift-hkag" screen — so
+  // this one is only computed/sent for them, not gated purely by hiding the
+  // card client-side.
+  const canSeeSwift = req.user && req.user.permissions && req.user.permissions.screens.includes('swift-hkag');
+  const pendingSwiftTransfers = canSeeSwift ? db.prepare(`
+    SELECT s.*, o.order_number AS order_number
+    FROM swift_transfers s LEFT JOIN orders o ON o.id = s.order_id
+    WHERE s.status = 'Pending' ORDER BY s.created_at DESC
+  `).all() : [];
+
   // Both clientFinancial (Pending/Paid counts) and pendingCommercials are
   // derived from Commercial Invoice status, so accounts with
   // hideCommercialStatus (yukin, max — see permissions.js) get neither: the
@@ -1223,6 +1311,7 @@ const supplierPaid = db.prepare(`
     pendingSamples,
     activeContracts,
     pendingSupplierPayments,
+    pendingSwiftTransfers,
   });
 });
 
@@ -2447,6 +2536,7 @@ app.get('/api/financial/suppliers/:id/payment-notice-xlsx', async (req, res) => 
 function isEligibleForEntityType(username, entityType) {
   if (!isRestricted(entityType)) return true;
   const perms = permissionsFor(username);
+  if (entityType === 'swift-hkag') return perms.screens.includes('swift-hkag');
   return perms.screens.includes('commercial') && !perms.hideCommercialStatus;
 }
 
