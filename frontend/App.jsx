@@ -8704,11 +8704,26 @@ function SwiftHkag() {
     (r.status || "").toLowerCase().includes(search.toLowerCase())
   );
 
+  // Same Total/Pending/Paid summary header as Supplier Cash Flow (see
+  // Financial() above) — every Swift transfer is either Pending or Paid, no
+  // Partial state here, so this is the plain two-way split.
+  const totals = swiftTransfers.reduce((acc, r) => {
+    const amount = parseFloat(r.amount) || 0;
+    acc.total += amount;
+    if (r.status === "Paid") acc.paid += amount; else acc.pending += amount;
+    return acc;
+  }, { total: 0, pending: 0, paid: 0 });
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Swift HKAG")}</h2>
         <Btn onClick={() => setModal(true)}>+ New Swift Transfer</Btn>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
+        <StatCard label="Total" value={fmt(totals.total)} color="#8b5cf6" />
+        <StatCard label="Pending" value={fmt(totals.pending)} color="#f59e0b" />
+        <StatCard label="Paid" value={fmt(totals.paid)} color="#10b981" />
       </div>
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by number, order or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
