@@ -1,24 +1,39 @@
-// Excel version of the Supplier Questionnaire builder (see the
-// "Questionnaire" button on the Quotations list). Organized exactly the way
-// the client asked for: one block per photo, the photo on the left and its
-// title + questions to the right, each question printed with a checkbox
-// cell per answer option (the actual option text/labels the user typed —
-// e.g. "MOQ" / "500 units" / "1000 units") plus a blank Observation column
-// for the supplier to fill in. Meant to be sent to the supplier and filled
-// out by hand (or in Excel/WPS/Google Sheets), then sent back.
+// Excel version of the Client Questionnaire builder (see the
+// "Questionnaire" button on the Quotations list). This document goes to
+// the CLIENT, not the supplier — organized exactly the way the client
+// asked for: one block per photo, the photo on the left and its title +
+// questions to the right, each question printed with a clickable checkbox
+// per answer option (the actual option text/labels the user typed — e.g.
+// "MOQ" / "500 units" / "1000 units") plus a blank Observation column for
+// them to fill in.
 const ExcelJS = require("exceljs");
+const LOGO = require("../pdf/logo");
+const LOGO_NINGBO = require("../pdf/logoNingbo");
 
 const NAVY_ARGB = "FF0D1627";
-const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY_ARGB } };
+// Same #58595B accent used everywhere else a Ningbo-issued document needs
+// its own theme (pdf/layout.js, xlsx/salesInvoiceXlsx.js) — sampled from
+// the client's own uploaded Alliance wordmark.
+const GRAY_ARGB = "FF58595B";
 const SECTION_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF2F7" } };
 const THIN = { style: "thin", color: { argb: "FFCCCCCC" } };
 const BORDER_ALL = { top: THIN, left: THIN, bottom: THIN, right: THIN };
 
+// Which of the two entities issued this Quotation — same acq.code rule as
+// every other themed document. Falls back to the HKAG theme when acq is
+// missing (e.g. an older Quotation saved before Acquisition Company
+// existed), matching getAcq()'s own default in server.js.
+function themeFor(acq) {
+  return acq && acq.code === "NINGBO"
+    ? { accentArgb: GRAY_ARGB, logo: LOGO_NINGBO, logoWidth: 150, logoHeight: 35 }
+    : { accentArgb: NAVY_ARGB, logo: LOGO, logoWidth: 150, logoHeight: 50 };
+}
+
 const LABELS = {
   pt: {
-    docTitle: "Questionário para Fornecedor",
+    docTitle: "Questionário para Cliente",
     quotationNumber: "Número da Cotação",
-    instructions: "Marque a opção correta com um X e preencha as observações quando necessário.",
+    instructions: "Clique na caixinha da opção desejada e selecione ☑ para marcar. Preencha as observações quando necessário.",
     photo: "Foto",
     question: "Pergunta",
     options: "Opções",
@@ -26,9 +41,9 @@ const LABELS = {
     noPhoto: "Sem foto",
   },
   en: {
-    docTitle: "Supplier Questionnaire",
+    docTitle: "Client Questionnaire",
     quotationNumber: "Quotation Number",
-    instructions: "Mark the correct option with an X and fill in observations where needed.",
+    instructions: "Click the checkbox next to the option you want and select ☑ to mark it. Fill in observations where needed.",
     photo: "Photo",
     question: "Question",
     options: "Options",
@@ -36,9 +51,9 @@ const LABELS = {
     noPhoto: "No photo",
   },
   zh: {
-    docTitle: "供应商问卷",
+    docTitle: "客户问卷",
     quotationNumber: "报价单编号",
-    instructions: "请在正确选项处标记X，并在需要时填写备注。",
+    instructions: "点击所需选项旁的方框并选择☑进行标记。请在需要时填写备注。",
     photo: "照片",
     question: "问题",
     options: "选项",
@@ -77,28 +92,63 @@ function getImageDimensions(buffer) {
   return null;
 }
 
+// Each answer option gets a pair of columns: a narrow "Mark" cell (an
+// in-cell dropdown restricted to ☐/☑ — exceljs/xlsx has no support for
+// real ActiveX/Form-control checkboxes, so this is the closest thing to a
+// genuinely clickable checkbox that reliably opens in Excel, WPS AND
+// Google Sheets: click the cell, click the dropdown arrow, click ☑ — no
+// typing needed) plus a "Label" cell holding the option's actual text
+// (e.g. "MOQ", "500 units"). Keeping the tick mark and the label in
+// separate cells is what makes the dropdown workable — a single shared
+// cell would lose the label text the moment someone picked from the list.
+function addOptionColumns(sheet, row, markCol, value) {
+  const markCell = sheet.getCell(row, markCol);
+  markCell.value = "☐";
+  markCell.dataValidation = { type: "list", allowBlank: true, formulae: ['"☐,☑"'] };
+  markCell.alignment = { vertical: "middle", horizontal: "center" };
+  markCell.border = BORDER_ALL;
+  const labelCell = sheet.getCell(row, markCol + 1);
+  labelCell.value = value || "";
+  labelCell.alignment = { wrapText: true, vertical: "middle" };
+  labelCell.border = BORDER_ALL;
+}
+
 // photos: [{ title, questions: [{ resolvedText, options: [string] }], imageBuffer, imageExt }]
-function buildQuestionnaireWorkbook({ quotationNumber, language, photos }) {
+function buildQuestionnaireWorkbook({ quotationNumber, language, photos, acq }) {
   const lang = LABELS[language] ? language : "en";
   const L = LABELS[lang];
+  const theme = themeFor(acq);
 
   const maxOptions = Math.max(0, ...photos.flatMap(p => p.questions.map(q => (q.options || []).length)));
-  const PHOTO_COL = 1, QUESTION_COL = 2, OPTIONS_START = 3, OPTIONS_END = 2 + maxOptions, OBS_COL = 3 + maxOptions;
+  // Photo | Question | (Mark, Label) × maxOptions | Observation
+  const PHOTO_COL = 1, QUESTION_COL = 2, OPTIONS_START = 3, OPTIONS_END = 2 + maxOptions * 2, OBS_COL = OPTIONS_END + 1;
   const NUM_COLS = OBS_COL;
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(L.docTitle.slice(0, 31), { views: [{ showGridLines: false }] });
-  sheet.columns = Array.from({ length: NUM_COLS }, (_, i) => ({
-    width: i === 0 ? 24 : i === 1 ? 34 : (i === NUM_COLS - 1 ? 30 : 18),
-  }));
+  sheet.columns = Array.from({ length: NUM_COLS }, (_, i) => {
+    const col = i + 1;
+    if (col === PHOTO_COL) return { width: 24 };
+    if (col === QUESTION_COL) return { width: 32 };
+    if (col === OBS_COL) return { width: 30 };
+    // Options region: odd offset from OPTIONS_START = Mark (narrow),
+    // even offset = Label (wider).
+    const isMarkCol = (col - OPTIONS_START) % 2 === 0;
+    return { width: isMarkCol ? 5 : 16 };
+  });
 
-  // ── Title / meta ──────────────────────────────────────────────────────
+  // ── Letterhead: logo + title ──────────────────────────────────────────
   sheet.mergeCells(1, 1, 1, NUM_COLS);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = L.docTitle;
-  titleCell.font = { bold: true, size: 16, color: { argb: NAVY_ARGB } };
-  titleCell.alignment = { vertical: "middle", horizontal: "center" };
-  sheet.getRow(1).height = 32;
+  titleCell.font = { bold: true, size: 16, color: { argb: theme.accentArgb } };
+  titleCell.alignment = { vertical: "middle", horizontal: "right" };
+  sheet.getRow(1).height = 46;
+  for (let c = 1; c <= NUM_COLS; c++) sheet.getCell(1, c).border = { bottom: { style: "medium", color: { argb: theme.accentArgb } } };
+  const imageId = workbook.addImage({ base64: theme.logo, extension: "png" });
+  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: theme.logoWidth, height: theme.logoHeight } });
+
+  sheet.getRow(2).height = 6; // spacer
 
   const metaRow = sheet.addRow([`${L.quotationNumber}: ${quotationNumber || "—"}`]);
   sheet.mergeCells(metaRow.number, 1, metaRow.number, NUM_COLS);
@@ -108,7 +158,7 @@ function buildQuestionnaireWorkbook({ quotationNumber, language, photos }) {
   const instrRow = sheet.addRow([L.instructions]);
   sheet.mergeCells(instrRow.number, 1, instrRow.number, NUM_COLS);
   instrRow.font = { italic: true, size: 10, color: { argb: "FF666666" } };
-  instrRow.alignment = { horizontal: "center" };
+  instrRow.alignment = { horizontal: "center", wrapText: true };
 
   sheet.addRow([]); // spacer
 
@@ -124,7 +174,7 @@ function buildQuestionnaireWorkbook({ quotationNumber, language, photos }) {
   for (let c = 1; c <= NUM_COLS; c++) {
     const cell = sheet.getCell(headerRow.number, c);
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = HEADER_FILL;
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: theme.accentArgb } };
     cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
     cell.border = BORDER_ALL;
   }
@@ -136,7 +186,7 @@ function buildQuestionnaireWorkbook({ quotationNumber, language, photos }) {
     sheet.mergeCells(sectionRow.number, 1, sectionRow.number, NUM_COLS);
     const sectionCell = sheet.getCell(sectionRow.number, 1);
     sectionCell.value = photo.title || `${L.photo} ${photoIdx + 1}`;
-    sectionCell.font = { bold: true, size: 12, color: { argb: NAVY_ARGB } };
+    sectionCell.font = { bold: true, size: 12, color: { argb: theme.accentArgb } };
     sectionCell.fill = SECTION_FILL;
     sectionCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     sheet.getRow(sectionRow.number).height = 22;
@@ -154,12 +204,15 @@ function buildQuestionnaireWorkbook({ quotationNumber, language, photos }) {
       qCell.alignment = { wrapText: true, vertical: "middle" };
       qCell.border = BORDER_ALL;
 
-      for (let c = OPTIONS_START; c <= OPTIONS_END; c++) {
-        const optIdx = c - OPTIONS_START;
-        const cell = sheet.getCell(row.number, c);
-        if (optIdx < (q.options || []).length) cell.value = `☐  ${q.options[optIdx]}`;
-        cell.alignment = { wrapText: true, vertical: "middle" };
-        cell.border = BORDER_ALL;
+      for (let i = 0; i < maxOptions; i++) {
+        const markCol = OPTIONS_START + i * 2;
+        const option = (q.options || [])[i];
+        if (option != null) {
+          addOptionColumns(sheet, row.number, markCol, option);
+        } else {
+          sheet.getCell(row.number, markCol).border = BORDER_ALL;
+          sheet.getCell(row.number, markCol + 1).border = BORDER_ALL;
+        }
       }
 
       sheet.getCell(row.number, OBS_COL).border = BORDER_ALL;
@@ -187,8 +240,8 @@ function buildQuestionnaireWorkbook({ quotationNumber, language, photos }) {
         w = maxW; h = maxW / ratio;
         if (h > maxH) { h = maxH; w = maxH * ratio; }
       }
-      const imageId = workbook.addImage({ buffer: photo.imageBuffer, extension: photo.imageExt || "jpeg" });
-      sheet.addImage(imageId, {
+      const imageId2 = workbook.addImage({ buffer: photo.imageBuffer, extension: photo.imageExt || "jpeg" });
+      sheet.addImage(imageId2, {
         tl: { col: PHOTO_COL - 1 + 0.15, row: firstDataRow - 1 + 0.1 },
         ext: { width: w, height: h },
       });

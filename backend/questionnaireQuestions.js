@@ -25,7 +25,12 @@ const STANDARD_QUESTIONS = {
     sample: "Há amostra disponível? Quanto tempo leva e qual o custo?",
     certification: "Este produto possui alguma certificação (CE, ISO, etc.)?",
     material: "Qual é a composição do material?",
-    customization: "É possível personalizar com marca/logo do cliente?",
+    // This is asked TO THE CLIENT (see the Questionnaire button on the
+    // Quotations list — the whole document is for the client, not the
+    // supplier), so it asks what they want, not what's technically
+    // possible — worded as a capability question ("é possível...?") reads
+    // like it's addressed to the factory instead.
+    customization: "Deseja personalização com marca/logo próprios?",
     port_of_loading: "De qual porto esse produto será embarcado?",
   },
   en: {
@@ -39,7 +44,7 @@ const STANDARD_QUESTIONS = {
     sample: "Is a sample available? How long does it take and how much does it cost?",
     certification: "Does this product have any certifications (CE, ISO, etc.)?",
     material: "What is the material composition?",
-    customization: "Is custom branding/logo printing available?",
+    customization: "Would you like customization with your own brand/logo?",
     port_of_loading: "Which port will this be shipped from?",
   },
   zh: {
@@ -53,7 +58,7 @@ const STANDARD_QUESTIONS = {
     sample: "是否可以提供样品？需要多长时间，费用是多少？",
     certification: "该产品是否有认证（CE、ISO等）？",
     material: "材质成分是什么？",
-    customization: "是否可以定制客户品牌/印刷logo？",
+    customization: "您是否需要定制专属品牌/logo？",
     port_of_loading: "该产品将从哪个港口发货？",
   },
 };

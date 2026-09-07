@@ -1145,7 +1145,12 @@ app.get('/api/quotations/:id/questionnaire-xlsx', async (req, res) => {
       return { title: photo.title || '', questions, imageBuffer: image?.buffer, imageExt: image?.extension };
     }));
 
-    const workbook = buildQuestionnaireWorkbook({ quotationNumber: q.number, language, photos });
+    // Same theme rule as every other document — our own logo/branding
+    // (HKAG navy vs. Ningbo gray), picked by whichever entity this
+    // Quotation is under, defaulting to HKAG for older Quotations saved
+    // before Acquisition Company existed (matches getAcq()'s own default).
+    const acq = getAcq(q.acquisition_company || 'HK');
+    const workbook = buildQuestionnaireWorkbook({ quotationNumber: q.number, language, photos, acq });
     const buffer = await workbook.xlsx.writeBuffer();
     const filename = `Questionnaire-${safeFilenamePart(q.number)}.xlsx`;
     res.set({

@@ -103,7 +103,7 @@ const TRANSLATIONS = {
     "Client document (HKAG/Ningbo)": "客户文件（HKAG/宁波）",
     "Internal document (Ningbo → HKAG)": "内部文件（宁波 → HKAG）",
     "Questionnaire": "问卷",
-    "Supplier Questionnaire": "供应商问卷",
+    "Client Questionnaire": "客户问卷",
     "Questionnaire Language": "问卷语言",
     "Only standard questions are translated automatically — anything you type stays exactly as written.": "只有标准问题会自动翻译——您自己输入的内容将保持原样。",
     "No photos added yet — add one below to start building the questionnaire.": "尚未添加照片——在下方添加一张开始创建问卷。",
@@ -115,6 +115,7 @@ const TRANSLATIONS = {
     "+ Add standard question…": "+ 添加标准问题…",
     "Custom Question": "自定义问题",
     "Add Photo": "添加照片",
+    "Add Question": "添加问题",
     "Saved": "已保存",
     "Download Spreadsheet": "下载表格",
     "Upload failed": "上传失败",
@@ -1374,7 +1375,7 @@ const PAYMENT_TERMS_OPTIONS = [
   "30%ADV/70%DP BL – 30% Advance, 70%DP Under BL Copy",
 ];
 
-// Standard/preset question list for the Supplier Questionnaire builder (see
+// Standard/preset question list for the Client Questionnaire builder (see
 // QuestionnaireForm below). A question added from this list is saved with
 // just its stable key (not the text) — so switching the questionnaire's
 // own output language (independent of the app's own en/zh UI language —
@@ -1396,7 +1397,7 @@ const QUESTIONNAIRE_STANDARD_QUESTIONS = {
     sample: "Há amostra disponível? Quanto tempo leva e qual o custo?",
     certification: "Este produto possui alguma certificação (CE, ISO, etc.)?",
     material: "Qual é a composição do material?",
-    customization: "É possível personalizar com marca/logo do cliente?",
+    customization: "Deseja personalização com marca/logo próprios?",
     port_of_loading: "De qual porto esse produto será embarcado?",
   },
   en: {
@@ -1410,7 +1411,7 @@ const QUESTIONNAIRE_STANDARD_QUESTIONS = {
     sample: "Is a sample available? How long does it take and how much does it cost?",
     certification: "Does this product have any certifications (CE, ISO, etc.)?",
     material: "What is the material composition?",
-    customization: "Is custom branding/logo printing available?",
+    customization: "Would you like customization with your own brand/logo?",
     port_of_loading: "Which port will this be shipped from?",
   },
   zh: {
@@ -1424,7 +1425,7 @@ const QUESTIONNAIRE_STANDARD_QUESTIONS = {
     sample: "是否可以提供样品？需要多长时间，费用是多少？",
     certification: "该产品是否有认证（CE、ISO等）？",
     material: "材质成分是什么？",
-    customization: "是否可以定制客户品牌/印刷logo？",
+    customization: "您是否需要定制专属品牌/logo？",
     port_of_loading: "该产品将从哪个港口发货？",
   },
 };
@@ -5830,13 +5831,14 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
   );
 }
 
-// Supplier Questionnaire builder — organized by photo, per the client's
-// spec: add a photo, and next to it the title + the questions to ask about
-// it. Each question can carry any number of custom answer-option checkboxes
-// (e.g. question "What's the quantity?" with options "MOQ" / "500 units" /
-// "1000 units"), plus a blank Observation column the supplier fills in —
-// see backend/xlsx/questionnaireXlsx.js for how this renders into the
-// actual spreadsheet. Saved directly onto the Quotation record
+// Client Questionnaire builder — this document is sent to the CLIENT (not
+// the supplier), organized by photo per the client's spec: add a photo,
+// and next to it the title + the questions to ask about it. Each question
+// can carry any number of custom answer-option checkboxes (e.g. question
+// "What's the quantity?" with options "MOQ" / "500 units" / "1000 units"),
+// plus a blank Observation column the client fills in — see
+// backend/xlsx/questionnaireXlsx.js for how this renders into the actual
+// spreadsheet. Saved directly onto the Quotation record
 // (quotations.questionnaire) so it can be reopened and edited later, same
 // pattern as ProformaForm's Ningbo -> HKAG popup (NingboInternalForm).
 function QuestionnaireForm({ quotation, onSave, onClose }) {
@@ -6021,7 +6023,11 @@ function QuestionnaireForm({ quotation, onSave, onClose }) {
         })}
       </div>
 
-      <Btn outline color="#3b82f6" onClick={addPhotoBlock}>+ {t("Add Photo")}</Btn>
+      {/* Adds a new block (photo optional, title + its own questions) —
+          labeled around "Question" since that's the actual unit being
+          created; the photo inside each block stays optional (see the
+          "Sem foto"/"No photo" xlsx fallback). */}
+      <Btn outline color="#3b82f6" onClick={addPhotoBlock}>+ {t("Add Question")}</Btn>
 
       <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "10px", marginTop: "24px" }}>
         {savedFlash && <span style={{ fontSize: "12px", color: "#10b981" }}>✓ {t("Saved")}</span>}
@@ -6143,7 +6149,7 @@ console.log('quotations set:', quotations?.length);
   </Modal>
 )}
 {questionnaireModal && (
-  <Modal title={t("Supplier Questionnaire")} onClose={() => setQuestionnaireModal(null)} wide>
+  <Modal title={t("Client Questionnaire")} onClose={() => setQuestionnaireModal(null)} wide>
     <QuestionnaireForm
       quotation={questionnaireModal}
       onSave={async (questionnaireData) => {
@@ -6234,7 +6240,7 @@ console.log('quotations set:', quotations?.length);
         })}>
         📋 {hasProforma ? t("Proforma ✓") : t("Proforma")}
       </Btn>
-      {/* Supplier Questionnaire builder — organized by photo, saved on the
+      {/* Client Questionnaire builder — organized by photo, saved on the
           Quotation itself (r.questionnaire), generates a fillable .xlsx to
           send to the supplier. See QuestionnaireForm above. */}
       <Btn small outline color="#8b5cf6" onClick={() => setQuestionnaireModal(r)}>
