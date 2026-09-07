@@ -922,6 +922,14 @@ app.put('/api/commercial-invoices/:id', (req, res) => {
 });
 
 app.delete('/api/commercial-invoices/:id', guardScreen('commercial'), (req, res) => {
+  // The FK on swift_transfers.commercial_invoice_id is declared as
+  // ON DELETE SET NULL in the CREATE TABLE, but this app never turns on
+  // PRAGMA foreign_keys (see the migrations comment above), so that clause
+  // is never actually enforced by SQLite — deleting the CI alone would
+  // leave its auto-generated Swift HKAG entry (see POST /commercial-invoices)
+  // orphaned, pointing at a commercial_invoice_id that no longer exists.
+  // Delete it explicitly instead so the Swift HKAG list stays in sync.
+  db.prepare('DELETE FROM swift_transfers WHERE commercial_invoice_id=?').run(req.params.id);
   db.prepare('DELETE FROM commercial_invoices WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
