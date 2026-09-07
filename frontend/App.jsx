@@ -5597,8 +5597,8 @@ console.log('quotations set:', quotations?.length);
               repeated identically on Proformas/Orders/Commercial Invoices. */}
           <Select value={acqFilter} onChange={e => setAcqFilter(e.target.value)} style={{ width: "180px" }}>
             <option value="All">All Companies</option>
-            <option value="HK">HKAG</option>
-            <option value="NINGBO">Ningbo</option>
+            <option value="HK">HONG KONG ALLIANCE GLOBAL TRADING CO., LTD</option>
+            <option value="NINGBO">NINGBO WORLD ALLIANCE TRADING. CO. LTD.</option>
           </Select>
           <Btn onClick={() => setModal(true)}>+ New Quotation</Btn>
         </div>
@@ -6655,8 +6655,8 @@ const inspectionStatusFor = (order) => {
           )}
           <Select value={acqFilter} onChange={e => setAcqFilter(e.target.value)} style={{ width: "180px" }}>
             <option value="All">All Companies</option>
-            <option value="HK">HKAG</option>
-            <option value="NINGBO">Ningbo</option>
+            <option value="HK">HONG KONG ALLIANCE GLOBAL TRADING CO., LTD</option>
+            <option value="NINGBO">NINGBO WORLD ALLIANCE TRADING. CO. LTD.</option>
           </Select>
           <Btn onClick={() => setModal("new")}>+ New Order</Btn>
         </div>
@@ -7211,8 +7211,8 @@ const [proformas, setProformas] = useState([]);
         <div style={{ display: "flex", gap: "10px" }}>
           <Select value={acqFilter} onChange={e => setAcqFilter(e.target.value)} style={{ width: "180px" }}>
             <option value="All">All Companies</option>
-            <option value="HK">HKAG</option>
-            <option value="NINGBO">Ningbo</option>
+            <option value="HK">HONG KONG ALLIANCE GLOBAL TRADING CO., LTD</option>
+            <option value="NINGBO">NINGBO WORLD ALLIANCE TRADING. CO. LTD.</option>
           </Select>
           <Btn onClick={() => setModal(true)}>+ New Proforma</Btn>
         </div>
@@ -8174,8 +8174,8 @@ function CommercialInvoices() {
         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Commercial Invoices")}</h2>
         <Select value={acqFilter} onChange={e => setAcqFilter(e.target.value)} style={{ width: "180px" }}>
           <option value="All">All Companies</option>
-          <option value="HK">HKAG</option>
-          <option value="NINGBO">Ningbo</option>
+          <option value="HK">HONG KONG ALLIANCE GLOBAL TRADING CO., LTD</option>
+          <option value="NINGBO">NINGBO WORLD ALLIANCE TRADING. CO. LTD.</option>
         </Select>
       </div>
       {editing && (
