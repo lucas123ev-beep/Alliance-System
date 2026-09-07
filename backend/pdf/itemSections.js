@@ -40,7 +40,11 @@ function renderItemSections(items, currency, opts = {}) {
   const imageCell = item => `
     <td class="center">
       ${item.imageUrl
-        ? `<img src="${escapeHtml(item.imageUrl)}" style="width:90px; height:90px; object-fit:cover; border-radius:5px; border:1px solid #ddd;" />`
+        // object-fit:contain (not cover) — a tall/narrow product photo (e.g.
+        // a standing fan) in a square 90x90 box under "cover" gets its top
+        // and bottom cropped off to fill the box; "contain" shrinks the
+        // whole photo to fit inside instead, showing it in full.
+        ? `<img src="${escapeHtml(item.imageUrl)}" style="width:90px; height:90px; object-fit:contain; border-radius:5px; border:1px solid #ddd;" />`
         : `<div style="width:90px; height:90px; border:1px dashed #ccc; border-radius:5px; margin:0 auto;"></div>`}
     </td>`;
   const nameCell = item => `<td class="center"><strong>${escapeHtml(item.description)}</strong></td>`;
