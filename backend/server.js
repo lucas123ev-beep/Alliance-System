@@ -2141,6 +2141,64 @@ app.get('/api/proformas/:id/internal-pdf', async (req, res) => {
   }
 });
 
+// Excel version of the internal Ningbo -> HKAG document above — same
+// param-gathering, just handed to buildSalesInvoiceWorkbook instead of
+// renderSalesInvoice (same pattern as the real Proforma's own pdf/xlsx pair).
+app.get('/api/proformas/:id/internal-xlsx', async (req, res) => {
+  try {
+    const pf = db.prepare('SELECT * FROM proformas WHERE id=?').get(req.params.id);
+    if (!pf) return res.status(404).json({ error: 'Proforma not found' });
+    if (pf.acquisition_company !== 'HK') {
+      return res.status(400).json({ error: 'This document only applies to Proformas issued under the Hong Kong entity.' });
+    }
+
+    const order = pf.order_id ? db.prepare('SELECT * FROM orders WHERE id=?').get(pf.order_id) : null;
+    const rawItems = parseJsonSafe(pf.ningbo_items, []);
+    const currency = pf.currency || 'USD';
+    const items = rawItems.map(i => normalizeSalesItem(i, currency));
+    const totalLength = items.reduce((s, i) => s + (parseFloat(i.totalLength) || 0), 0);
+    const totalWeight = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.totalWeight) || 0), 0);
+    const totalQuantity = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
+    const totalAmount = items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+    const hkAcq = getAcq('HK');
+
+    const workbook = buildSalesInvoiceWorkbook({
+      title: 'PROFORMA INVOICE',
+      number: `${pf.number}-NGB`,
+      date: pf.issue_date,
+      wayOfShipment: pf.ningbo_way_of_shipment || pf.way_of_shipment || order?.way_of_shipment,
+      countryOfOrigin: 'China',
+      portOfOrigin: pf.port_of_loading || order?.port_of_loading,
+      portOfDestination: pf.port_of_discharge || order?.port_of_discharge,
+      incoterm: pf.ningbo_incoterm || pf.incoterm || order?.incoterm,
+      acq: NINGBO_ACQ,
+      manufacturer: { name: NINGBO_ACQ.name, address: NINGBO_ACQ.addressLine, tel: NINGBO_ACQ.tel },
+      items,
+      totalLength,
+      totalWeight,
+      totalQuantity,
+      totalAmount,
+      currency,
+      paymentTerms: pf.ningbo_payment_terms || pf.payment_terms || order?.payment_terms,
+      productionDays: pf.production_days || order?.production_lead_time,
+      deliveryDays: pf.delivery_days || order?.delivery_days,
+      importer: { name: hkAcq.name, address: hkAcq.addressLine, tel: hkAcq.tel },
+      validity: pf.validity,
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `Proforma-${safeFilenamePart(pf.number)}-Internal-Ningbo.xlsx`;
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': contentDisposition(filename),
+    });
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('Internal Proforma xlsx error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
   try {
     const ci = db.prepare('SELECT * FROM commercial_invoices WHERE id=?').get(req.params.id);

@@ -5057,6 +5057,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <span style={{ fontSize: "11px", color: "#64748b" }}>{t("Internal document (Ningbo → HKAG)")}</span>
               <DocButtons url={authUrl(`${API}/proformas/${f.id}/internal-pdf`)} filename={`Proforma-${f.number}-Internal-Ningbo.pdf`}
+                xlsxUrl={authUrl(`${API}/proformas/${f.id}/internal-xlsx`)} xlsxFilename={`Proforma-${f.number}-Internal-Ningbo.xlsx`}
                 entityType="proformas" recordLabel={`${f.number}-NGB`} label="📄 Ningbo → HKAG" small={false} color="#8b5cf6" />
             </div>
           )}
@@ -7486,10 +7487,11 @@ cols={[
         xlsxUrl={authUrl(`${API}/proformas/${r.id}/xlsx`)} xlsxFilename={`Proforma-${r.number}.xlsx`}
         entityType="proformas" recordLabel={r.number} label="📄 Doc" />
       {/* Second, internal-only document — Ningbo -> HKAG — only for
-          Proformas issued under the HK entity. PDF only, same simpler mode
-          Quotation/Contract already use (no xlsxUrl). */}
+          Proformas issued under the HK entity. PDF + Excel, same
+          format-picker mode as the real Proforma's own Doc button. */}
       {r.acquisition_company === "HK" && (
         <DocButtons url={authUrl(`${API}/proformas/${r.id}/internal-pdf`)} filename={`Proforma-${r.number}-Internal-Ningbo.pdf`}
+          xlsxUrl={authUrl(`${API}/proformas/${r.id}/internal-xlsx`)} xlsxFilename={`Proforma-${r.number}-Internal-Ningbo.xlsx`}
           entityType="proformas" recordLabel={`${r.number}-NGB`} label="📄 Ningbo → HKAG" color="#8b5cf6" />
       )}
       <Btn small outline color="#64748b" onClick={() => setEditing(r)}>Edit</Btn>
