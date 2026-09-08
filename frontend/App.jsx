@@ -131,7 +131,6 @@ const TRANSLATIONS = {
     "Supplier payment due": "供应商付款到期",
     "Client payment pending": "客户付款待处理",
     "Swift HKAG pending": "Swift HKAG 待处理",
-    "Lucas is always notified of this, regardless of what you pick below.": "无论下方选择如何，Lucas都会收到此通知。",
     "Value": "金额",
     "Currency": "货币",
     "Prod. Lead Time (days)": "生产周期（天）",
@@ -1854,9 +1853,6 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
           ? <>{t("Record created:")} <strong style={{ color: "#f1f5f9" }}>{recordLabel}</strong>. {t("Who should be notified by e-mail?")}</>
           : <>{t("Status changed to")} <strong style={{ color: "#f1f5f9" }}>{newStatus}</strong>. {t("Who should be notified by e-mail?")}</>}
       </p>
-      <p style={{ margin: "0 0 16px", fontSize: "11.5px", color: "#64748b", fontStyle: "italic" }}>
-        {t("Lucas is always notified of this, regardless of what you pick below.")}
-      </p>
       {recipients === null ? (
         <p style={{ color: "#64748b", fontSize: "13px" }}>{t("Loading…")}</p>
       ) : recipients.length === 0 ? (
@@ -1905,9 +1901,9 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
       )}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         {/* Still calls send() — the status change already happened, this
-            only skips notifying anyone ELSE about it. Lucas still gets it
-            either way (see the note above and the server-side enforcement
-            in /api/notifications/status-change). */}
+            only skips notifying anyone ELSE about it. Lucas is silently
+            always included server-side (see /api/notifications/status-
+            change) — deliberately not surfaced in this UI. */}
         <Btn outline color="#64748b" onClick={send} disabled={sending}>{t("Don't notify")}</Btn>
         <Btn onClick={send} disabled={sending || uploading || recipients === null || recipients.length === 0}>
           {sending ? t("Sending…") : t("Send")}
@@ -1986,9 +1982,6 @@ function SendDocumentModal({ entityType, recordLabel, documentLabel, attachments
     <Modal title={t("Send by e-mail")} onClose={onClose}>
       <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#94a3b8", lineHeight: 1.5 }}>
         {t("Send by e-mail")}: <strong style={{ color: "#f1f5f9" }}>{documentLabel} — {recordLabel}</strong>. {t("Who should receive it by e-mail?")}
-      </p>
-      <p style={{ margin: "0 0 16px", fontSize: "11.5px", color: "#64748b", fontStyle: "italic" }}>
-        {t("Lucas is always notified of this, regardless of what you pick below.")}
       </p>
       {recipients === null ? (
         <p style={{ color: "#64748b", fontSize: "13px" }}>{t("Loading…")}</p>
