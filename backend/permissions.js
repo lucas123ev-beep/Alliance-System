@@ -66,7 +66,7 @@ const PERMISSIONS = {
     hideCommercialStatus: true, hideMargin: true,
   },
   amber: {
-    screens: ["dashboard", "suppliers", "products", "contracts", "orders", "fin-suppliers", "samples", "inspections"],
+    screens: ["dashboard", "suppliers", "products", "contracts", "orders", "fin-suppliers", "samples", "inspections", "proformas"],
     hideCommercialStatus: true, hideMargin: true,
   },
   max: {

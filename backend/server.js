@@ -40,6 +40,7 @@ const { buildSalesInvoiceWorkbook } = require('./xlsx/salesInvoiceXlsx');
 const { buildPackingListWorkbook } = require('./xlsx/packingListXlsx');
 const { buildQuestionnaireWorkbook } = require('./xlsx/questionnaireXlsx');
 const { STANDARD_QUESTIONS } = require('./questionnaireQuestions');
+const { buildCalendarEvents } = require('./calendar');
 const { PROBLEM_OPTIONS, SOLUTION_OPTIONS, findProblem, findSolution, computeRating } = require('./supplierEvaluationOptions');
 const {
   hashPassword, verifyPassword, generateToken, generateTempPassword, requireAuth, guardScreen, actorName,
@@ -1314,6 +1315,20 @@ app.get('/api/reports/products-by-supplier', guardScreen('reports'), async (req,
     console.error('Products by supplier report error:', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── CALENDAR ────────────────────────────────────────────────────────────────
+// See calendar.js — one aggregated read-only list of every date already
+// sitting on other records, powering the 📅 button under the notification
+// bell (App.jsx's CalendarBell). Not guarded by any single screen (the
+// client's own words: "Todos conseguem ver tudo") — every signed-in
+// account can call this; only the two restricted kinds (client payment /
+// Swift HKAG) get filtered out below for anyone without the swift-hkag
+// screen (the same four people that screen is already limited to).
+app.get('/api/calendar', (req, res) => {
+  const canSeeRestricted = !!(req.user?.permissions?.screens || []).includes('swift-hkag');
+  const events = buildCalendarEvents(db).filter(e => !e.restricted || canSeeRestricted);
+  res.json(events);
 });
 
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────

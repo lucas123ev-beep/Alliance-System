@@ -119,6 +119,18 @@ const TRANSLATIONS = {
     "Saved": "已保存",
     "Download Spreadsheet": "下载表格",
     "Upload failed": "上传失败",
+    "Calendar": "日历",
+    "Open full calendar": "打开完整日历",
+    "No upcoming dates.": "暂无即将到来的日期。",
+    "No dates on this day.": "这一天没有日期安排。",
+    "Quotation deadline": "报价截止日期",
+    "Proforma price validity": "形式发票价格有效期",
+    "Contract delivery": "合同交货日期",
+    "Loading date": "装货日期",
+    "Sample feedback": "样品反馈",
+    "Supplier payment due": "供应商付款到期",
+    "Client payment pending": "客户付款待处理",
+    "Swift HKAG pending": "Swift HKAG 待处理",
     "Value": "金额",
     "Currency": "货币",
     "Prod. Lead Time (days)": "生产周期（天）",
@@ -2419,6 +2431,248 @@ function NotificationBell({ sidebarOpen }) {
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// Label + color per calendar event kind (see backend/calendar.js for where
+// these are produced) — kept here rather than sent from the backend so the
+// text goes through the app's own en/zh dictionary like everything else.
+const CALENDAR_KIND_LABELS = {
+  order_shipment: "Shipment",
+  order_arrival: "Arrival",
+  quotation_deadline: "Quotation deadline",
+  proforma_validity: "Proforma price validity",
+  contract_delivery: "Contract delivery",
+  packing_loading: "Loading date",
+  inspection: "Inspection",
+  sample_feedback: "Sample feedback",
+  supplier_payment_due: "Supplier payment due",
+  commercial_payment_pending: "Client payment pending",
+  swift_pending: "Swift HKAG pending",
+};
+const CALENDAR_KIND_COLORS = {
+  order_shipment: "#3b82f6",
+  order_arrival: "#06b6d4",
+  quotation_deadline: "#f59e0b",
+  proforma_validity: "#a78bfa",
+  contract_delivery: "#f97316",
+  packing_loading: "#22c55e",
+  inspection: "#eab308",
+  sample_feedback: "#ec4899",
+  supplier_payment_due: "#8b5cf6",
+  commercial_payment_pending: "#ef4444",
+  swift_pending: "#ef4444",
+};
+function calendarEventLabel(e, t) {
+  const kindLabel = t(CALENDAR_KIND_LABELS[e.kind] || e.kind);
+  return e.number ? `${kindLabel} — ${e.number}` : kindLabel;
+}
+const CALENDAR_WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const CALENDAR_MONTH_LABELS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const pad2 = (n) => String(n).padStart(2, "0");
+const ymd = (y, m, d) => `${y}-${pad2(m + 1)}-${pad2(d)}`;
+// null placeholders before day 1 so the grid lines up under the right
+// weekday column — same convention every calendar UI uses.
+function monthCells(year, month) {
+  const startWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  return cells;
+}
+
+// Every list screen's own search box seeds itself from this — see
+// `navSeed`/`onConsumeNav` props threaded through from App()'s
+// `pendingNav` state. Only fires when `navSeed` actually changes (a fresh
+// value arrives right after a calendar click), not on every unrelated
+// re-render or remount, and tells the parent to clear it once applied so
+// revisiting the same tab later (via the sidebar, not the calendar) doesn't
+// keep re-seeding a stale search term.
+function useNavSeed(navSeed, onConsumeNav, setSearch) {
+  useEffect(() => {
+    if (navSeed != null) { setSearch(navSeed); onConsumeNav?.(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navSeed]);
+}
+
+// In-app Calendar — aggregates every date already sitting on other records
+// (shipment/arrival, deadlines, inspections, etc. — see backend/calendar.js)
+// into one place, entirely separate from and in addition to the e-mail
+// notification system. Sits right under the notification bell: a small
+// popover with the closest upcoming dates, and a button to open the full
+// month view. Clicking any date/event switches to the right screen and
+// seeds its search box with that record's number (see useNavSeed above) —
+// two of the eleven kinds (client payment / Swift HKAG) are silently
+// absent here for anyone without the swift-hkag screen, filtered
+// server-side (see GET /api/calendar), never just hidden by CSS.
+function CalendarBell({ sidebarOpen, onNavigate }) {
+  const t = useT();
+  const [events, setEvents] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const today = new Date();
+  const todayStr = ymd(today.getFullYear(), today.getMonth(), today.getDate());
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [selectedDay, setSelectedDay] = useState(null);
+  const boxRef = useRef(null);
+
+  const load = useCallback(() => {
+    api("/calendar").then(setEvents).catch(() => { /* next poll retries */ });
+  }, []);
+  useEffect(() => {
+    load();
+    const iv = setInterval(load, 60000);
+    return () => clearInterval(iv);
+  }, [load]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e) { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [open]);
+
+  const upcoming = events.filter(e => e.date >= todayStr).slice(0, 8);
+  const eventsByDay = events.reduce((acc, e) => { (acc[e.date] = acc[e.date] || []).push(e); return acc; }, {});
+
+  function goToEvent(e) {
+    setOpen(false);
+    setExpanded(false);
+    onNavigate(e.screen, e.number);
+  }
+
+  function changeMonth(delta) {
+    let m = viewMonth + delta, y = viewYear;
+    if (m < 0) { m = 11; y -= 1; }
+    if (m > 11) { m = 0; y += 1; }
+    setViewMonth(m); setViewYear(y);
+    setSelectedDay(null);
+  }
+
+  const cells = monthCells(viewYear, viewMonth);
+  const selectedEvents = selectedDay ? (eventsByDay[selectedDay] || []) : [];
+
+  return (
+    <div ref={boxRef} style={{ position: "relative" }}>
+      <button onClick={() => setOpen(o => !o)} title={t("Calendar")}
+        style={{
+          width: "100%", display: "flex", alignItems: "center",
+          justifyContent: sidebarOpen ? "space-between" : "center", gap: "6px",
+          padding: "8px", background: "#1e293b", border: "1px solid #334155", borderRadius: "6px",
+          color: "#94a3b8", cursor: "pointer", fontSize: "12px", fontWeight: 600, position: "relative",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <span style={{ fontSize: "14px" }}>📅</span>
+          {sidebarOpen && <span>{t("Calendar")}</span>}
+        </span>
+        {upcoming.length > 0 && (
+          <span style={{
+            background: "#3b82f6", color: "#fff", fontSize: "10px", fontWeight: 700,
+            borderRadius: "999px", padding: "1px 6px", minWidth: "16px", textAlign: "center", lineHeight: "14px",
+            ...(sidebarOpen ? {} : { position: "absolute", top: "2px", right: "2px" }),
+          }}>
+            {upcoming.length > 99 ? "99+" : upcoming.length}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 6px)", left: sidebarOpen ? 0 : "-8px", width: "320px",
+          maxHeight: "420px", overflowY: "auto", background: "#0f172a", border: "1px solid #1e293b",
+          borderRadius: "10px", boxShadow: "0 20px 50px rgba(0,0,0,0.6)", zIndex: 1500,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: "1px solid #1e293b" }}>
+            <span style={{ fontSize: "13px", fontWeight: 700, color: "#f1f5f9" }}>{t("Calendar")}</span>
+            <button onClick={() => { setOpen(false); setExpanded(true); }} style={{ background: "none", border: "none", color: "#60a5fa", fontSize: "11px", cursor: "pointer" }}>
+              {t("Open full calendar")}
+            </button>
+          </div>
+          {upcoming.length === 0 ? (
+            <p style={{ padding: "20px 12px", textAlign: "center", color: "#64748b", fontSize: "12.5px" }}>{t("No upcoming dates.")}</p>
+          ) : (
+            upcoming.map(e => (
+              <div key={e.id} onClick={() => goToEvent(e)}
+                style={{ padding: "10px 12px", borderBottom: "1px solid #1e293b", cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                  <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: CALENDAR_KIND_COLORS[e.kind] || "#3b82f6", marginTop: "5px", flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "12.5px", color: "#e2e8f0", lineHeight: 1.4 }}>{calendarEventLabel(e, t)}</div>
+                    <div style={{ fontSize: "10.5px", color: "#475569", marginTop: "4px" }}>{fmtDate(e.date)}{e.client ? ` · ${e.client}` : ""}</div>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+      {expanded && (
+        <Modal title={t("Calendar")} onClose={() => setExpanded(false)} wide>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+            <Btn small outline color="#64748b" onClick={() => changeMonth(-1)}>◀</Btn>
+            <div style={{ fontSize: "16px", fontWeight: 700, color: "#f1f5f9" }}>
+              {t(CALENDAR_MONTH_LABELS[viewMonth])} {viewYear}
+            </div>
+            <Btn small outline color="#64748b" onClick={() => changeMonth(1)}>▶</Btn>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "6px", marginBottom: "6px" }}>
+            {CALENDAR_WEEKDAY_LABELS.map(w => (
+              <div key={w} style={{ textAlign: "center", fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>{t(w)}</div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "6px", marginBottom: "16px" }}>
+            {cells.map((d, i) => {
+              if (d == null) return <div key={i} />;
+              const dayStr = ymd(viewYear, viewMonth, d);
+              const dayEvents = eventsByDay[dayStr] || [];
+              const isToday = dayStr === todayStr;
+              const isSelected = dayStr === selectedDay;
+              return (
+                <div key={i} onClick={() => dayEvents.length > 0 && setSelectedDay(dayStr)}
+                  style={{
+                    minHeight: "64px", borderRadius: "8px", padding: "6px",
+                    background: isSelected ? "#1e3a5f" : "#0f172a",
+                    border: isToday ? "1px solid #3b82f6" : "1px solid #1e293b",
+                    cursor: dayEvents.length > 0 ? "pointer" : "default",
+                  }}>
+                  <div style={{ fontSize: "11px", color: isToday ? "#60a5fa" : "#64748b", fontWeight: isToday ? 700 : 400, marginBottom: "4px" }}>{d}</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "3px" }}>
+                    {dayEvents.slice(0, 3).map(e => (
+                      <span key={e.id} style={{ width: "6px", height: "6px", borderRadius: "50%", background: CALENDAR_KIND_COLORS[e.kind] || "#3b82f6" }} />
+                    ))}
+                    {dayEvents.length > 3 && <span style={{ fontSize: "9px", color: "#64748b" }}>+{dayEvents.length - 3}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {selectedDay && (
+            <div style={{ borderTop: "1px solid #1e293b", paddingTop: "12px" }}>
+              <div style={{ fontSize: "12px", fontWeight: 700, color: "#94a3b8", marginBottom: "8px" }}>{fmtDate(selectedDay)}</div>
+              {selectedEvents.length === 0 ? (
+                <div style={{ fontSize: "12px", color: "#64748b" }}>{t("No dates on this day.")}</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {selectedEvents.map(e => (
+                    <div key={e.id} onClick={() => goToEvent(e)}
+                      style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", background: "#1e293b", borderRadius: "8px", cursor: "pointer" }}>
+                      <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: CALENDAR_KIND_COLORS[e.kind] || "#3b82f6", flexShrink: 0 }} />
+                      <span style={{ fontSize: "13px", color: "#e2e8f0" }}>{calendarEventLabel(e, t)}</span>
+                      {e.client && <span style={{ fontSize: "11px", color: "#64748b" }}>· {e.client}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </Modal>
@@ -6039,7 +6293,7 @@ function QuestionnaireForm({ quotation, onSave, onClose }) {
   );
 }
 
-function Quotations() {
+function Quotations({ navSeed, onConsumeNav } = {}) {
 const t = useT();
 const [proformas, setProformas] = useState([]);
 const [proformaModal, setProformaModal] = useState(null);
@@ -6048,6 +6302,7 @@ const [quotations, setQuotations] = useState([]);
 const [modal, setModal] = useState(false);
 const [editing, setEditing] = useState(null);
 const [search, setSearch] = useState("");
+useNavSeed(navSeed, onConsumeNav, setSearch);
 const [orders, setOrders] = useState([]);
 const [notify, setNotify] = useState(null);
 const [acqFilter, setAcqFilter] = useState("All");
@@ -6911,7 +7166,7 @@ function OrderProfitReportModal({ orders, onClose }) {
   );
 }
 
-function Orders() {
+function Orders({ navSeed, onConsumeNav } = {}) {
 const t = useT();
 const { canViewProfit } = usePermissions();
 const [profitOrder, setProfitOrder] = useState(null); // order whose profit detail modal is open, or null
@@ -6932,6 +7187,7 @@ const [notify, setNotify] = useState(null);
   const [editNumberId, setEditNumberId] = useState(null);
   const [editNumberVal, setEditNumberVal] = useState("");
   const [search, setSearch] = useState("");
+  useNavSeed(navSeed, onConsumeNav, setSearch);
   const [contractModal, setContractModal] = useState(null);
   const [savedContracts, setSavedContracts] = useState([]);
   const [ciNotification, setCiNotification] = useState(null);
@@ -7566,12 +7822,13 @@ cols={[
   );
 }
 
-function Samples() {
+function Samples({ navSeed, onConsumeNav } = {}) {
  const t = useT();
  const [samples, setSamples] = useState([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
+  useNavSeed(navSeed, onConsumeNav, setSearch);
   const [notify, setNotify] = useState(null);
   const load = useCallback(() => api("/samples").then(setSamples), []);
   useEffect(() => { load(); }, [load]);
@@ -7648,13 +7905,14 @@ function Samples() {
 }
       
       
-function Proformas() {
+function Proformas({ navSeed, onConsumeNav } = {}) {
 const t = useT();
 const [proformas, setProformas] = useState([]);
   const [orders, setOrders] = useState([]);
   const [quotations, setQuotations] = useState([]);
   const [modal, setModal] = useState(false);
   const [search, setSearch] = useState("");
+  useNavSeed(navSeed, onConsumeNav, setSearch);
   const [editing, setEditing] = useState(null);
   const [orderNotification, setOrderNotification] = useState(null);
   const [notify, setNotify] = useState(null);
@@ -7817,11 +8075,12 @@ cols={[
   );
 }
 
-function Contracts() {
+function Contracts({ navSeed, onConsumeNav } = {}) {
   const t = useT();
   const [contracts, setContracts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [search, setSearch] = useState("");
+  useNavSeed(navSeed, onConsumeNav, setSearch);
   const [editing, setEditing] = useState(null);
   const [notify, setNotify] = useState(null);
   const load = useCallback(() => {
@@ -8640,7 +8899,7 @@ function FreightAgents() {
   );
 }
 
-function CommercialInvoices() {
+function CommercialInvoices({ navSeed, onConsumeNav } = {}) {
   const t = useT();
   const { hideCommercialStatus } = usePermissions();
   const [invoices, setInvoices] = useState([]);
@@ -8650,6 +8909,7 @@ function CommercialInvoices() {
   const [packingListModal, setPackingListModal] = useState(null);
   const [editPackingList, setEditPackingList] = useState(null);
   const [search, setSearch] = useState("");
+  useNavSeed(navSeed, onConsumeNav, setSearch);
   const [editing, setEditing] = useState(null);
   // Pristine snapshot taken when the edit modal opens (see editCommercial /
   // editCommercialOriginal in Orders() for the same pattern) — lets Save
@@ -8808,10 +9068,11 @@ function CommercialInvoices() {
 // standalone listing existed). Shipment/Arrival Date shown here come from
 // the linked Order (see the /api/packing-lists route's join), same
 // single-source-of-truth approach as the Commercial Invoice screen.
-function PackingLists() {
+function PackingLists({ navSeed, onConsumeNav } = {}) {
   const t = useT();
   const [lists, setLists] = useState([]);
   const [search, setSearch] = useState("");
+  useNavSeed(navSeed, onConsumeNav, setSearch);
   const [editList, setEditList] = useState(null);
   const load = useCallback(() => { api("/packing-lists").then(setLists); }, []);
   useEffect(() => { load(); }, [load]);
@@ -8974,13 +9235,14 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
   );
 }
 
-function Inspections() {
+function Inspections({ navSeed, onConsumeNav } = {}) {
   const t = useT();
   const [inspections, setInspections] = useState([]);
   const [orders, setOrders] = useState([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
+  useNavSeed(navSeed, onConsumeNav, setSearch);
   const [notify, setNotify] = useState(null);
   const load = useCallback(async () => {
     const [inspections, orders] = await Promise.all([api("/inspections"), api("/orders")]);
@@ -9198,7 +9460,7 @@ function SwiftForm({ onSave, onClose, initial, orders, commercialInvoices }) {
 // where that gets logged/proven (Swift copy attached) and marked Paid once
 // it's gone out. Only reachable by the four people with the "swift-hkag"
 // screen (see permissions.js) — everyone else never sees this tab at all.
-function SwiftHkag() {
+function SwiftHkag({ navSeed, onConsumeNav } = {}) {
   const t = useT();
   const [swiftTransfers, setSwiftTransfers] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -9206,6 +9468,7 @@ function SwiftHkag() {
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
+  useNavSeed(navSeed, onConsumeNav, setSearch);
   const [notify, setNotify] = useState(null);
   const load = useCallback(async () => {
     const [swiftTransfers, orders, commercialInvoices] = await Promise.all([
@@ -9652,6 +9915,14 @@ export default function App() {
     return "dashboard";
   });
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Set by CalendarBell when a date/event is clicked — { screen, search }.
+  // renderTab() passes `pendingNav.search` down as `navSeed` to whichever
+  // screen matches `pendingNav.screen` (see useNavSeed), and that screen
+  // clears it back to null once applied so revisiting the tab later via
+  // the sidebar doesn't keep re-seeding a stale search term.
+  const [pendingNav, setPendingNav] = useState(null);
+  const navSeedFor = (screen) => (pendingNav?.screen === screen ? pendingNav.search : null);
+  const consumeNav = (screen) => setPendingNav(prev => (prev?.screen === screen ? null : prev));
   const [lang, setLang] = useState(() => {
     try { return localStorage.getItem("af_lang") || "en"; } catch { return "en"; }
   });
@@ -9735,19 +10006,19 @@ export default function App() {
 const renderTab = () => {
     switch (effectiveTab) {
       case "dashboard": return <Dashboard />;
-      case "orders": return <Orders />;
+      case "orders": return <Orders navSeed={navSeedFor("orders")} onConsumeNav={() => consumeNav("orders")} />;
       case "clients": return <Clients />;
       case "suppliers": return <Suppliers />;
       case "freight-agents": return <FreightAgents />;
       case "products": return <Products />;
-      case "samples": return <Samples />;
-      case "quotations": return <Quotations />;
-      case "inspections": return <Inspections />;
-      case "proformas": return <Proformas />;
-      case "commercial": return <CommercialInvoices />;
-      case "swift-hkag": return <SwiftHkag />;
-      case "packing-lists": return <PackingLists />;
-      case "contracts": return <Contracts />;
+      case "samples": return <Samples navSeed={navSeedFor("samples")} onConsumeNav={() => consumeNav("samples")} />;
+      case "quotations": return <Quotations navSeed={navSeedFor("quotations")} onConsumeNav={() => consumeNav("quotations")} />;
+      case "inspections": return <Inspections navSeed={navSeedFor("inspections")} onConsumeNav={() => consumeNav("inspections")} />;
+      case "proformas": return <Proformas navSeed={navSeedFor("proformas")} onConsumeNav={() => consumeNav("proformas")} />;
+      case "commercial": return <CommercialInvoices navSeed={navSeedFor("commercial")} onConsumeNav={() => consumeNav("commercial")} />;
+      case "swift-hkag": return <SwiftHkag navSeed={navSeedFor("swift-hkag")} onConsumeNav={() => consumeNav("swift-hkag")} />;
+      case "packing-lists": return <PackingLists navSeed={navSeedFor("packing-lists")} onConsumeNav={() => consumeNav("packing-lists")} />;
+      case "contracts": return <Contracts navSeed={navSeedFor("contracts")} onConsumeNav={() => consumeNav("contracts")} />;
       case "fin-suppliers": return <Financial type="supplier" />;
       case "reports": return <Reports />;
       default: return null;
@@ -9840,6 +10111,14 @@ const renderTab = () => {
               a sound when a poll finds something new. */}
           <div style={{ padding: "10px 12px", borderTop: "1px solid #1e293b" }}>
             <NotificationBell sidebarOpen={sidebarOpen} />
+          </div>
+          {/* In-app calendar — every date already sitting on other records
+              (shipment/arrival, deadlines, inspections...), entirely
+              separate from the e-mail notifications above. Clicking a date
+              switches to the right screen and seeds its search box with
+              that record (see pendingNav/navSeedFor above). */}
+          <div style={{ padding: "10px 12px", borderTop: "1px solid #1e293b" }}>
+            <CalendarBell sidebarOpen={sidebarOpen} onNavigate={(screen, search) => { setTab(screen); setPendingNav({ screen, search }); }} />
           </div>
           {/* Interface language toggle — only switches the system's own UI
               text (nav, buttons, labels), never PDFs or any registered
