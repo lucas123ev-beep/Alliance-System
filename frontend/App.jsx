@@ -131,6 +131,7 @@ const TRANSLATIONS = {
     "Supplier payment due": "供应商付款到期",
     "Client payment pending": "客户付款待处理",
     "Swift HKAG pending": "Swift HKAG 待处理",
+    "Lucas is always notified of this, regardless of what you pick below.": "无论下方选择如何，Lucas都会收到此通知。",
     "Value": "金额",
     "Currency": "货币",
     "Prod. Lead Time (days)": "生产周期（天）",
@@ -1824,8 +1825,11 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
     setUploading(false);
   }
 
+  // Always calls through, even with nobody checked — Lucas gets every
+  // notifiable change regardless of what's picked here (his own explicit
+  // request), enforced server-side in /api/notifications/status-change so
+  // it can't be skipped just by leaving everyone unchecked.
   async function send() {
-    if (selected.size === 0) { onClose(); return; }
     setSending(true);
     try {
       const res = await api("/notifications/status-change", "POST", {
@@ -1849,6 +1853,9 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
         {isCreated
           ? <>{t("Record created:")} <strong style={{ color: "#f1f5f9" }}>{recordLabel}</strong>. {t("Who should be notified by e-mail?")}</>
           : <>{t("Status changed to")} <strong style={{ color: "#f1f5f9" }}>{newStatus}</strong>. {t("Who should be notified by e-mail?")}</>}
+      </p>
+      <p style={{ margin: "0 0 16px", fontSize: "11.5px", color: "#64748b", fontStyle: "italic" }}>
+        {t("Lucas is always notified of this, regardless of what you pick below.")}
       </p>
       {recipients === null ? (
         <p style={{ color: "#64748b", fontSize: "13px" }}>{t("Loading…")}</p>
@@ -1897,9 +1904,13 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
         <p style={{ fontSize: "13px", color: "#f87171", margin: "0 0 12px" }}>{t("Failed to send. Try again.")}</p>
       )}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-        <Btn outline color="#64748b" onClick={onClose} disabled={sending}>Don't notify</Btn>
+        {/* Still calls send() — the status change already happened, this
+            only skips notifying anyone ELSE about it. Lucas still gets it
+            either way (see the note above and the server-side enforcement
+            in /api/notifications/status-change). */}
+        <Btn outline color="#64748b" onClick={send} disabled={sending}>{t("Don't notify")}</Btn>
         <Btn onClick={send} disabled={sending || uploading || recipients === null || recipients.length === 0}>
-          {sending ? "Sending…" : "Send"}
+          {sending ? t("Sending…") : t("Send")}
         </Btn>
       </div>
     </Modal>
@@ -1943,8 +1954,13 @@ function SendDocumentModal({ entityType, recordLabel, documentLabel, attachments
   // gets one e-mail per format, its subject/documentLabel naming which one
   // it is (e.g. "PDF" vs "Spreadsheet") so it's clear they're not
   // duplicates. Results are combined across all the calls.
+  // Proceeds even with nobody checked (Lucas still gets it — see the
+  // server-side enforcement in /api/notifications/status-change) — only
+  // bails out if the attachment itself isn't ready yet. Hitting Cancel
+  // instead never calls this at all, so it's still a real "don't send
+  // this document to anyone" escape hatch.
   async function send() {
-    if (!ready || selected.size === 0) { onClose(); return; }
+    if (!ready) { onClose(); return; }
     setSending(true);
     try {
       const results = await Promise.all((attachments || []).map(att => api("/notifications/status-change", "POST", {
@@ -1970,6 +1986,9 @@ function SendDocumentModal({ entityType, recordLabel, documentLabel, attachments
     <Modal title={t("Send by e-mail")} onClose={onClose}>
       <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#94a3b8", lineHeight: 1.5 }}>
         {t("Send by e-mail")}: <strong style={{ color: "#f1f5f9" }}>{documentLabel} — {recordLabel}</strong>. {t("Who should receive it by e-mail?")}
+      </p>
+      <p style={{ margin: "0 0 16px", fontSize: "11.5px", color: "#64748b", fontStyle: "italic" }}>
+        {t("Lucas is always notified of this, regardless of what you pick below.")}
       </p>
       {recipients === null ? (
         <p style={{ color: "#64748b", fontSize: "13px" }}>{t("Loading…")}</p>
@@ -10037,6 +10056,16 @@ const renderTab = () => {
         input:focus, select:focus, textarea:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
         @keyframes notifToastIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
       `}</style>
+      {/* Wraps the WHOLE layout (sidebar included) — it used to only wrap
+          <main>, so any component rendered in the sidebar and calling
+          useT() (NotificationBell, CalendarBell, the language toggle's own
+          neighbors...) fell back to LanguageContext's default value
+          ({ lang: "en" }) no matter what the toggle was actually set to,
+          since useContext just doesn't see a value from outside its
+          nearest Provider. That's why the notification bell and the
+          calendar never switched to Chinese — they were structurally
+          outside this Provider the whole time. */}
+      <LanguageContext.Provider value={{ lang, setLang }}>
       <div style={{ display: "flex", minHeight: "100vh" }}>
         {/* Sidebar */}
         <aside style={{
@@ -10151,21 +10180,20 @@ const renderTab = () => {
           </div>
         </aside>
 
-        {/* Main — every screen component renders inside this Provider, so
-            any of them can call useT() to translate their own text. */}
+        {/* Main — every screen component renders here, inside the
+            LanguageContext.Provider that now wraps the whole layout above. */}
         <main style={{ flex: 1, padding: "32px", minWidth: 0 }}>
           <div style={{
             background: "#0a1628", border: "1px solid #1e293b", borderRadius: "16px",
             padding: "28px", minHeight: "calc(100vh - 64px)",
           }}>
-            <LanguageContext.Provider value={{ lang, setLang }}>
-              <UserContext.Provider value={{ permissions: user.permissions }}>
-                {renderTab()}
-              </UserContext.Provider>
-            </LanguageContext.Provider>
+            <UserContext.Provider value={{ permissions: user.permissions }}>
+              {renderTab()}
+            </UserContext.Provider>
           </div>
         </main>
       </div>
+      </LanguageContext.Provider>
     </>
   );
 }

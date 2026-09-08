@@ -2793,7 +2793,18 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
     return res.status(400).json({ error: 'recordLabel required (and newStatus, unless eventType is "created" or "document")' });
   }
 
-  const requested = Array.isArray(recipientUsernames) ? recipientUsernames : [];
+  // Lucas gets every notifiable change in the system — his own explicit
+  // request — regardless of who was actually picked (or not picked at
+  // all) in the recipient picker on the frontend. Only skipped when he's
+  // the one making the change himself, since notifying yourself about
+  // your own action would just be noise. This is enforced here rather
+  // than only in the picker UI so it can't be bypassed by unchecking him
+  // — see NotifyStatusChangeModal/SendDocumentModal on the frontend,
+  // which no longer skip calling this route just because nothing/nobody
+  // else was selected.
+  const requestedSet = new Set(Array.isArray(recipientUsernames) ? recipientUsernames : []);
+  if (String(req.user?.username || '').toLowerCase() !== 'lucas') requestedSet.add('lucas');
+  const requested = [...requestedSet];
   if (requested.length === 0) return res.json({ sent: [], skipped: [] });
 
   const users = db.prepare('SELECT username, name, email FROM users').all();
