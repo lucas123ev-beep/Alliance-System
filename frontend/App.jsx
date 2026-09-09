@@ -1832,7 +1832,17 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
   // notifiable change regardless of what's picked here (his own explicit
   // request), enforced server-side in /api/notifications/status-change so
   // it can't be skipped just by leaving everyone unchecked.
+  //
+  // This also has to run when the modal is dismissed via the × button or
+  // Escape, not just the two explicit buttons — otherwise someone who
+  // closes the popup instead of clicking "Don't notify" skips the API call
+  // entirely, and Lucas never gets added server-side either (found after
+  // Amber generated a batch of contracts and Lucas got nothing — she'd
+  // closed the notify popup with × rather than clicking a button). So the
+  // Modal's onClose itself is wired to send() below, with this guard to
+  // avoid firing twice if it's already in flight or already finished.
   async function send() {
+    if (sending || result) return;
     setSending(true);
     try {
       const res = await api("/notifications/status-change", "POST", {
@@ -1851,7 +1861,7 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
   }
 
   return (
-    <Modal title={isCreated ? t("Notify record created") : t("Notify status change")} onClose={onClose}>
+    <Modal title={isCreated ? t("Notify record created") : t("Notify status change")} onClose={send}>
       <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#94a3b8", lineHeight: 1.5 }}>
         {isCreated
           ? <>{t("Record created:")} <strong style={{ color: "#f1f5f9" }}>{recordLabel}</strong>. {t("Who should be notified by e-mail?")}</>
