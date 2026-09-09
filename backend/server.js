@@ -361,7 +361,12 @@ app.delete('/api/orders/:id', guardScreen('orders'), (req, res) => {
     db.prepare('UPDATE proformas SET order_id=NULL WHERE order_id=?').run(req.params.id);
     // Contracts, Commercial Invoices, Inspections and Packing Lists are all
     // generated downstream FROM the Order itself, so it's correct for them
-    // to go away with it.
+    // to go away with it. Each Contract also has its own Supplier Flow
+    // (financial_suppliers) entry generated alongside it — same orphan risk
+    // as deleting a Contract directly (see DELETE /api/contracts/:id), so it
+    // has to be cleaned up explicitly here too, before the contracts
+    // themselves are gone and there's no order_id left to find them by.
+    db.prepare('DELETE FROM financial_suppliers WHERE contract_id IN (SELECT id FROM supplier_contracts WHERE order_id=?)').run(req.params.id);
     db.prepare('DELETE FROM supplier_contracts WHERE order_id=?').run(req.params.id);
     db.prepare('DELETE FROM commercial_invoices WHERE order_id=?').run(req.params.id);
     db.prepare('DELETE FROM inspections WHERE order_id=?').run(req.params.id);
@@ -389,6 +394,16 @@ app.patch('/api/orders/:id/status', (req, res) => {
 });
 
 app.delete('/api/contracts/:id', guardScreen('contracts'), (req, res) => {
+  // financial_suppliers.contract_id declares ON DELETE SET NULL, but
+  // PRAGMA foreign_keys is never turned on in this app, so that clause is
+  // purely documentation — without this explicit delete, the Supplier Flow
+  // entry created alongside the contract (see POST /api/financial/suppliers
+  // right after POST /api/contracts on the frontend) would survive as an
+  // orphan, and re-generating a replacement contract would leave TWO
+  // entries in Supplier Flow for the same deal. Deleted unconditionally,
+  // even if already marked Paid — matches the Swift/Commercial Invoice
+  // cascade-delete precedent.
+  db.prepare('DELETE FROM financial_suppliers WHERE contract_id=?').run(req.params.id);
   db.prepare('DELETE FROM supplier_contracts WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -704,6 +719,16 @@ app.put('/api/contracts/:id', guardScreen('contracts'), (req, res) => {
 });
 
 app.delete('/api/contracts/:id', guardScreen('contracts'), (req, res) => {
+  // financial_suppliers.contract_id declares ON DELETE SET NULL, but
+  // PRAGMA foreign_keys is never turned on in this app, so that clause is
+  // purely documentation — without this explicit delete, the Supplier Flow
+  // entry created alongside the contract (see POST /api/financial/suppliers
+  // right after POST /api/contracts on the frontend) would survive as an
+  // orphan, and re-generating a replacement contract would leave TWO
+  // entries in Supplier Flow for the same deal. Deleted unconditionally,
+  // even if already marked Paid — matches the Swift/Commercial Invoice
+  // cascade-delete precedent.
+  db.prepare('DELETE FROM financial_suppliers WHERE contract_id=?').run(req.params.id);
   db.prepare('DELETE FROM supplier_contracts WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
