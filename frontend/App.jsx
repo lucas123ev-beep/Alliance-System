@@ -273,6 +273,10 @@ const TRANSLATIONS = {
     "📄 PDF": "📄 PDF",
     "OK": "好的",
     "✅ All contracts saved — Close": "✅ 所有合同已保存 — 关闭",
+    "Choose Contract": "选择合同",
+    "This order has more than one supplier. Generate all contracts at once, or just one — e.g. after deleting a single wrong contract.": "此订单有多个供应商。您可以一次生成所有合同，或只生成一个——例如在删除某个有误的合同后重新生成。",
+    "Generate All": "生成全部",
+    "Generate": "生成",
     "📊 Supplier Report": "📊 供应商报表",
     "⬇ Download Report (.xlsx)": "⬇ 下载报表 (.xlsx)",
     "Contract ✓": "合同 ✓",
@@ -7202,6 +7206,10 @@ const [notify, setNotify] = useState(null);
   useNavSeed(navSeed, onConsumeNav, setSearch);
   const [contractModal, setContractModal] = useState(null);
   const [savedContracts, setSavedContracts] = useState([]);
+  // Order currently showing the "Generate All / choose one supplier" picker
+  // — only used when an order has more than one supplier, so redoing a
+  // single wrong contract doesn't force regenerating every other one too.
+  const [contractPicker, setContractPicker] = useState(null);
   const [ciNotification, setCiNotification] = useState(null);
   useEscapeToClose(!!ciNotification, () => setCiNotification(null));
   // Per-item Inspection generation: mirrors contractModal/savedContracts
@@ -7297,7 +7305,14 @@ const prevStatus = { "In Production": "Pending", Inspection: "In Production", Co
   load();
   setNotify({ entityType: "commercial-invoices", recordLabel: ci.number || number, eventType: "created" });
 };
-const generateContract = (order) => {
+// onlySupplier: when set, only that one supplier's contract is generated
+// (contractModal ends up with a single entry) instead of all of them —
+// used by the "Choose Contract" picker so redoing one wrong contract on a
+// multi-supplier order doesn't force regenerating every other one too.
+// The numbering (baseNumber-N) is still derived from that supplier's
+// position in the FULL supplier list, so a lone regenerated contract keeps
+// the same number it originally had (e.g. "-3" stays "-3").
+const generateContract = (order, onlySupplier = null) => {
   // No "PO-" prefix — the client wants the exact same reference number on
   // every document type for a given deal (Proforma, CI, Packing List,
   // Contract), not a different-looking system code per type. Same "ORD-"
@@ -7345,7 +7360,9 @@ const generateContract = (order) => {
   items_json: JSON.stringify(order.items || []),
 }]);
   } else {
-    setContractModal(suppliers.map((supplier, supplierIdx) => {
+    const targetSuppliers = onlySupplier ? suppliers.filter(s => s === onlySupplier) : suppliers;
+    setContractModal(targetSuppliers.map((supplier) => {
+const supplierIdx = suppliers.indexOf(supplier);
 const supplierItems = (order.items || []).filter(i => i.supplier === supplier);
 const total = supplierItems.reduce((sum, i) => sum + ((parseFloat(i.cost_price) || parseFloat(i.unit_price) || 0) * (parseFloat(i.quantity) || 0)), 0);
 const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency || order.currency || "USD";
@@ -7647,6 +7664,42 @@ onSave={async b => {
     </div>
   </Modal>
 )}
+{contractPicker && (() => {
+  const orderSuppliers = [...new Set((contractPicker.items || []).map(i => i.supplier).filter(Boolean))];
+  const existingBySupplier = supplier => contracts.find(c => Number(c.order_id) === Number(contractPicker.id) && c.supplier === supplier);
+  return (
+    <Modal title={t("Choose Contract")} onClose={() => setContractPicker(null)}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <p style={{ margin: 0, fontSize: "13px", color: "#94a3b8" }}>
+          {t("This order has more than one supplier. Generate all contracts at once, or just one — e.g. after deleting a single wrong contract.")}
+        </p>
+        <Btn color="#8b5cf6" onClick={() => { generateContract(contractPicker); setContractPicker(null); }}>
+          🏭 {t("Generate All")}
+        </Btn>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {orderSuppliers.map(supplier => {
+            const existing = existingBySupplier(supplier);
+            return (
+              <div key={supplier} style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                background: "#1e293b", borderRadius: "8px", padding: "10px 14px",
+              }}>
+                <span style={{ fontSize: "13px", color: "#f1f5f9" }}>{existing ? "✅" : "🏭"} {supplier}</span>
+                <Btn small outline={!existing} color={existing ? "#10b981" : "#64748b"}
+                  onClick={() => {
+                    if (existing) { setEditContract(existing); setContractPicker(null); }
+                    else { generateContract(contractPicker, supplier); setContractPicker(null); }
+                  }}>
+                  {existing ? t("Edit") : t("Generate")}
+                </Btn>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </Modal>
+  );
+})()}
 
       {ciNotification && (
         <div style={{
@@ -7711,7 +7764,17 @@ const hasCommercial = commercials.find(c => Number(c.order_id) === Number(r.id))
   return (
     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
       <Btn small color={hasContract.length > 0 ? "#8b5cf6" : "#334155"}
-  onClick={() => hasContract.length > 0 ? setEditContract(hasContract[0]) : generateContract(r)}>
+  onClick={() => {
+    // Orders with more than one supplier need a per-supplier choice —
+    // otherwise clicking here either only ever opens/edits the FIRST
+    // contract, or (if none exist yet) regenerates ALL of them at once,
+    // with no way to redo just the one that was wrong without recreating
+    // every other already-correct contract too.
+    const orderSuppliers = [...new Set((r.items || []).map(i => i.supplier).filter(Boolean))];
+    if (orderSuppliers.length > 1) { setContractPicker(r); return; }
+    if (hasContract.length > 0) setEditContract(hasContract[0]);
+    else generateContract(r);
+  }}>
   🤝 {hasContract.length > 0 ? t("Contract ✓") : t("Contract")}
 </Btn>
       <Btn small outline={!hasCommercial} color={hasCommercial ? "#10b981" : "#64748b"}
