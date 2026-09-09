@@ -117,7 +117,16 @@ function activityLogger(db) {
   `);
 
   return (req, res, next) => {
-    const route = matchRoute(req.method, req.path);
+    // req.path (and req.url) get the mount prefix stripped by Express for
+    // the duration of a middleware mounted via app.use('/api', ...) — this
+    // middleware would see "/quotations/42" instead of "/api/quotations/42"
+    // if it matched against req.path, so every regex above (all anchored on
+    // "^/api/...") would silently never match anything. req.originalUrl is
+    // never rewritten this way, so that's what has to be matched against
+    // instead (query string stripped, since it's irrelevant here and would
+    // break the "$" end-anchors on routes with no :id, like POST /api/orders).
+    const path = req.originalUrl.split('?')[0];
+    const route = matchRoute(req.method, path);
     if (!route) return next();
 
     // DELETE responses are just {success:true} — nothing to read a label
@@ -138,7 +147,7 @@ function activityLogger(db) {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         try {
           const label = req.method === 'DELETE' ? preDeleteLabel : labelFromRow(body, route.labelCols);
-          const action = actionFor(req.method, req.path);
+          const action = actionFor(req.method, path);
           const detail = action === 'status_changed' && req.body && req.body.status
             ? `→ ${req.body.status}` : null;
           insert.run(route.entityType, label || null, action, detail, actorName(req));
