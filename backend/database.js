@@ -530,6 +530,27 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_username, created_at);
+
+  -- Cross-entity audit trail — separate from the notifications table above:
+  -- notifications is a per-recipient, opt-in e-mail inbox (only fires for
+  -- the specific create/status-change/document events each screen wires up,
+  -- and only to whoever was actually picked as a recipient), while this is
+  -- a blanket record of every create/update/status-change/delete across the
+  -- whole system, written automatically by the activityLogger middleware
+  -- (see backend/activityLog.js) regardless of who's notified about it.
+  -- Feeds the "Activity" screen, visible only to the same four people who
+  -- already see Swift HKAG (see permissions.js) — Lucas asked for this
+  -- after finding out notifications don't (and shouldn't) cover everything.
+  CREATE TABLE IF NOT EXISTS activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    record_label TEXT,
+    action TEXT NOT NULL, -- 'created' | 'updated' | 'status_changed' | 'deleted'
+    detail TEXT,
+    actor TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_activity_log_created_at ON activity_log(created_at);
 `);
 
 // ─── Defensive migrations for pre-existing databases (e.g. Render disk) ──────

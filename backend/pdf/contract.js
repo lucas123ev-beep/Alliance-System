@@ -1,4 +1,13 @@
-const LOGO = require("./logo");
+// This document's Buyer is always the Ningbo entity (see the "acq =
+// NINGBO_ACQ" comment in server.js's /api/contracts/:id/pdf route — supplier
+// purchase contracts always run through Ningbo, never HKAG, regardless of
+// which Acquisition Company was picked on the linked Order). So unlike the
+// client-facing templates (pdf/layout.js's themeFor/applyTheme, which switch
+// between HKAG-navy and Ningbo-gray per document), this one has no
+// switching to do — it's always the Ningbo wordmark and Ningbo's gray
+// accent, hardcoded rather than threaded through a theme helper that would
+// never actually pick anything else here.
+const LOGO_NINGBO = require("./logoNingbo");
 const { escapeHtml, fmtNumber, fmtMoney } = require("./helpers");
 
 // Supplier Purchase Contract (采购合同) — Chinese-language PO used with
@@ -25,44 +34,51 @@ function renderContract(params) {
     </tr>
   `).join("");
 
-  // Navy (#0D1627) accents matching the client-facing Proforma/Commercial
-  // Invoice/Packing List letterhead (logo.js), applied conservatively here
-  // — this is an internal bilingual legal contract with the factory, so it
-  // keeps its plain black/white bordered-table body instead of the sales
+  // Gray (#58595B), matching the Ningbo entity's own wordmark/letterhead
+  // (pdf/logoNingbo.js, same color used in pdf/layout.js's Ningbo theme and
+  // the Questionnaire xlsx) — this document's Buyer is always Ningbo, so its
+  // branding is too, never the HKAG navy. Applied conservatively here — this
+  // is an internal bilingual legal contract with the factory, so it keeps
+  // its plain black/white bordered-table body instead of the sales
   // documents' card-based layout; only the letterhead rule, title, table
   // header and totals row pick up the brand color.
-  const NAVY = "#0D1627";
+  const GRAY = "#58595B";
   const css = `
     * { box-sizing: border-box; }
     body { margin: 0; padding: 22px 30px; font-family: "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; font-size: 10.5px; color: #1a1a1a; }
     table { width: 100%; border-collapse: collapse; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid ${NAVY}; }
-    .header img.logo { height: 32px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid ${GRAY}; }
+    /* Fixed WIDTH, not height — the Ningbo wordmark's aspect ratio
+       (~4.23:1) is much wider per unit height than HKAG's (~3.03:1, see
+       pdf/logo.js), so a fixed height here would render it oversized. Same
+       150px width pdf/layout.js's Ningbo theme and the Questionnaire xlsx
+       already use for this same logo. */
+    .header img.logo { width: 150px; height: auto; }
     .header .company { text-align: right; font-size: 10px; line-height: 1.5; }
-    .header .company .cn { font-weight: bold; font-size: 12px; color: ${NAVY}; }
-    .header .company .en { font-weight: bold; font-size: 10px; color: ${NAVY}; }
-    .title-bar { text-align: center; font-weight: bold; font-size: 15px; letter-spacing: 4px; margin: 4px 0 10px; color: ${NAVY}; }
+    .header .company .cn { font-weight: bold; font-size: 12px; color: ${GRAY}; }
+    .header .company .en { font-weight: bold; font-size: 10px; color: ${GRAY}; }
+    .title-bar { text-align: center; font-weight: bold; font-size: 15px; letter-spacing: 4px; margin: 4px 0 10px; color: ${GRAY}; }
     .meta-row { display: flex; justify-content: space-between; font-size: 10.5px; margin-bottom: 8px; }
     /* Same page-break fix as the client-facing documents (see layout.js) —
        keeps a row from being sliced across a page boundary. */
     .items-table tr { break-inside: avoid; page-break-inside: avoid; }
     .items-table td, .items-table th { border: 1px solid #333; padding: 5px 6px; font-size: 9.5px; }
-    .items-table th { background: ${NAVY}; color: #fff; font-size: 9px; }
+    .items-table th { background: ${GRAY}; color: #fff; font-size: 9px; }
     .items-table .num { text-align: right; }
-    .totals-row td { font-weight: bold; background: #f2f2f2; border-top: 1.5px solid ${NAVY}; }
+    .totals-row td { font-weight: bold; background: #f2f2f2; border-top: 1.5px solid ${GRAY}; }
     .remarks { border: 1px solid #333; border-top: none; padding: 8px 10px; }
     .remarks .req-title { text-align: center; font-weight: bold; background: #eee; margin: -8px -10px 8px; padding: 4px 0; border-bottom: 1px solid #333; }
     .clause { margin: 5px 0; line-height: 1.5; }
     .clause b { font-weight: bold; }
     .sign-block { display: flex; justify-content: space-between; margin-top: 40px; }
     .sign-block .party { width: 46%; font-size: 10px; line-height: 1.8; }
-    .sign-block .party .role { font-weight: bold; margin-bottom: 4px; color: ${NAVY}; }
+    .sign-block .party .role { font-weight: bold; margin-bottom: 4px; color: ${GRAY}; }
     .sign-line { border-top: 1px solid #333; margin-top: 30px; padding-top: 4px; }
   `;
 
   const body = `
     <div class="header">
-      <img class="logo" src="${LOGO}" alt="Alliance Global" />
+      <img class="logo" src="${LOGO_NINGBO}" alt="Ningbo World Alliance Trading" />
       <div class="company">
         ${acq.chineseName ? `<div class="cn">${escapeHtml(acq.chineseName)}</div>` : ""}
         <div class="en">${escapeHtml(acq.name)}</div>

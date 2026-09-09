@@ -46,11 +46,18 @@ const ALL_SCREENS = [
 // `screens` arrays instead.
 const SWIFT_HKAG_SCREEN = "swift-hkag";
 
+// Same reasoning, same four people — the Activity screen shows every
+// create/edit/status-change/delete across the WHOLE system (see
+// backend/activityLog.js + GET /api/activity), which is even more
+// sensitive than Swift HKAG alone, so it rides along on the same
+// restriction rather than getting its own separate flag.
+const ACTIVITY_SCREEN = "activity";
+
 const PERMISSIONS = {
-  lucas:     { screens: [...ALL_SCREENS, SWIFT_HKAG_SCREEN], hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
-  martiello: { screens: [...ALL_SCREENS, SWIFT_HKAG_SCREEN], hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
-  gabriel:   { screens: [...ALL_SCREENS, SWIFT_HKAG_SCREEN], hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
-  juliana:   { screens: [...ALL_SCREENS, SWIFT_HKAG_SCREEN], hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
+  lucas:     { screens: [...ALL_SCREENS, SWIFT_HKAG_SCREEN, ACTIVITY_SCREEN], hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
+  martiello: { screens: [...ALL_SCREENS, SWIFT_HKAG_SCREEN, ACTIVITY_SCREEN], hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
+  gabriel:   { screens: [...ALL_SCREENS, SWIFT_HKAG_SCREEN, ACTIVITY_SCREEN], hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
+  juliana:   { screens: [...ALL_SCREENS, SWIFT_HKAG_SCREEN, ACTIVITY_SCREEN], hideCommercialStatus: false, hideMargin: false, canViewProfit: true },
 
   // Full access, but never sees Commercial Invoice status (screen or
   // Dashboard card) or the Product Real Margin indicator.

@@ -41,6 +41,7 @@ const { buildPackingListWorkbook } = require('./xlsx/packingListXlsx');
 const { buildQuestionnaireWorkbook } = require('./xlsx/questionnaireXlsx');
 const { STANDARD_QUESTIONS } = require('./questionnaireQuestions');
 const { buildCalendarEvents } = require('./calendar');
+const { activityLogger } = require('./activityLog');
 const { PROBLEM_OPTIONS, SOLUTION_OPTIONS, findProblem, findSolution, computeRating } = require('./supplierEvaluationOptions');
 const {
   hashPassword, verifyPassword, generateToken, generateTempPassword, requireAuth, guardScreen, actorName,
@@ -161,6 +162,11 @@ app.post('/api/login', loginLimiter, (req, res) => {
 });
 
 app.use('/api', requireAuth(db));
+// Records every create/update/status-change/delete matched in
+// backend/activityLog.js into activity_log, for the Activity screen — has
+// to run after requireAuth (needs req.user for the actor name) and before
+// the actual route handlers (it wraps res.json before they call it).
+app.use('/api', activityLogger(db));
 
 app.post('/api/logout', (req, res) => {
   const token = (req.headers.authorization || '').replace(/^Bearer /, '');
@@ -1354,6 +1360,20 @@ app.get('/api/calendar', (req, res) => {
   const canSeeRestricted = !!(req.user?.permissions?.screens || []).includes('swift-hkag');
   const events = buildCalendarEvents(db).filter(e => !e.restricted || canSeeRestricted);
   res.json(events);
+});
+
+// Cross-entity Activity log — whole endpoint is restricted, not just parts
+// of it (unlike /api/calendar above), to the same four people who already
+// see Swift HKAG: this is literally everyone's create/edit/delete history
+// across every screen, not just one sensitive slice of it. Rows are
+// written automatically by the activityLogger middleware (see
+// backend/activityLog.js) — this route only ever reads.
+app.get('/api/activity', (req, res) => {
+  if (!(req.user?.permissions?.screens || []).includes('swift-hkag')) {
+    return res.status(403).json({ error: "You don't have access to this section." });
+  }
+  const rows = db.prepare('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 2000').all();
+  res.json(rows);
 });
 
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
@@ -2818,18 +2838,12 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
     return res.status(400).json({ error: 'recordLabel required (and newStatus, unless eventType is "created" or "document")' });
   }
 
-  // Lucas gets every notifiable change in the system — his own explicit
-  // request — regardless of who was actually picked (or not picked at
-  // all) in the recipient picker on the frontend. Only skipped when he's
-  // the one making the change himself, since notifying yourself about
-  // your own action would just be noise. This is enforced here rather
-  // than only in the picker UI so it can't be bypassed by unchecking him
-  // — see NotifyStatusChangeModal/SendDocumentModal on the frontend,
-  // which no longer skip calling this route just because nothing/nobody
-  // else was selected.
-  const requestedSet = new Set(Array.isArray(recipientUsernames) ? recipientUsernames : []);
-  if (String(req.user?.username || '').toLowerCase() !== 'lucas') requestedSet.add('lucas');
-  const requested = [...requestedSet];
+  // Plain opt-in: only whoever was actually checked in the recipient
+  // picker gets notified — Lucas included, same as everyone else. (A
+  // previous version force-added Lucas to every call regardless of
+  // selection; reverted per his own request once the Activity screen gave
+  // him a way to see everything without being copied on every e-mail.)
+  const requested = Array.isArray(recipientUsernames) ? recipientUsernames : [];
   if (requested.length === 0) return res.json({ sent: [], skipped: [] });
 
   const users = db.prepare('SELECT username, name, email FROM users').all();

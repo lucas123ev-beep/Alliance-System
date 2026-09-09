@@ -507,6 +507,18 @@ const TRANSLATIONS = {
     "No evaluations recorded yet.": "暂无评估记录。",
     "Net": "净分",
     "By": "记录人",
+    "Activity": "操作记录",
+    "All screens": "所有模块",
+    "All actions": "所有操作",
+    "Search by record or person…": "按记录或人员搜索…",
+    "Created": "已创建",
+    "Updated": "已修改",
+    "Status changed": "状态已变更",
+    "Deleted": "已删除",
+    "When": "时间",
+    "Screen": "模块",
+    "Record": "记录",
+    "Action": "操作",
     "📊 Evaluation Report": "📊 评估报表",
     "Generate Evaluation Report": "生成评估报表",
     "All Suppliers": "所有供应商",
@@ -648,6 +660,17 @@ const ENTITY_LABELS_EN = {
   samples: "Sample",
   "financial-suppliers": "Supplier Payment",
   "financial-clients": "Client Payment",
+  // Also used by the Activity screen (see backend/activityLog.js), which
+  // covers a few entity types the e-mail notification system never did —
+  // Products/Clients/Suppliers/Freight Agents never trigger a notification,
+  // and swift-hkag was missing here even though it DOES (a pre-existing
+  // gap in the bell's own labels, harmless there since it just fell back to
+  // the raw entityType string, but worth fixing while touching this dict).
+  "swift-hkag": "Swift HKAG",
+  products: "Product",
+  clients: "Client",
+  suppliers: "Supplier",
+  "freight-agents": "Freight Agent",
 };
 
 // One-line summary for a notification row — mirrors the three eventTypes
@@ -673,6 +696,15 @@ function timeAgo(sqliteUTC) {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
+}
+
+// Absolute local date+time (not relative like timeAgo above) — used by the
+// Activity screen, where pinpointing exactly when something happened
+// matters more than a rough "2h ago". Same UTC-parsing fixup as timeAgo.
+function fmtDateTime(sqliteUTC) {
+  if (!sqliteUTC) return "—";
+  const d = new Date(String(sqliteUTC).replace(" ", "T") + "Z");
+  return d.toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" });
 }
 
 // A short two-tone "ding" synthesized with the Web Audio API instead of
@@ -1828,21 +1860,14 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
     setUploading(false);
   }
 
-  // Always calls through, even with nobody checked — Lucas gets every
-  // notifiable change regardless of what's picked here (his own explicit
-  // request), enforced server-side in /api/notifications/status-change so
-  // it can't be skipped just by leaving everyone unchecked.
-  //
-  // This also has to run when the modal is dismissed via the × button or
-  // Escape, not just the two explicit buttons — otherwise someone who
-  // closes the popup instead of clicking "Don't notify" skips the API call
-  // entirely, and Lucas never gets added server-side either (found after
-  // Amber generated a batch of contracts and Lucas got nothing — she'd
-  // closed the notify popup with × rather than clicking a button). So the
-  // Modal's onClose itself is wired to send() below, with this guard to
-  // avoid firing twice if it's already in flight or already finished.
+  // Lucas is no longer force-added server-side (reverted per his explicit
+  // request — the new Activity screen covers "see everything" now, so
+  // notifications went back to plain opt-in: only whoever is actually
+  // checked here gets emailed, Lucas included, same as anyone else). So
+  // this can go back to skipping the API call entirely when nobody's
+  // selected, instead of always calling through.
   async function send() {
-    if (sending || result) return;
+    if (selected.size === 0) { onClose(); return; }
     setSending(true);
     try {
       const res = await api("/notifications/status-change", "POST", {
@@ -1861,7 +1886,7 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
   }
 
   return (
-    <Modal title={isCreated ? t("Notify record created") : t("Notify status change")} onClose={send}>
+    <Modal title={isCreated ? t("Notify record created") : t("Notify status change")} onClose={onClose}>
       <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#94a3b8", lineHeight: 1.5 }}>
         {isCreated
           ? <>{t("Record created:")} <strong style={{ color: "#f1f5f9" }}>{recordLabel}</strong>. {t("Who should be notified by e-mail?")}</>
@@ -1914,11 +1939,7 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
         <p style={{ fontSize: "13px", color: "#f87171", margin: "0 0 12px" }}>{t("Failed to send. Try again.")}</p>
       )}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-        {/* Still calls send() — the status change already happened, this
-            only skips notifying anyone ELSE about it. Lucas is silently
-            always included server-side (see /api/notifications/status-
-            change) — deliberately not surfaced in this UI. */}
-        <Btn outline color="#64748b" onClick={send} disabled={sending}>{t("Don't notify")}</Btn>
+        <Btn outline color="#64748b" onClick={onClose} disabled={sending}>{t("Don't notify")}</Btn>
         <Btn onClick={send} disabled={sending || uploading || recipients === null || recipients.length === 0}>
           {sending ? t("Sending…") : t("Send")}
         </Btn>
@@ -1964,13 +1985,11 @@ function SendDocumentModal({ entityType, recordLabel, documentLabel, attachments
   // gets one e-mail per format, its subject/documentLabel naming which one
   // it is (e.g. "PDF" vs "Spreadsheet") so it's clear they're not
   // duplicates. Results are combined across all the calls.
-  // Proceeds even with nobody checked (Lucas still gets it — see the
-  // server-side enforcement in /api/notifications/status-change) — only
-  // bails out if the attachment itself isn't ready yet. Hitting Cancel
-  // instead never calls this at all, so it's still a real "don't send
-  // this document to anyone" escape hatch.
+  // Skips the API call entirely with nobody checked, same as before Lucas's
+  // force-add was reverted — plain opt-in notification, nothing to send if
+  // no one was picked.
   async function send() {
-    if (!ready) { onClose(); return; }
+    if (!ready || selected.size === 0) { onClose(); return; }
     setSending(true);
     try {
       const results = await Promise.all((attachments || []).map(att => api("/notifications/status-change", "POST", {
@@ -9756,6 +9775,90 @@ function Reports() {
   );
 }
 
+// ─── ACTIVITY LOG ───────────────────────────────────────────────────────────
+// Cross-entity audit trail — every create/edit/status-change/delete across
+// the whole system, written server-side by backend/activityLog.js and just
+// read here. Only reachable by Lucas/Martiello/Gabriel/Juliana (same group
+// as Swift HKAG — see permissions.js), same as the backend route itself
+// enforces. Separate from the notification bell on purpose: notifications
+// are opt-in per recipient and only cover a handful of event types, this is
+// everything, for anyone in that group to browse without anyone getting an
+// e-mail because of it.
+const ACTIVITY_ACTION_LABELS = {
+  created: "Created",
+  updated: "Updated",
+  status_changed: "Status changed",
+  deleted: "Deleted",
+};
+const ACTIVITY_ACTION_COLORS = {
+  created: "#10b981",
+  updated: "#60a5fa",
+  status_changed: "#f59e0b",
+  deleted: "#ef4444",
+};
+
+function Activity() {
+  const t = useT();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [entityFilter, setEntityFilter] = useState("");
+  const [actionFilter, setActionFilter] = useState("");
+
+  const load = useCallback(() => {
+    api("/activity").then(r => { setRows(r || []); setLoading(false); });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const entityTypes = [...new Set(rows.map(r => r.entity_type))].sort();
+
+  const filtered = rows.filter(r => {
+    if (entityFilter && r.entity_type !== entityFilter) return false;
+    if (actionFilter && r.action !== actionFilter) return false;
+    const q = search.toLowerCase();
+    if (!q) return true;
+    return (r.record_label || "").toLowerCase().includes(q) || (r.actor || "").toLowerCase().includes(q);
+  });
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>{t("Activity")}</h2>
+      </div>
+      <div style={{ display: "flex", gap: "10px", marginBottom: "16px", flexWrap: "wrap" }}>
+        <Input value={search} onChange={e => setSearch(e.target.value)}
+          placeholder={t("Search by record or person…")} style={{ ...inputStyle, flex: "1 1 240px" }} />
+        <Select value={entityFilter} onChange={e => setEntityFilter(e.target.value)} style={{ width: "auto" }}>
+          <option value="">{t("All screens")}</option>
+          {entityTypes.map(et => <option key={et} value={et}>{t(ENTITY_LABELS_EN[et] || et)}</option>)}
+        </Select>
+        <Select value={actionFilter} onChange={e => setActionFilter(e.target.value)} style={{ width: "auto" }}>
+          <option value="">{t("All actions")}</option>
+          {Object.keys(ACTIVITY_ACTION_LABELS).map(a => <option key={a} value={a}>{t(ACTIVITY_ACTION_LABELS[a])}</option>)}
+        </Select>
+      </div>
+      {loading ? (
+        <div style={{ textAlign: "center", padding: "48px", color: "#475569", fontSize: "14px" }}>{t("Loading…")}</div>
+      ) : (
+        <Table
+          cols={[
+            { label: "When", sortValue: r => r.created_at, render: r => <span style={{ color: "#94a3b8", fontSize: "12.5px" }}>{fmtDateTime(r.created_at)}</span> },
+            { label: "Screen", sortValue: r => r.entity_type, render: r => t(ENTITY_LABELS_EN[r.entity_type] || r.entity_type) },
+            { label: "Record", key: "record_label" },
+            { label: "Action", sortValue: r => r.action, render: r => (
+              <span style={{ color: ACTIVITY_ACTION_COLORS[r.action] || "#94a3b8", fontWeight: 600, fontSize: "12.5px" }}>
+                {t(ACTIVITY_ACTION_LABELS[r.action] || r.action)}{r.detail ? ` ${r.detail}` : ""}
+              </span>
+            ) },
+            { label: "By", key: "actor" },
+          ]}
+          rows={filtered}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── NAV CONFIG ───────────────────────────────────────────────────────────────
 const TABS = [
   { id: "dashboard", label: "Dashboard", icon: "◈" },
@@ -9774,6 +9877,10 @@ const TABS = [
   { id: "suppliers", label: "Suppliers", icon: "🏭" },
   { id: "freight-agents", label: "Freight Agents", icon: "🚢" },
   { id: "reports", label: "Reports", icon: "📊" },
+  // Only in `allowedScreens` for Lucas/Martiello/Gabriel/Juliana (see
+  // ACTIVITY_SCREEN in permissions.js) — same pattern as swift-hkag above,
+  // so it simply never shows up in the sidebar for anyone else.
+  { id: "activity", label: "Activity", icon: "📜" },
 ];
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
@@ -10106,6 +10213,7 @@ const renderTab = () => {
       case "contracts": return <Contracts navSeed={navSeedFor("contracts")} onConsumeNav={() => consumeNav("contracts")} />;
       case "fin-suppliers": return <Financial type="supplier" />;
       case "reports": return <Reports />;
+      case "activity": return <Activity />;
       default: return null;
     }
   };
