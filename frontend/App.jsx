@@ -4258,7 +4258,10 @@ const [f, setF] = useState(initial || {
   cost_per_ton: "", sale_per_ton: "",
   // Informational only — not used in any pricing calculation, just a
   // reference note shown next to Margin % for whoever's pricing the item.
-  vat_pct: "",
+  // Defaults to 13% (the common rate) but stays fully editable — see the
+  // yellow-bordered Input below, which calls attention to it precisely
+  // because it's a default and not a per-item fact someone actually typed.
+  vat_pct: "13",
   // What's counted/sold (Unit or Pair) for categories that don't already
   // have their own pricing unit (Chemical=liter/ton, Textile/DTF=meter) —
   // see the Sold By field below.
@@ -4789,7 +4792,12 @@ const handleSalePerLiterChange = (e) => {
       </div>
       <div style={{ flex: 1 }}>
         <Field label="VAT %">
-          <Input type="number" value={f.vat_pct || ""} onChange={set("vat_pct")} placeholder="e.g. 13" />
+          {/* Defaults to 13% (see initial state above) but is fully
+              editable — the yellow border is there so whoever's filling
+              this out notices it's a default and double-checks it, instead
+              of it silently going through unnoticed like a normal field. */}
+          <Input type="number" value={f.vat_pct || ""} onChange={set("vat_pct")} placeholder="e.g. 13"
+            style={{ border: "2px solid #eab308" }} />
           <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>{t("Added on top of the Real Margin below.")}</div>
         </Field>
       </div>
