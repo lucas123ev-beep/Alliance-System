@@ -2758,6 +2758,14 @@ app.get('/api/financial/suppliers/:id/payment-notice-xlsx', async (req, res) => 
     if (!fin) return res.status(404).json({ error: 'Payment record not found' });
     const order = fin.order_id ? db.prepare('SELECT * FROM orders WHERE id=?').get(fin.order_id) : null;
     const supplierRow = findSupplierByName(fin.supplier);
+    // Which entity (HK/Ningbo) this Payment Request prints as — follows the
+    // linked Contract's own acquisition_company (see supplier_contracts and
+    // pdf/contract.js), so the two documents for the same deal always read
+    // as the same entity. Not every payment is tied to a Contract (e.g.
+    // freight or other misc supplier costs), so this falls back to Ningbo,
+    // same default the Contract itself uses.
+    const linkedContract = fin.contract_id ? db.prepare('SELECT acquisition_company FROM supplier_contracts WHERE id=?').get(fin.contract_id) : null;
+    const acq = getAcq(linkedContract?.acquisition_company || 'NINGBO');
 
     // Split-payment support: ?pct=20&label=Deposit renders just that
     // installment's slice of the total amount, with the label appended to
@@ -2769,11 +2777,11 @@ app.get('/api/financial/suppliers/:id/payment-notice-xlsx', async (req, res) => 
     const purpose = label ? `${fin.description || ''} — ${label} (${pct}%)`.trim() : fin.description;
 
     const workbook = buildPaymentNoticeWorkbook({
-      // Supplier payments always run through Ningbo too (same reasoning as
-      // the Contract PDF's Buyer) — the "Payer" field remains a manual
-      // override for the rare case that isn't true, but the default no
-      // longer follows the Order's Acquisition Company.
-      payer: fin.payer || NINGBO_ACQ.name,
+      // Defaults to whichever entity (HK/Ningbo) the linked Contract itself
+      // is issued as (acq, derived above) — "Payer" remains a manual
+      // override on the payment record itself for the rare case that isn't
+      // right.
+      payer: fin.payer || acq.name,
       applicationDate: fin.created_at ? fin.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
       paymentMethod: fin.payment_method,
       paymentDeadline: fin.due_date,
@@ -2789,6 +2797,7 @@ app.get('/api/financial/suppliers/:id/payment-notice-xlsx', async (req, res) => 
       purpose,
       applicant: fin.applicant,
       approvedBy: fin.approved_by,
+      acq,
     });
 
     const buffer = await workbook.xlsx.writeBuffer();

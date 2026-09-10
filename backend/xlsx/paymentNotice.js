@@ -6,26 +6,44 @@
 // receive this one as .xlsx instead of .pdf.
 const ExcelJS = require("exceljs");
 const LOGO = require("../pdf/logo");
+const LOGO_NINGBO = require("../pdf/logoNingbo");
 const { fmtDateShort, currencyLabel } = require("../pdf/helpers");
 
-// Navy (#0D1627) brand color, matching the redesigned Proforma/Commercial
-// Invoice/Packing List PDFs (see pdf/layout.js) — every generated workbook
-// in the app now reads as the same document family as the PDFs.
+// Navy (#0D1627) for HKAG, gray (#58595B) for Ningbo — same two-entity
+// theme as pdf/contract.js and xlsx/questionnaireXlsx.js. Which one prints
+// here follows the `acq` passed in, which the route derives from the
+// Payment's linked Contract (supplier_contracts.acquisition_company) when
+// there is one — a payment isn't always tied to a Contract, so this
+// defaults to Ningbo when there's nothing to derive it from (see
+// server.js's /api/financial/suppliers/:id/payment-notice-xlsx).
 const NAVY_ARGB = "FF0D1627";
-const HEADER_RULE = { style: "medium", color: { argb: NAVY_ARGB } };
+const GRAY_ARGB = "FF58595B";
 const LABEL_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF2F7" } };
-// Heavier rule used only for the outer edge of the Payer→Purpose block —
-// matches the thick outline the client added by hand to their own copy of
-// this file when asking for this styling.
-const THICK_RULE = { style: "thick", color: { argb: NAVY_ARGB } };
 const THIN_SEP = { style: "thin", color: { argb: "FFCCCCCC" } };
+
+function themeFor(acq) {
+  // Real HKAG logo artwork is ~900x297px (~3.03:1); Ningbo's is ~1600x378px
+  // (~4.23:1, much wider per unit height) — same fixed WIDTH for both here,
+  // height derived per logo's own ratio, so neither prints squished/
+  // stretched or oversized relative to the other.
+  return acq && acq.code === "NINGBO"
+    ? { accentArgb: GRAY_ARGB, logo: LOGO_NINGBO, logoWidth: 88, logoHeight: 21 }
+    : { accentArgb: NAVY_ARGB, logo: LOGO, logoWidth: 88, logoHeight: 29 };
+}
 
 function buildPaymentNoticeWorkbook(params) {
   const {
     payer, applicationDate, paymentMethod, paymentDeadline, payee,
     bankName, bankBranch, accountNumber, amount, currency, purpose,
-    applicant, approvedBy,
+    applicant, approvedBy, acq,
   } = params;
+
+  const theme = themeFor(acq);
+  // Heavier rule used only for the outer edge of the Payer→Purpose block —
+  // matches the thick outline the client added by hand to their own copy of
+  // this file when asking for this styling.
+  const HEADER_RULE = { style: "medium", color: { argb: theme.accentArgb } };
+  const THICK_RULE = { style: "thick", color: { argb: theme.accentArgb } };
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Payment Notice", {
@@ -38,15 +56,13 @@ function buildPaymentNoticeWorkbook(params) {
   sheet.mergeCells(1, 1, 1, 2);
   const titleCell = sheet.getCell(1, 1);
   titleCell.value = "Payment Request Form 付款申请单";
-  titleCell.font = { bold: true, size: 15, color: { argb: NAVY_ARGB } };
+  titleCell.font = { bold: true, size: 15, color: { argb: theme.accentArgb } };
   titleCell.alignment = { vertical: "middle", horizontal: "right" };
   sheet.getRow(1).height = 34;
   sheet.getCell(1, 1).border = { bottom: HEADER_RULE };
   sheet.getCell(1, 2).border = { bottom: HEADER_RULE };
-  // Real logo artwork is ~900x297px (~3.03:1) — width/height below must
-  // keep that ratio or the logo prints visibly squished/stretched.
-  const imageId = workbook.addImage({ base64: LOGO, extension: "png" });
-  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.15 }, ext: { width: 88, height: 29 } });
+  const imageId = workbook.addImage({ base64: theme.logo, extension: "png" });
+  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.15 }, ext: { width: theme.logoWidth, height: theme.logoHeight } });
 
   sheet.getRow(2).height = 6; // spacer between letterhead and the form
 
