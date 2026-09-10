@@ -703,12 +703,12 @@ app.get('/api/contracts', (req, res) => {
 });
 
 app.post('/api/contracts', guardScreen('contracts'), (req, res) => {
-  const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, items_json } = req.body;
+  const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, items_json, acquisition_company } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO supplier_contracts (order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, items_json, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency || 'USD', status || 'Draft', notes, items_json || null, actorName(req));
+      INSERT INTO supplier_contracts (order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, items_json, acquisition_company, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency || 'USD', status || 'Draft', notes, items_json || null, acquisition_company || 'NINGBO', actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM supplier_contracts WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -716,11 +716,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 });
 
 app.put('/api/contracts/:id', guardScreen('contracts'), (req, res) => {
-  const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes } = req.body;
+  const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, acquisition_company } = req.body;
   db.prepare(`
-    UPDATE supplier_contracts SET order_id=?, contract_number=?, supplier=?, sign_date=?, delivery_date=?, total=?, currency=?, status=?, notes=?, updated_by=?
+    UPDATE supplier_contracts SET order_id=?, contract_number=?, supplier=?, sign_date=?, delivery_date=?, total=?, currency=?, status=?, notes=?, acquisition_company=?, updated_by=?
     WHERE id=?
-  `).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, actorName(req), req.params.id);
+  `).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, acquisition_company || 'NINGBO', actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM supplier_contracts WHERE id=?').get(req.params.id));
 });
 
@@ -2698,11 +2698,14 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
       };
     });
 
-    // The Buyer on a Supplier Purchase Contract is always the Ningbo entity —
-    // procurement from Chinese suppliers always runs through Ningbo,
-    // regardless of which Acquisition Company (HK or Ningbo) was picked on
-    // the linked Order for invoicing the client.
-    const acq = NINGBO_ACQ;
+    // Which entity issues this Purchase Contract as Buyer — its own explicit
+    // choice (see the acquisition_company field on supplier_contracts),
+    // independent of whatever Acquisition Company was picked on the linked
+    // Order for invoicing the client. Defaults to Ningbo (procurement from
+    // Chinese suppliers normally runs through Ningbo) but any contract can
+    // be issued as HK instead — pdf/contract.js prints each with its own
+    // logo/accent color and Buyer bank block.
+    const acq = getAcq(contract.acquisition_company || 'NINGBO');
 
     // Summed alongside the Total Amount on the same row — only when every
     // item shares one unit (the common case: one contract, one fabric/good

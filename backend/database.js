@@ -241,6 +241,15 @@ db.exec(`
     status TEXT DEFAULT 'Draft',
     notes TEXT,
     items_json TEXT,
+    -- Which entity (HK / NINGBO) issues this Purchase Contract as Buyer —
+    -- independent of the linked Order's own acquisition_company (which
+    -- only drives client-facing invoicing), since Lucas wants the choice of
+    -- who buys FROM the supplier to be its own explicit decision, not
+    -- silently inherited. Defaults to NINGBO (purchasing from Chinese
+    -- factories normally runs through the Ningbo entity), but any contract
+    -- can be issued as HK instead — see pdf/contract.js for how the two
+    -- print with their own logo/accent color and Buyer bank block.
+    acquisition_company TEXT DEFAULT 'NINGBO',
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -789,6 +798,7 @@ const migrations = [
   ['orders', 'updated_by', 'TEXT'],
   ['commercial_invoices', 'updated_by', 'TEXT'],
   ['supplier_contracts', 'updated_by', 'TEXT'],
+  ['supplier_contracts', 'acquisition_company', "TEXT DEFAULT 'NINGBO'"],
   ['inspections', 'updated_by', 'TEXT'],
   ['financial_suppliers', 'updated_by', 'TEXT'],
   ['financial_clients', 'updated_by', 'TEXT'],

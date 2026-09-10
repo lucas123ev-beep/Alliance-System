@@ -1,14 +1,50 @@
-// This document's Buyer is always the Ningbo entity (see the "acq =
-// NINGBO_ACQ" comment in server.js's /api/contracts/:id/pdf route — supplier
-// purchase contracts always run through Ningbo, never HKAG, regardless of
-// which Acquisition Company was picked on the linked Order). So unlike the
-// client-facing templates (pdf/layout.js's themeFor/applyTheme, which switch
-// between HKAG-navy and Ningbo-gray per document), this one has no
-// switching to do — it's always the Ningbo wordmark and Ningbo's gray
-// accent, hardcoded rather than threaded through a theme helper that would
-// never actually pick anything else here.
+// This document's Buyer is whichever entity (HK / NINGBO) was picked for
+// THIS contract specifically (supplier_contracts.acquisition_company),
+// independent of the linked Order's own acquisition_company (which only
+// drives client-facing invoicing) — Lucas's explicit request: the choice of
+// who buys FROM the supplier is its own decision, not silently inherited.
+// Defaults to Ningbo (see server.js) since procurement from Chinese
+// factories normally runs through that entity, but HK can be picked
+// instead, in which case this prints with HK's own navy branding and its
+// existing HSBC account (see buyerInfoFor below) rather than Ningbo's
+// domestic Bank of China account, which only Ningbo has.
+const LOGO = require("./logo");
 const LOGO_NINGBO = require("./logoNingbo");
 const { escapeHtml, fmtNumber, fmtMoney } = require("./helpers");
+
+const NAVY = "#0D1627";
+const GRAY = "#58595B";
+
+function themeFor(acq) {
+  return acq && acq.code === "NINGBO"
+    ? { accent: GRAY, logo: LOGO_NINGBO, logoCss: "width: 150px; height: auto;" }
+    : { accent: NAVY, logo: LOGO, logoCss: "height: 32px; width: auto;" };
+}
+
+// Normalizes each entity's differently-shaped bank data into the one set
+// of fields the Buyer block prints. Ningbo has a dedicated `domesticBank`
+// (Bank of China, RMB, used specifically for paying Chinese factories) with
+// its own Tax ID — HK has no such domestic account, so it falls back to its
+// existing international `bank` block (HSBC, same one already used on the
+// HK Proforma/Commercial Invoice) and simply has no Tax ID to show.
+function buyerInfoFor(acq) {
+  if (acq.domesticBank) {
+    return {
+      taxId: acq.domesticBank.taxId || "",
+      bankName: acq.domesticBank.bankName || "",
+      account: acq.domesticBank.account || "",
+      address: acq.domesticBank.address || "",
+      tel: acq.domesticBank.tel || "",
+    };
+  }
+  return {
+    taxId: "",
+    bankName: acq.bank?.bankName || "",
+    account: [acq.bank?.account, acq.bank?.swift ? `SWIFT: ${acq.bank.swift}` : null].filter(Boolean).join(" — "),
+    address: acq.addressLine || acq.bank?.address || "",
+    tel: acq.tel || "",
+  };
+}
 
 // Supplier Purchase Contract (采购合同) — Chinese-language PO used with
 // Chinese factories/trading companies. Structure and clause wording are
@@ -19,6 +55,9 @@ function renderContract(params) {
     contractNumber, signDate, deliveryDate, acq, supplier, items, total, currency, remarks,
     totalQuantity, totalQuantityUnit, totalQuantityDecimals,
   } = params;
+
+  const theme = themeFor(acq);
+  const buyer = buyerInfoFor(acq);
 
   const rows = items.map((item, i) => `
     <tr>
@@ -34,51 +73,48 @@ function renderContract(params) {
     </tr>
   `).join("");
 
-  // Gray (#58595B), matching the Ningbo entity's own wordmark/letterhead
-  // (pdf/logoNingbo.js, same color used in pdf/layout.js's Ningbo theme and
-  // the Questionnaire xlsx) — this document's Buyer is always Ningbo, so its
-  // branding is too, never the HKAG navy. Applied conservatively here — this
-  // is an internal bilingual legal contract with the factory, so it keeps
-  // its plain black/white bordered-table body instead of the sales
-  // documents' card-based layout; only the letterhead rule, title, table
-  // header and totals row pick up the brand color.
-  const GRAY = "#58595B";
+  // Accent color/logo swap between HKAG-navy and Ningbo-gray, same theme
+  // pattern as pdf/layout.js's themeFor/applyTheme — applied conservatively
+  // here, since this is an internal bilingual legal contract with the
+  // factory, so it keeps its plain black/white bordered-table body instead
+  // of the sales documents' card-based layout; only the letterhead rule,
+  // title, table header and totals row pick up the brand color.
+  const ACCENT = theme.accent;
   const css = `
     * { box-sizing: border-box; }
     body { margin: 0; padding: 22px 30px; font-family: "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; font-size: 10.5px; color: #1a1a1a; }
     table { width: 100%; border-collapse: collapse; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid ${GRAY}; }
-    /* Fixed WIDTH, not height — the Ningbo wordmark's aspect ratio
-       (~4.23:1) is much wider per unit height than HKAG's (~3.03:1, see
-       pdf/logo.js), so a fixed height here would render it oversized. Same
-       150px width pdf/layout.js's Ningbo theme and the Questionnaire xlsx
-       already use for this same logo. */
-    .header img.logo { width: 150px; height: auto; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid ${ACCENT}; }
+    /* Ningbo's wordmark aspect ratio (~4.23:1) is much wider per unit
+       height than HKAG's (~3.03:1, see pdf/logo.js) — a fixed height would
+       render it oversized, so theme.logoCss picks width-based sizing for
+       Ningbo and the original height-based sizing for HKAG. */
+    .header img.logo { ${theme.logoCss} }
     .header .company { text-align: right; font-size: 10px; line-height: 1.5; }
-    .header .company .cn { font-weight: bold; font-size: 12px; color: ${GRAY}; }
-    .header .company .en { font-weight: bold; font-size: 10px; color: ${GRAY}; }
-    .title-bar { text-align: center; font-weight: bold; font-size: 15px; letter-spacing: 4px; margin: 4px 0 10px; color: ${GRAY}; }
+    .header .company .cn { font-weight: bold; font-size: 12px; color: ${ACCENT}; }
+    .header .company .en { font-weight: bold; font-size: 10px; color: ${ACCENT}; }
+    .title-bar { text-align: center; font-weight: bold; font-size: 15px; letter-spacing: 4px; margin: 4px 0 10px; color: ${ACCENT}; }
     .meta-row { display: flex; justify-content: space-between; font-size: 10.5px; margin-bottom: 8px; }
     /* Same page-break fix as the client-facing documents (see layout.js) —
        keeps a row from being sliced across a page boundary. */
     .items-table tr { break-inside: avoid; page-break-inside: avoid; }
     .items-table td, .items-table th { border: 1px solid #333; padding: 5px 6px; font-size: 9.5px; }
-    .items-table th { background: ${GRAY}; color: #fff; font-size: 9px; }
+    .items-table th { background: ${ACCENT}; color: #fff; font-size: 9px; }
     .items-table .num { text-align: right; }
-    .totals-row td { font-weight: bold; background: #f2f2f2; border-top: 1.5px solid ${GRAY}; }
+    .totals-row td { font-weight: bold; background: #f2f2f2; border-top: 1.5px solid ${ACCENT}; }
     .remarks { border: 1px solid #333; border-top: none; padding: 8px 10px; }
     .remarks .req-title { text-align: center; font-weight: bold; background: #eee; margin: -8px -10px 8px; padding: 4px 0; border-bottom: 1px solid #333; }
     .clause { margin: 5px 0; line-height: 1.5; }
     .clause b { font-weight: bold; }
     .sign-block { display: flex; justify-content: space-between; margin-top: 40px; }
     .sign-block .party { width: 46%; font-size: 10px; line-height: 1.8; }
-    .sign-block .party .role { font-weight: bold; margin-bottom: 4px; color: ${GRAY}; }
+    .sign-block .party .role { font-weight: bold; margin-bottom: 4px; color: ${ACCENT}; }
     .sign-line { border-top: 1px solid #333; margin-top: 30px; padding-top: 4px; }
   `;
 
   const body = `
     <div class="header">
-      <img class="logo" src="${LOGO_NINGBO}" alt="Ningbo World Alliance Trading" />
+      <img class="logo" src="${theme.logo}" alt="${escapeHtml(acq.name)}" />
       <div class="company">
         ${acq.chineseName ? `<div class="cn">${escapeHtml(acq.chineseName)}</div>` : ""}
         <div class="en">${escapeHtml(acq.name)}</div>
@@ -117,11 +153,11 @@ function renderContract(params) {
     <div class="sign-block">
       <div class="party">
         <div class="role">买方 / Buyer: ${escapeHtml(acq.chineseName || acq.name)}</div>
-        <div>税号 / Tax ID: ${escapeHtml(acq.domesticBank.taxId)}</div>
-        <div>开户行 / Bank: ${escapeHtml(acq.domesticBank.bankName)}</div>
-        <div>账号 / Account: ${escapeHtml(acq.domesticBank.account)}</div>
-        <div>地址 / Address: ${escapeHtml(acq.domesticBank.address)}</div>
-        <div>电话 / Tel: ${escapeHtml(acq.domesticBank.tel)}</div>
+        ${buyer.taxId ? `<div>税号 / Tax ID: ${escapeHtml(buyer.taxId)}</div>` : ""}
+        <div>开户行 / Bank: ${escapeHtml(buyer.bankName)}</div>
+        <div>账号 / Account: ${escapeHtml(buyer.account)}</div>
+        <div>地址 / Address: ${escapeHtml(buyer.address)}</div>
+        <div>电话 / Tel: ${escapeHtml(buyer.tel)}</div>
         <div class="sign-line">签名 / 公司盖章 Signature / Company Seal &nbsp;&nbsp;&nbsp;&nbsp; 日期 Date:</div>
       </div>
       <div class="party">

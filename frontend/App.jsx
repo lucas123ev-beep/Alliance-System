@@ -4409,6 +4409,41 @@ const handleSalePerMeterChange = (e) => {
   }));
 };
 
+// Height (roll length) is the OTHER half of the Cost/Sale Per Meter <->
+// Cost/Sale Price relationship the two pairs of handlers above already
+// keep in sync (editing either the total price or the per-meter rate
+// recomputes the other, using height as the conversion factor) — but
+// editing height itself never touched Cost/Sale Price, leaving them stale
+// whenever the roll length changed after a per-meter rate was already set.
+// These two treat the per-meter rate as the source of truth and recompute
+// the total price from it, same direction handleCostPerMeterChange/
+// handleSalePerMeterChange already use.
+const handleHeightChange = (e) => {
+  const heightVal = e.target.value;
+  const h = parseFloat(heightVal) || 0;
+  const heightM = f.height_unit === "cm" ? h * 0.01 : f.height_unit === "mm" ? h * 0.001 : h;
+  const cpm = parseFloat(f.cost_per_meter) || 0;
+  const spm = parseFloat(f.sale_per_meter) || 0;
+  setF((p) => ({
+    ...p, height: heightVal,
+    unit_cost: heightM > 0 && cpm > 0 ? maskMoney((cpm * heightM).toFixed(2)) : p.unit_cost,
+    sale_price: heightM > 0 && spm > 0 ? maskMoney((spm * heightM).toFixed(2)) : p.sale_price,
+  }));
+};
+
+const handleHeightUnitChange = (e) => {
+  const unit = e.target.value;
+  const h = parseFloat(f.height) || 0;
+  const heightM = unit === "cm" ? h * 0.01 : unit === "mm" ? h * 0.001 : h;
+  const cpm = parseFloat(f.cost_per_meter) || 0;
+  const spm = parseFloat(f.sale_per_meter) || 0;
+  setF((p) => ({
+    ...p, height_unit: unit,
+    unit_cost: heightM > 0 && cpm > 0 ? maskMoney((cpm * heightM).toFixed(2)) : p.unit_cost,
+    sale_price: heightM > 0 && spm > 0 ? maskMoney((spm * heightM).toFixed(2)) : p.sale_price,
+  }));
+};
+
 const handleCostPerLiterChange = (e) => {
   const cpl = parseFloat(e.target.value) || 0;
   const volL = volumeLOf(f);
@@ -4559,8 +4594,8 @@ const handleSalePerLiterChange = (e) => {
 </Field>
 <Field label="Height" half>
   <div style={{ display: "flex", gap: "6px" }}>
-    <Input value={f.height || ""} onChange={set("height")} placeholder="0" style={{ ...inputStyle, flex: 1 }} />
-    <Select value={f.height_unit || "cm"} onChange={set("height_unit")} style={{ ...inputStyle, width: "80px", cursor: "pointer" }}>
+    <Input value={f.height || ""} onChange={handleHeightChange} placeholder="0" style={{ ...inputStyle, flex: 1 }} />
+    <Select value={f.height_unit || "cm"} onChange={handleHeightUnitChange} style={{ ...inputStyle, width: "80px", cursor: "pointer" }}>
       {["mm","cm","m","in"].map(u => <option key={u}>{u}</option>)}
     </Select>
   </div>
@@ -5619,7 +5654,14 @@ function NingboInternalForm({ items, currency, initial, onSave, onClose }) {
 }
 
 function ContractForm({ onSave, onClose, orders, initial }) {
-  const [f, setF] = useState(initial || { order_id: "", contract_number: "", supplier: "", sign_date: "", delivery_date: "", total: "", currency: "USD", status: "Draft", notes: "" });
+  // acquisition_company defaults to NINGBO (purchasing from Chinese
+  // factories normally runs through that entity), NOT inherited from the
+  // linked Order's own acquisition_company — this is deliberately its own
+  // independent choice (Lucas's explicit request), since who buys FROM the
+  // supplier doesn't have to match who invoices the client. Picking HK here
+  // prints the Contract PDF with HK's own navy branding and its existing
+  // HSBC account instead of Ningbo's — see pdf/contract.js.
+  const [f, setF] = useState(initial || { order_id: "", contract_number: "", supplier: "", sign_date: "", delivery_date: "", total: "", currency: "USD", status: "Draft", notes: "", acquisition_company: "NINGBO" });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
@@ -5631,6 +5673,12 @@ function ContractForm({ onSave, onClose, orders, initial }) {
       </Field>
       <Field label="Contract Number" half><Input value={f.contract_number} onChange={set("contract_number")} placeholder="PO-2024-001" /></Field>
       <Field label="Supplier" half><Input value={f.supplier} onChange={set("supplier")} /></Field>
+      <Field label="Acquisition Company" half>
+        <Select value={f.acquisition_company || "NINGBO"} onChange={set("acquisition_company")}>
+          <option value="HK">HONG KONG ALLIANCE GLOBAL TRADING CO., LTD</option>
+          <option value="NINGBO">NINGBO WORLD ALLIANCE TRADING. CO. LTD.</option>
+        </Select>
+      </Field>
       <Field label="Sign Date" half><Input type="date" value={f.sign_date} onChange={set("sign_date")} /></Field>
       <Field label="Delivery Date" half><Input type="date" value={f.delivery_date} onChange={set("delivery_date")} /></Field>
       <Field label="Total Amount" half>
@@ -7376,6 +7424,9 @@ const generateContract = (order, onlySupplier = null) => {
   // name, bank details — is filled in); genuinely supplier-less orders
   // (suppliers.length === 0) still leave it blank, same as before.
   supplier: suppliers[0] || "",
+  // Defaults to Ningbo, independent of the Order's own acquisition_company
+  // — see the comment on ContractForm's acquisition_company field.
+  acquisition_company: "NINGBO",
   sign_date: new Date().toISOString().slice(0, 10),
   delivery_date: order.shipment_date || "",
   total: total.toFixed(2),
@@ -7406,6 +7457,9 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
   contract_number: number,
   _order_ref: baseNumber,
   supplier,
+  // Defaults to Ningbo, independent of the Order's own acquisition_company
+  // — see the comment on ContractForm's acquisition_company field.
+  acquisition_company: "NINGBO",
   sign_date: new Date().toISOString().slice(0, 10),
   delivery_date: order.shipment_date || "",
   total: total.toFixed(2),
