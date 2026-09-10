@@ -346,6 +346,12 @@ db.exec(`
     amount REAL NOT NULL,
     currency TEXT DEFAULT 'USD',
     due_date TEXT NOT NULL,
+    -- Due date for the SECOND installment of a split Payment Schedule
+    -- (e.g. the 70% Balance in "30% Deposit / 70% Balance") — due_date
+    -- above covers the first installment (or the whole amount, for a plain
+    -- 100% schedule). See PAYMENT_SCHEDULES on the frontend and
+    -- backend/paymentSchedules.js for the schedule codes this pairs with.
+    due_date_2 TEXT,
     paid_date TEXT,
     status TEXT DEFAULT 'Pending',
     notes TEXT,
@@ -801,6 +807,7 @@ const migrations = [
   ['supplier_contracts', 'acquisition_company', "TEXT DEFAULT 'NINGBO'"],
   ['inspections', 'updated_by', 'TEXT'],
   ['financial_suppliers', 'updated_by', 'TEXT'],
+  ['financial_suppliers', 'due_date_2', 'TEXT'],
   ['financial_clients', 'updated_by', 'TEXT'],
   ['samples', 'updated_by', 'TEXT'],
   ['packing_lists', 'updated_by', 'TEXT'],

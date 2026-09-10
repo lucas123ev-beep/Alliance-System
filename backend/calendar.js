@@ -18,6 +18,8 @@
 // without the Contracts screen still sees a contract's delivery date here;
 // clicking it just won't be able to open a screen they don't have access
 // to, same as typing that URL by hand would behave).
+const { PAYMENT_SCHEDULES } = require('./paymentSchedules');
+
 function buildCalendarEvents(db) {
   const events = [];
   const push = (kind, date, screen, number, extra, restricted = false) => {
@@ -58,8 +60,22 @@ function buildCalendarEvents(db) {
     push('sample_feedback', s.feedback_date, 'samples', s.code || s.product_name || '', { id: s.id, client: s.product_name });
   }
 
-  for (const f of db.prepare("SELECT id, supplier, due_date, status FROM financial_suppliers WHERE status IN ('Pending','Partial')").all()) {
-    push('supplier_payment_due', f.due_date, 'fin-suppliers', f.supplier, { id: f.id, client: f.supplier });
+  // A split Payment Schedule (e.g. 30% Deposit / 70% Balance) has two due
+  // dates on the same record (due_date, due_date_2 — see FinForm), each
+  // its own separate payment — shown here as two separate Calendar events,
+  // labeled with the installment name/percentage (via `part`) so it's
+  // clear which payment a given date is for. A plain 100% schedule (or a
+  // record with no schedule at all) still shows as the single event it
+  // always did.
+  for (const f of db.prepare("SELECT id, supplier, due_date, due_date_2, payment_schedule, status FROM financial_suppliers WHERE status IN ('Pending','Partial')").all()) {
+    const schedule = PAYMENT_SCHEDULES[f.payment_schedule || '100'] || PAYMENT_SCHEDULES['100'];
+    if (schedule.parts.length > 1) {
+      const [first, second] = schedule.parts;
+      push('supplier_payment_due', f.due_date, 'fin-suppliers', f.supplier, { id: `${f.id}-1`, client: f.supplier, part: `${first.label} (${first.pct}%)` });
+      push('supplier_payment_due', f.due_date_2, 'fin-suppliers', f.supplier, { id: `${f.id}-2`, client: f.supplier, part: `${second.label} (${second.pct}%)` });
+    } else {
+      push('supplier_payment_due', f.due_date, 'fin-suppliers', f.supplier, { id: f.id, client: f.supplier });
+    }
   }
 
   // Restricted — client payment (tracked via the Commercial Invoice's own

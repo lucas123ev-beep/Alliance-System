@@ -1505,6 +1505,23 @@ const PAYMENT_SCHEDULES = {
   "30TT/BL": { label: "30% TT / Balance Against BL", parts: [{ pct: 30, label: "TT" }, { pct: 70, label: "Balance Against BL" }] },
 };
 
+// Query string for one installment's Payment Notice xlsx — shared by both
+// places that build this URL (the Edit modal's buttons and the Financial
+// table's Actions column) so pct/label/dueDate stay in sync. Each
+// installment has its own due date (record.due_date for the first part,
+// record.due_date_2 for the second — see the Payment Schedule date fields
+// in FinForm), passed straight through as a query param since the backend
+// route has no other way to know which of a record's two dates a given
+// installment's button is for.
+function paymentNoticeParams(part, i, record) {
+  const params = new URLSearchParams();
+  if (part.label) { params.set("pct", part.pct); params.set("label", part.label); }
+  const dueDate = i === 0 ? record.due_date : record.due_date_2;
+  if (dueDate) params.set("dueDate", dueDate);
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
 // For Textile / DTF Film items, the roll price is derived from a per-meter
 // rate — show that rate alongside the roll total so it's clear where the
 // number came from. `field` is "sale_per_meter" or "cost_per_meter".
@@ -2515,7 +2532,12 @@ const CALENDAR_KIND_COLORS = {
 };
 function calendarEventLabel(e, t) {
   const kindLabel = t(CALENDAR_KIND_LABELS[e.kind] || e.kind);
-  return e.number ? `${kindLabel} — ${e.number}` : kindLabel;
+  // e.part names which installment this date belongs to (e.g. "Deposit
+  // (30%)") — only set on split-schedule Supplier Payment due dates (see
+  // buildCalendarEvents in backend/calendar.js), where a plain "Supplier
+  // payment due" wouldn't say which of the two payments it's for.
+  const withPart = e.part ? `${kindLabel} (${e.part})` : kindLabel;
+  return e.number ? `${withPart} — ${e.number}` : withPart;
 }
 const CALENDAR_WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const CALENDAR_MONTH_LABELS = [
@@ -5454,30 +5476,11 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
       </Field>
 
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
-      {/* Two documents, stacked one below the other and each labeled, when
-          this Proforma is under HKAG: the real client-facing one, and the
-          internal-only Ningbo -> HKAG one (PDF only — no Excel, same
-          simpler mode Quotation/Contract already use for single-format
-          docs). See onSave below for the internal one's own 400 guard on
-          the backend if ningbo_items was never filled in. */}
-      {f.id && (
-        <div style={{ gridColumn: "span 2", display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-end" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ fontSize: "11px", color: "#64748b" }}>{t("Client document (HKAG/Ningbo)")}</span>
-            <DocButtons url={authUrl(`${API}/proformas/${f.id}/pdf`)} filename={`Proforma-${f.number}.pdf`}
-              xlsxUrl={authUrl(`${API}/proformas/${f.id}/xlsx`)} xlsxFilename={`Proforma-${f.number}.xlsx`}
-              entityType="proformas" recordLabel={f.number} label="📄 Download" small={false} />
-          </div>
-          {f.acquisition_company === "HK" && (
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <span style={{ fontSize: "11px", color: "#64748b" }}>{t("Internal document (Ningbo → HKAG)")}</span>
-              <DocButtons url={authUrl(`${API}/proformas/${f.id}/internal-pdf`)} filename={`Proforma-${f.number}-Internal-Ningbo.pdf`}
-                xlsxUrl={authUrl(`${API}/proformas/${f.id}/internal-xlsx`)} xlsxFilename={`Proforma-${f.number}-Internal-Ningbo.xlsx`}
-                entityType="proformas" recordLabel={`${f.number}-NGB`} label="📄 Ningbo → HKAG" small={false} color="#8b5cf6" />
-            </div>
-          )}
-        </div>
-      )}
+      {/* Document-generation buttons were removed from this modal —
+          generating here (before Save) risked the edit never actually being
+          persisted. Both documents (client-facing + internal Ningbo->HKAG)
+          live only on the Proformas screen's own Actions column now, where
+          the record is already saved. */}
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
         <Btn onClick={async () => {
@@ -5730,7 +5733,7 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
   const [f, setF] = useState(initial || {
     order_id: "", [isClient ? "client" : "supplier"]: "", description: "",
     type: isClient ? "Invoice" : "Purchase Order",
-    amount: "", currency: "USD", due_date: "", status: "Pending", notes: "",
+    amount: "", currency: "USD", due_date: "", due_date_2: "", status: "Pending", notes: "",
     payment_method: "Online bank payment", applicant: "", approved_by: "",
     payment_schedule: "100", paid_amount: "",
   });
@@ -5764,7 +5767,13 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
         </Select>
       </Field>
       <Field label="Amount" half><Input type="text" inputMode="decimal" value={f.amount} onChange={e => setF(p => ({ ...p, amount: maskMoney(e.target.value) }))} /></Field>
-      <Field label="Due Date" half><Input type="date" value={f.due_date} onChange={set("due_date")} /></Field>
+      {/* Clients don't have a Payment Schedule (no installments to split
+          across), so this stays the one plain Due Date field. Suppliers get
+          their own per-installment date fields further down, right next to
+          the Payment Schedule picker that determines how many there are. */}
+      {isClient && (
+        <Field label="Due Date" half><Input type="date" value={f.due_date} onChange={set("due_date")} /></Field>
+      )}
       {/* Only meaningful with status "Partial" — how much of Amount has
           actually been paid so far, so the Cash Flow Pending/Paid summary
           cards can split the row between them instead of leaving the whole
@@ -5782,8 +5791,10 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
           <div style={{ gridColumn: "span 2", marginTop: "4px", marginBottom: "-4px", fontSize: "12px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             {t("Payment Notice")}
           </div>
-          {/* No Payer field — supplier payments always run through Ningbo
-              now (see NINGBO_ACQ in server.js), so there's nothing to pick. */}
+          {/* No Payer field — the Payment Notice's Payer is derived
+              server-side from the linked Contract's own Acquisition Company
+              (see pdf/contract.js), defaulting to Ningbo when there's no
+              Contract to derive it from — nothing to pick here. */}
           <Field label="Payment Method" half>
             <Select value={f.payment_method} onChange={set("payment_method")}>
               <option value="Online bank payment">Online bank payment</option>
@@ -5797,23 +5808,26 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
               {Object.entries(PAYMENT_SCHEDULES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </Select>
           </Field>
+          {/* One date field per installment in the chosen schedule — its
+              label names the installment and percentage (e.g. "Deposit
+              (30%) Date") so it's unambiguous which payment each date is
+              for. A plain 100% schedule still shows just one "Due Date". */}
+          {(PAYMENT_SCHEDULES[f.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]).parts.map((part, i) => (
+            <Field key={i} label={part.label ? `${part.label} (${part.pct}%) Date` : "Due Date"} half>
+              <Input type="date" value={(i === 0 ? f.due_date : f.due_date_2) || ""}
+                onChange={e => setF(p => ({ ...p, [i === 0 ? "due_date" : "due_date_2"]: e.target.value }))} />
+            </Field>
+          ))}
         </>
       )}
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px", flexWrap: "wrap" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        {/* Each installment in the chosen schedule (e.g. 20% Deposit / 80%
-            Balance) gets its own Payment Notice button — a single 100%
-            schedule falls back to the one plain button it had before.
-            Generates an Excel file, not a PDF. */}
-        {!isClient && f.id && (PAYMENT_SCHEDULES[f.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]).parts.map((part, i) => (
-          <DocButtons key={i}
-            url={authUrl(`${API}/financial/suppliers/${f.id}/payment-notice-xlsx${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`)}
-            filename={`PaymentNotice-${f.description || f.supplier || f.id}${part.label ? `-${part.label}` : ""}.xlsx`}
-            entityType="financial-suppliers" recordLabel={f.description || f.supplier}
-            documentLabel={part.label ? `Payment Notice — ${part.label} (${part.pct}%)` : "Payment Notice"}
-            label={<>📊 {part.label ? `${part.label} (${part.pct}%)` : t("Payment Notice")}</>} small={false} />
-        ))}
+        {/* Document-generation buttons were removed from this modal —
+            generating here (before Save) risked the edit never actually
+            being persisted. The Payment Notice buttons live only on the
+            Financial screen's own Actions column now, where the record is
+            already saved. */}
         <Btn color={isClient ? "#3b82f6" : "#8b5cf6"} onClick={async () => {
           // Amount/Amount Paid display with live thousands-separator
           // formatting (see maskMoney) while editing — convert back to
@@ -6147,8 +6161,10 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
         </Field>
 
         <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-          {f.id && <DocButtons url={authUrl(`${API}/quotations/${f.id}/pdf`)} filename={`Quotation-${f.number}.pdf`}
-            entityType="quotations" recordLabel={f.number} label="📄 Download PDF" small={false} />}
+          {/* Document-generation button was removed from this modal —
+              generating here (before Save) risked the edit never actually
+              being persisted. It lives only on the Quotations screen's own
+              Actions column now, where the record is already saved. */}
           <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
           <Btn onClick={async () => {
             // Normalize any BR-formatted text ("1.000,00") typed into the
@@ -7114,9 +7130,10 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
 
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        {f.id && <DocButtons url={authUrl(`${API}/packing-lists/${f.id}/pdf`)} filename={`PackingList-${f.number}.pdf`}
-          xlsxUrl={authUrl(`${API}/packing-lists/${f.id}/xlsx`)} xlsxFilename={`PackingList-${f.number}.xlsx`}
-          entityType="packing-lists" recordLabel={f.number} label="📄 Download" small={false} />}
+        {/* Document-generation button was removed from this modal —
+            generating here (before Save) risked the edit never actually
+            being persisted. It lives only on the Packing Lists screen's own
+            Actions column now, where the record is already saved. */}
         <Btn onClick={async () => { await onSave(f); onClose(); }}>Save Packing List</Btn>
       </div>
     </div>
@@ -8401,7 +8418,19 @@ cols={[
       )}
     </span>
   ) },
-  { label: "Due Date", sortValue: r => r.due_date, render: r => fmtDate(r.due_date) },
+  { label: "Due Date", sortValue: r => r.due_date, render: r => {
+    // A split schedule (e.g. 20% Deposit / 80% Balance) has two separate
+    // due dates — shows both, each labeled with its installment, instead
+    // of just the first one and leaving the second invisible in the list.
+    const schedule = !isClient ? (PAYMENT_SCHEDULES[r.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]) : null;
+    if (!schedule || schedule.parts.length <= 1) return fmtDate(r.due_date);
+    return (
+      <div style={{ fontSize: "12px", lineHeight: 1.5 }}>
+        <div>{schedule.parts[0].label} ({schedule.parts[0].pct}%): {fmtDate(r.due_date)}</div>
+        <div>{schedule.parts[1].label} ({schedule.parts[1].pct}%): {fmtDate(r.due_date_2)}</div>
+      </div>
+    );
+  } },
   { label: "Status", sortValue: r => r.status, render: r => (
     <Select value={r.status}
       onChange={async e => {
@@ -8452,7 +8481,7 @@ cols={[
           original button. Generates an Excel file, not a PDF. */}
       {!isClient && (PAYMENT_SCHEDULES[r.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]).parts.map((part, i) => (
         <DocButtons key={i}
-          url={authUrl(`${API}/financial/suppliers/${r.id}/payment-notice-xlsx${part.label ? `?pct=${part.pct}&label=${encodeURIComponent(part.label)}` : ""}`)}
+          url={authUrl(`${API}/financial/suppliers/${r.id}/payment-notice-xlsx${paymentNoticeParams(part, i, r)}`)}
           filename={`PaymentNotice-${r.description || r.supplier || r.id}${part.label ? `-${part.label}` : ""}.xlsx`}
           entityType="financial-suppliers" recordLabel={r.description || r.supplier}
           documentLabel={part.label ? `Payment Notice — ${part.label} (${part.pct}%)` : "Payment Notice"}

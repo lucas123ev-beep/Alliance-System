@@ -794,14 +794,14 @@ app.get('/api/financial/suppliers', (req, res) => {
 // an existing payment record is only ever reachable from the dedicated
 // Supplier Flow screen.
 app.post('/api/financial/suppliers', (req, res) => {
-  const { order_id, supplier, description, type, amount, currency, due_date, status, notes, contract_id, items_json,
+  const { order_id, supplier, description, type, amount, currency, due_date, due_date_2, status, notes, contract_id, items_json,
     payer, payment_method, applicant, approved_by, payment_schedule, paid_amount } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO financial_suppliers (order_id, supplier, description, type, amount, currency, due_date, status, notes, contract_id, items_json,
+      INSERT INTO financial_suppliers (order_id, supplier, description, type, amount, currency, due_date, due_date_2, status, notes, contract_id, items_json,
         payer, payment_method, applicant, approved_by, payment_schedule, paid_amount, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, status || 'Pending', notes, contract_id || null, items_json || null,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, due_date_2 || null, status || 'Pending', notes, contract_id || null, items_json || null,
       payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', payment_schedule || '100', paid_amount || 0, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(result.lastInsertRowid));
   } catch(err) {
@@ -810,14 +810,14 @@ app.post('/api/financial/suppliers', (req, res) => {
 });
 
 app.put('/api/financial/suppliers/:id', guardScreen('fin-suppliers'), (req, res) => {
-  const { order_id, supplier, description, type, amount, currency, due_date, status, notes, contract_id, items_json,
+  const { order_id, supplier, description, type, amount, currency, due_date, due_date_2, status, notes, contract_id, items_json,
     payer, payment_method, applicant, approved_by, paid_date, payment_schedule, paid_amount } = req.body;
   try {
     db.prepare(`
-      UPDATE financial_suppliers SET order_id=?, supplier=?, description=?, type=?, amount=?, currency=?, due_date=?, status=?, notes=?,
+      UPDATE financial_suppliers SET order_id=?, supplier=?, description=?, type=?, amount=?, currency=?, due_date=?, due_date_2=?, status=?, notes=?,
         contract_id=?, items_json=?, payer=?, payment_method=?, applicant=?, approved_by=?, paid_date=?, payment_schedule=?, paid_amount=?, updated_by=?
       WHERE id=?
-    `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, status || 'Pending', notes,
+    `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, due_date_2 || null, status || 'Pending', notes,
       contract_id || null, items_json || null, payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', paid_date || null, payment_schedule || '100', paid_amount || 0, actorName(req), req.params.id);
     res.json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(req.params.id));
   } catch(err) {
@@ -2784,7 +2784,12 @@ app.get('/api/financial/suppliers/:id/payment-notice-xlsx', async (req, res) => 
       payer: fin.payer || acq.name,
       applicationDate: fin.created_at ? fin.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
       paymentMethod: fin.payment_method,
-      paymentDeadline: fin.due_date,
+      // A split schedule (30/70 etc.) has its own due date per installment
+      // (due_date for the 1st, due_date_2 for the 2nd — see FinForm) — the
+      // frontend passes the specific one via ?dueDate= so each installment's
+      // button shows its own correct deadline here instead of always the
+      // first one.
+      paymentDeadline: req.query.dueDate || fin.due_date,
       // Name of Payee should read the supplier's factory/company name, not
       // the bank account holder name (beneficiary_name is a banking detail
       // that can legitimately differ from the commercial name).
