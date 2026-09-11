@@ -29,6 +29,14 @@ const CARD_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F
 // moments (title bar, Total Invoice Value).
 const FS = { body: 10, small: 9, heading: 11, title: 14, hero: 16 };
 
+// Row heights used to build the letterhead's company-name/address/phone
+// block (see companyLines.forEach below) — shared with themeForXlsx's own
+// vertical-centering math so the two can never drift out of sync with each
+// other.
+const NAME_ROW_H = 26;
+const OTHER_ROW_H = 18;
+const SPACER_ROW_H = 10;
+
 // Which theme (accent ARGB + logo) this workbook should use — same
 // acq.code-driven rule as pdf/layout.js's themeFor(). logoWidth/logoHeight
 // keep each logo's own real aspect ratio at the same ~260px placement
@@ -37,10 +45,24 @@ const FS = { body: 10, small: 9, heading: 11, title: 14, hero: 16 };
 // would stretch one of them. Bumped up from an earlier, still-too-small
 // 200px per the client's feedback that it needed to read as clearly as the
 // PDF's own logo, not a small icon tucked in the corner.
+//
+// logoRowOffset vertically centers the logo against the WHOLE letterhead
+// text block (name + address + tel, plus email/website for HK) instead of
+// pinning it to the top of the first row — HK's block has 2 extra lines
+// (email/website Ningbo doesn't have), so it needs a bigger offset to land
+// centered. Expressed as a fraction of the name row's own height since
+// ExcelJS's image anchor scales a fractional `row` by that specific row's
+// height, and the computed offset always stays within that first row for
+// both entities (verified below — never exceeds NAME_ROW_H).
 function themeForXlsx(acq) {
-  return acq && acq.code === "NINGBO"
+  const isNingbo = acq && acq.code === "NINGBO";
+  const base = isNingbo
     ? { accentArgb: GRAY_ARGB, logo: LOGO_NINGBO, logoWidth: 260, logoHeight: 61 }
     : { accentArgb: NAVY_ARGB, logo: LOGO, logoWidth: 260, logoHeight: 86 };
+  const numLines = 1 + [acq?.addressLine, acq?.tel, acq?.email, acq?.website].filter(Boolean).length;
+  const blockHeight = NAME_ROW_H + (numLines - 1) * OTHER_ROW_H + SPACER_ROW_H;
+  const offsetPts = Math.max(0, (blockHeight - base.logoHeight) / 2);
+  return { ...base, logoRowOffset: Math.min(0.9, offsetPts / NAME_ROW_H) };
 }
 
 // Widest item table (the "other goods" one, now with Thickness — see
@@ -96,7 +118,7 @@ function buildSalesInvoiceWorkbook(params) {
   // document title, which gets its own full-width bar right below instead
   // (same as the PDF's .title-bar).
   const imageId = workbook.addImage({ base64: theme.logo, extension: "png" });
-  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.15 }, ext: { width: theme.logoWidth, height: theme.logoHeight } });
+  sheet.addImage(imageId, { tl: { col: 0.15, row: theme.logoRowOffset }, ext: { width: theme.logoWidth, height: theme.logoHeight } });
 
   const companyLines = [
     { text: acq.name, bold: true, size: FS.title, color: theme.accentArgb },
@@ -112,15 +134,17 @@ function buildSalesInvoiceWorkbook(params) {
     // letterhead block tall enough that it never runs into the title bar
     // underneath it, especially for Ningbo's shorter 3-line block (name/
     // address/tel only, no email/site — 4 rows total incl. spacer vs.
-    // HK's 6) which has less natural height to work with.
-    row.height = i === 0 ? 26 : 18;
+    // HK's 6) which has less natural height to work with. Same NAME_ROW_H/
+    // OTHER_ROW_H constants themeForXlsx used to compute logoRowOffset
+    // above — keep these two in sync if either changes.
+    row.height = i === 0 ? NAME_ROW_H : OTHER_ROW_H;
     sheet.mergeCells(row.number, 4, row.number, NUM_COLS);
     const cell = sheet.getCell(row.number, 4);
     cell.value = line.text;
     cell.font = { bold: !!line.bold, size: line.size, color: { argb: line.color } };
     cell.alignment = { vertical: "middle", horizontal: "right" };
   });
-  sheet.addRow([]).height = 10; // spacer
+  sheet.addRow([]).height = SPACER_ROW_H; // spacer
 
   // ── Title bar — full-width accent bar, same as the PDF's .title-bar ────
   const titleRow = sheet.addRow([title]);
