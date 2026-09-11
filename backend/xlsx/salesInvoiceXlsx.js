@@ -31,14 +31,14 @@ const FS = { body: 10, small: 9, heading: 11, title: 14, hero: 16 };
 
 // Which theme (accent ARGB + logo) this workbook should use — same
 // acq.code-driven rule as pdf/layout.js's themeFor(). logoWidth/logoHeight
-// keep each logo's own real aspect ratio at the same ~150px placement
+// keep each logo's own real aspect ratio at the same ~200px placement
 // width — the Ningbo wordmark (1600x378, ~4.23:1) is noticeably flatter
 // than the HKAG one (~900x297, ~3.03:1), so a single fixed height for both
 // would stretch one of them.
 function themeForXlsx(acq) {
   return acq && acq.code === "NINGBO"
-    ? { accentArgb: GRAY_ARGB, logo: LOGO_NINGBO, logoWidth: 150, logoHeight: 35 }
-    : { accentArgb: NAVY_ARGB, logo: LOGO, logoWidth: 150, logoHeight: 50 };
+    ? { accentArgb: GRAY_ARGB, logo: LOGO_NINGBO, logoWidth: 200, logoHeight: 47 }
+    : { accentArgb: NAVY_ARGB, logo: LOGO, logoWidth: 200, logoHeight: 66 };
 }
 
 // Widest item table (the "other goods" one, now with Thickness — see
@@ -105,14 +105,18 @@ function buildSalesInvoiceWorkbook(params) {
   ];
   companyLines.forEach((line, i) => {
     const row = sheet.addRow([]);
-    row.height = i === 0 ? 20 : 14;
+    // A touch taller than before, on purpose — the bigger logo (see
+    // themeForXlsx above) needs the whole letterhead block a bit taller so
+    // it never runs into the title bar underneath it, especially for
+    // Ningbo's shorter 3-line block (name/address/tel only, no email/site).
+    row.height = i === 0 ? 22 : 16;
     sheet.mergeCells(row.number, 4, row.number, NUM_COLS);
     const cell = sheet.getCell(row.number, 4);
     cell.value = line.text;
     cell.font = { bold: !!line.bold, size: line.size, color: { argb: line.color } };
     cell.alignment = { vertical: "middle", horizontal: "right" };
   });
-  sheet.addRow([]).height = 4; // spacer
+  sheet.addRow([]).height = 6; // spacer
 
   // ── Title bar — full-width accent bar, same as the PDF's .title-bar ────
   const titleRow = sheet.addRow([title]);
@@ -189,8 +193,18 @@ function buildSalesInvoiceWorkbook(params) {
     group.items.push(item);
   });
 
+  // The Textile item table only has 8 real columns (no Unit/Quantity split
+  // the "Other goods" table needs) against this sheet's 9-column grid — left
+  // as-is, its header fill and every row's bottom rule stopped one column
+  // short of the right edge, unlike the title bar/meta rows above it which
+  // all span the full NUM_COLS width. Padding every header/data row out to
+  // NUM_COLS with a blank trailing cell (still styled — fill, border — just
+  // no text) makes the whole table's lines reach the same right edge as
+  // everything else on the sheet.
+  const pad = arr => { const a = arr.slice(); while (a.length < NUM_COLS) a.push(""); return a; };
+
   const addTableHeader = headers => {
-    const row = sheet.addRow(headers);
+    const row = sheet.addRow(pad(headers));
     // No fixed height here on purpose — a couple of these headers ("Total
     // Length", "Total Weight") wrap onto two lines at these column widths,
     // and a fixed height would clip the second line instead of letting
@@ -211,7 +225,7 @@ function buildSalesInvoiceWorkbook(params) {
   // left-aligned and top-anchored instead of vertically centered against
   // the row's tallest cell.
   const addTableDataRow = values => {
-    const row = sheet.addRow(values);
+    const row = sheet.addRow(pad(values));
     row.eachCell((c, colNumber) => {
       c.font = { size: FS.small, bold: colNumber === 1 };
       c.border = { bottom: THIN_SEP };
