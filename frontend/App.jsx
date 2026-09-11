@@ -8407,11 +8407,9 @@ function Financial({ type }) {
         </Modal>
       )}
       {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
-      <div style={{ marginBottom: "16px" }}>
-        <Input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder={isClient ? "Search by client or description…" : "Search by supplier or description…"}
-          style={{ maxWidth: "320px" }} />
-      </div>
+      <Input value={search} onChange={e => setSearch(e.target.value)}
+        placeholder={isClient ? "Search by client or description…" : "Search by supplier or description…"}
+        style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
 cols={[
   { label: isClient ? "Client" : "Supplier", sortValue: r => r[party], render: r => <span style={{ fontWeight: 600 }}>{r[party]}</span> },
