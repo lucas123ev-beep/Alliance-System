@@ -110,7 +110,16 @@ function buildSalesInvoiceWorkbook(params) {
   const sheet = workbook.addWorksheet(title === "PROFORMA INVOICE" ? "Proforma Invoice" : "Commercial Invoice", {
     views: [{ showGridLines: false }],
   });
-  sheet.columns = COL_WIDTHS.map((width, i) => ({ key: `c${i}`, width }));
+  // NOT `sheet.columns = [...]` — assigning the `.columns` shorthand
+  // reserves row 1 as an (empty, since none of these define a `header`)
+  // header row, silently pushing every subsequent addRow() one row lower
+  // than intended. That's exactly what was happening here: the company-name
+  // row landed on row 2 instead of row 1, leaving row 1 blank above it —
+  // which is also why the logo (anchored relative to row 1) kept reading as
+  // sitting too high above the text block no matter how its offset was
+  // tuned. Setting each column's width directly avoids the header-row
+  // reservation entirely.
+  COL_WIDTHS.forEach((width, i) => { sheet.getColumn(i + 1).width = width; });
 
   // ── Letterhead: logo (left) + company name/address/phone (right) ───────
   // Mirrors the PDF's own header block (see pdf/layout.js's renderHeader) —
