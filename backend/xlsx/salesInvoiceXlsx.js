@@ -16,7 +16,18 @@ const NAVY_ARGB = "FF0D1627";
 // from the client's own uploaded Alliance wordmark (pdf/logoNingbo.js).
 const GRAY_ARGB = "FF58595B";
 const THIN_SEP = { style: "thin", color: { argb: "FFCCCCCC" } };
+const DARK_RULE = { style: "thin", color: { argb: "FF333333" } };
 const LABEL_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF2F7" } };
+// Same light card background the PDF's footer-grid/check-band use (see
+// pdf/layout.js's .check-band/.footer-grid .card — #f0f1f3/#f7f8fa, close
+// enough to read as the same "card" without needing two near-identical
+// grays here).
+const CARD_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } };
+// One font-size scale, reused everywhere instead of ad-hoc numbers per
+// call site — mirrors the PDF's own size steps (see pdf/layout.js's
+// baseCss): body text, small print, section headings, and the two "hero"
+// moments (title bar, Total Invoice Value).
+const FS = { body: 10, small: 9, heading: 11, title: 14, hero: 16 };
 
 // Which theme (accent ARGB + logo) this workbook should use — same
 // acq.code-driven rule as pdf/layout.js's themeFor(). logoWidth/logoHeight
@@ -69,7 +80,6 @@ function buildSalesInvoiceWorkbook(params) {
 
   // Navy/HKAG vs. gray/Ningbo — same acq.code rule as the PDF version.
   const theme = themeForXlsx(acq);
-  const HEADER_RULE = { style: "medium", color: { argb: theme.accentArgb } };
   const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: theme.accentArgb } };
 
   const workbook = new ExcelJS.Workbook();
@@ -78,31 +88,65 @@ function buildSalesInvoiceWorkbook(params) {
   });
   sheet.columns = COL_WIDTHS.map((width, i) => ({ key: `c${i}`, width }));
 
-  // ── Letterhead: logo + title ──────────────────────────────────────────
-  sheet.mergeCells(1, 1, 1, NUM_COLS);
-  const titleCell = sheet.getCell(1, 1);
-  titleCell.value = title;
-  titleCell.font = { bold: true, size: 15, color: { argb: theme.accentArgb } };
-  titleCell.alignment = { vertical: "middle", horizontal: "right" };
-  sheet.getRow(1).height = 46;
-  for (let c = 1; c <= NUM_COLS; c++) sheet.getCell(1, c).border = { bottom: HEADER_RULE };
+  // ── Letterhead: logo (left) + company name/address/phone (right) ───────
+  // Mirrors the PDF's own header block (see pdf/layout.js's renderHeader) —
+  // the company's own name/address/contact belongs up here, not the
+  // document title, which gets its own full-width bar right below instead
+  // (same as the PDF's .title-bar).
   const imageId = workbook.addImage({ base64: theme.logo, extension: "png" });
-  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.1 }, ext: { width: theme.logoWidth, height: theme.logoHeight } });
+  sheet.addImage(imageId, { tl: { col: 0.15, row: 0.15 }, ext: { width: theme.logoWidth, height: theme.logoHeight } });
 
-  sheet.getRow(2).height = 6; // spacer
+  const companyLines = [
+    { text: acq.name, bold: true, size: FS.title, color: theme.accentArgb },
+    ...(acq.addressLine ? [{ text: acq.addressLine, size: FS.small, color: "FF555555" }] : []),
+    ...(acq.tel ? [{ text: `Tel.: ${acq.tel}`, size: FS.small, color: "FF555555" }] : []),
+    ...(acq.email ? [{ text: acq.email, size: FS.small, color: "FF555555" }] : []),
+    ...(acq.website ? [{ text: acq.website, size: FS.small, color: "FF555555" }] : []),
+  ];
+  companyLines.forEach((line, i) => {
+    const row = sheet.addRow([]);
+    row.height = i === 0 ? 20 : 14;
+    sheet.mergeCells(row.number, 4, row.number, NUM_COLS);
+    const cell = sheet.getCell(row.number, 4);
+    cell.value = line.text;
+    cell.font = { bold: !!line.bold, size: line.size, color: { argb: line.color } };
+    cell.alignment = { vertical: "middle", horizontal: "right" };
+  });
+  sheet.addRow([]).height = 4; // spacer
+
+  // ── Title bar — full-width accent bar, same as the PDF's .title-bar ────
+  const titleRow = sheet.addRow([title]);
+  titleRow.height = 24;
+  sheet.mergeCells(titleRow.number, 1, titleRow.number, NUM_COLS);
+  const titleBarCell = sheet.getCell(titleRow.number, 1);
+  titleBarCell.font = { bold: true, size: FS.title, color: { argb: "FFFFFFFF" } };
+  titleBarCell.alignment = { vertical: "middle", horizontal: "center" };
+  titleBarCell.fill = HEADER_FILL;
+
+  sheet.addRow([]).height = 6; // spacer
 
   // ── Number / Date ─────────────────────────────────────────────────────
+  // Bordered top/bottom, same as the PDF's .doc-meta-row — reads as its own
+  // distinct strip sitting right under the title bar, not just another line
+  // of body text.
   const metaRow = sheet.addRow([`Number: ${number || "—"}`, "", "", "", `Date: ${fmtDateLong(date)}`]);
   sheet.mergeCells(metaRow.number, 1, metaRow.number, 4);
   sheet.mergeCells(metaRow.number, 5, metaRow.number, NUM_COLS);
-  metaRow.font = { bold: true };
+  metaRow.eachCell(c => {
+    c.font = { bold: true, size: FS.body };
+    c.border = { top: DARK_RULE, bottom: DARK_RULE };
+    c.alignment = { vertical: "middle" };
+  });
 
   // ── Shipment meta table ───────────────────────────────────────────────
+  // Thin hairline between rows (matches the PDF's meta-table), plus a
+  // heavier top/bottom rule around the whole block — added below, once the
+  // last row (Manufacturer Address) is known.
   const addMetaLine = (leftLabel, leftValue, rightLabel, rightValue) => {
     const row = sheet.addRow([`${leftLabel}: ${leftValue}`, "", "", "", `${rightLabel}: ${rightValue}`]);
     sheet.mergeCells(row.number, 1, row.number, 4);
     sheet.mergeCells(row.number, 5, row.number, NUM_COLS);
-    row.eachCell(c => { c.alignment = { wrapText: true, vertical: "middle" }; });
+    row.eachCell(c => { c.font = { size: FS.small }; c.alignment = { wrapText: true, vertical: "middle" }; c.border = { top: THIN_SEP }; });
     return row;
   };
   // Same Port-vs-Airport label switch as the PDF (pdf/salesInvoice.js) —
@@ -117,11 +161,20 @@ function buildSalesInvoiceWorkbook(params) {
   addMetaLine(destinationLabel, portOfDestination || "—", "Manufacturer", manufacturer?.name || "—");
   const mfgAddrRow = sheet.addRow([`Manufacturer Address: ${manufacturer?.address || "—"}${manufacturer?.tel ? ` | Tel.: ${manufacturer.tel}` : ""}`]);
   sheet.mergeCells(mfgAddrRow.number, 1, mfgAddrRow.number, NUM_COLS);
+  // Closes the meta-table block with the same heavier rule its top border
+  // (on the very first addMetaLine row, set above) opened with — the whole
+  // Way Of Shipment→Manufacturer Address block reads as one bordered unit.
+  mfgAddrRow.eachCell(c => { c.font = { size: FS.small }; c.border = { top: THIN_SEP, bottom: DARK_RULE }; c.alignment = { wrapText: true, vertical: "middle" }; });
 
   const originRow = sheet.addRow([`Country of origin and provenance: ${countryOfOrigin || "China"}.`, "", "", "", `Country of acquisition: ${acq.countryOfAcquisition}.`]);
   sheet.mergeCells(originRow.number, 1, originRow.number, 4);
   sheet.mergeCells(originRow.number, 5, originRow.number, NUM_COLS);
-  originRow.font = { italic: true, color: { argb: "FF444444" } };
+  originRow.eachCell(c => {
+    c.font = { italic: true, size: FS.small, color: { argb: "FF444444" } };
+    c.fill = CARD_FILL;
+    c.alignment = { vertical: "middle" };
+  });
+  sheet.getRow(originRow.number).height = 18;
 
   sheet.addRow([]); // spacer
 
@@ -138,8 +191,12 @@ function buildSalesInvoiceWorkbook(params) {
 
   const addTableHeader = headers => {
     const row = sheet.addRow(headers);
+    // No fixed height here on purpose — a couple of these headers ("Total
+    // Length", "Total Weight") wrap onto two lines at these column widths,
+    // and a fixed height would clip the second line instead of letting
+    // Excel size the row to fit it.
     row.eachCell(c => {
-      c.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      c.font = { bold: true, size: FS.small, color: { argb: "FFFFFFFF" } };
       c.fill = HEADER_FILL;
       c.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
       c.border = { top: THIN_SEP, bottom: THIN_SEP, left: THIN_SEP, right: THIN_SEP };
@@ -156,6 +213,7 @@ function buildSalesInvoiceWorkbook(params) {
   const addTableDataRow = values => {
     const row = sheet.addRow(values);
     row.eachCell((c, colNumber) => {
+      c.font = { size: FS.small, bold: colNumber === 1 };
       c.border = { bottom: THIN_SEP };
       c.alignment = colNumber === 2
         ? { vertical: "top", horizontal: "left", wrapText: true }
@@ -163,7 +221,14 @@ function buildSalesInvoiceWorkbook(params) {
     });
     return row;
   };
-  const itemDescription = item => [item.description, item.descriptionText, ...(item.bullets || []), item.ncm ? `NCM: ${item.ncm}` : ""].filter(Boolean).join("\n");
+  // Product name is NOT repeated here — it already has its own Product
+  // column (column 1) — only the description paragraph, bullets and NCM
+  // line belong in this cell. Previously included item.description again as
+  // this cell's first line, which both duplicated the name and padded every
+  // row with an extra line it didn't need (contributing to the "too tall"
+  // rows the PDF doesn't have — its own descCell() never repeats the name
+  // either, see itemSections.js).
+  const itemDescription = item => [item.descriptionText, ...(item.bullets || []), item.ncm ? `NCM: ${item.ncm}` : ""].filter(Boolean).join("\n");
   const itemColor = item => item.clientColorCode ? `${item.color || "—"} (${item.clientColorCode})` : (item.color || "—");
 
   // Thickness column — same "value+unit" string Contract PDF already prints
@@ -196,6 +261,7 @@ function buildSalesInvoiceWorkbook(params) {
   if (freight > 0) {
     const freightRow = sheet.addRow([`Total CIF Freight: ${fmtMoney(freight, currency)}`]);
     sheet.mergeCells(freightRow.number, 1, freightRow.number, NUM_COLS);
+    freightRow.getCell(1).font = { size: FS.small };
     freightRow.getCell(1).alignment = { horizontal: "right" };
   }
   const summaryLabel = textileItems.length > 0
@@ -203,9 +269,11 @@ function buildSalesInvoiceWorkbook(params) {
     : `Total Quantity: ${fmtNumber(totalQuantity, 2)}`;
   const summaryRow = sheet.addRow([`${summaryLabel}   |   Grand Total Amount: ${fmtMoney(grandTotal, currency)}`]);
   sheet.mergeCells(summaryRow.number, 1, summaryRow.number, NUM_COLS);
-  summaryRow.font = { bold: true };
-  summaryRow.getCell(1).alignment = { horizontal: "right" };
+  summaryRow.height = 20;
+  summaryRow.getCell(1).font = { bold: true, size: FS.body };
+  summaryRow.getCell(1).alignment = { vertical: "middle", horizontal: "right" };
   summaryRow.getCell(1).fill = LABEL_FILL;
+  summaryRow.getCell(1).border = { top: { style: "medium", color: { argb: theme.accentArgb } } };
 
   sheet.addRow([]);
 
@@ -291,33 +359,66 @@ function buildSalesInvoiceWorkbook(params) {
     { colStart: 7, colEnd: NUM_COLS, lines: partyLines },
   ];
   const maxLines = Math.max(...columns.map(c => c.lines.length));
+  const footerStartRow = sheet.rowCount + 1;
+  const sectionRule = { style: "thin", color: { argb: theme.accentArgb } };
   for (let i = 0; i < maxLines; i++) {
     const row = sheet.addRow([]);
     columns.forEach(col => {
-      const line = col.lines[i];
-      if (!line || !line.text) return;
       sheet.mergeCells(row.number, col.colStart, row.number, col.colEnd);
       const cell = sheet.getCell(row.number, col.colStart);
+      // Light fill across every row of the column, even blank ones — reads
+      // as one shaded card stretching the full height of the tallest
+      // column, same as the PDF's .footer-grid .card (which uses CSS flex
+      // align-items:stretch so all three cards line up edge-to-edge).
+      cell.fill = CARD_FILL;
+      cell.alignment = { wrapText: true, vertical: "top", horizontal: "left", indent: 1 };
+      const line = col.lines[i];
+      if (!line || !line.text) return;
       cell.value = line.text;
-      cell.alignment = { wrapText: true, vertical: "top" };
       if (line.style === "title") {
-        cell.font = { bold: true, size: 12, color: { argb: theme.accentArgb } };
-        cell.border = { bottom: HEADER_RULE, top: HEADER_RULE };
+        // Single bottom rule (not a boxed top+bottom pair) — reads as an
+        // underlined heading, same as the PDF's plain bold card-title text.
+        cell.font = { bold: true, size: FS.heading, color: { argb: theme.accentArgb } };
+        cell.border = { bottom: sectionRule };
       } else if (line.style === "bold") {
-        cell.font = { bold: true };
+        cell.font = { bold: true, size: FS.small };
       } else if (line.style === "italic") {
-        cell.font = { italic: true };
+        cell.font = { italic: true, size: FS.small, color: { argb: "FF666666" } };
       } else if (line.style === "big") {
-        cell.font = { bold: true, size: 14 };
+        cell.font = { bold: true, size: FS.hero, color: { argb: theme.accentArgb } };
+        cell.alignment = { ...cell.alignment, horizontal: "center", indent: 0 };
+      } else {
+        cell.font = { size: FS.small };
       }
     });
+  }
+
+  // Total Invoice Value gets its own bordered callout inside the Order
+  // Information column, same as the PDF's .total-box — a plain accent-
+  // colored box around just its 3 lines (heading/value/words), not the
+  // whole card.
+  const totalBoxIdx = orderLines.findIndex(l => l.text === "Total Invoice Value");
+  if (totalBoxIdx !== -1) {
+    const boxTop = footerStartRow + totalBoxIdx;
+    const boxBottom = boxTop + 2;
+    const boxRule = { style: "medium", color: { argb: theme.accentArgb } };
+    for (let r = boxTop; r <= boxBottom; r++) {
+      const cell = sheet.getCell(r, 1);
+      cell.border = {
+        top: r === boxTop ? boxRule : cell.border?.top,
+        bottom: r === boxBottom ? boxRule : cell.border?.bottom,
+        left: boxRule, right: boxRule,
+      };
+    }
   }
 
   if (title === "PROFORMA INVOICE") {
     sheet.addRow([]);
     const noteRow = sheet.addRow(["This Proforma Invoice is issued for quote purpose only and does not constitute a sales contract."]);
     sheet.mergeCells(noteRow.number, 1, noteRow.number, NUM_COLS);
-    noteRow.font = { italic: true, size: 10, color: { argb: "FF666666" } };
+    noteRow.getCell(1).font = { italic: true, size: FS.small, color: { argb: "FF888888" } };
+    noteRow.getCell(1).alignment = { horizontal: "center" };
+    noteRow.getCell(1).border = { top: THIN_SEP };
   }
 
   return workbook;
