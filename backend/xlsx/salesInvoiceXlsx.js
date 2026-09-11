@@ -373,7 +373,6 @@ function buildSalesInvoiceWorkbook(params) {
     { colStart: 7, colEnd: NUM_COLS, lines: partyLines },
   ];
   const maxLines = Math.max(...columns.map(c => c.lines.length));
-  const footerStartRow = sheet.rowCount + 1;
   const sectionRule = { style: "thin", color: { argb: theme.accentArgb } };
   for (let i = 0; i < maxLines; i++) {
     const row = sheet.addRow([]);
@@ -405,25 +404,6 @@ function buildSalesInvoiceWorkbook(params) {
         cell.font = { size: FS.small };
       }
     });
-  }
-
-  // Total Invoice Value gets its own bordered callout inside the Order
-  // Information column, same as the PDF's .total-box — a plain accent-
-  // colored box around just its 3 lines (heading/value/words), not the
-  // whole card.
-  const totalBoxIdx = orderLines.findIndex(l => l.text === "Total Invoice Value");
-  if (totalBoxIdx !== -1) {
-    const boxTop = footerStartRow + totalBoxIdx;
-    const boxBottom = boxTop + 2;
-    const boxRule = { style: "medium", color: { argb: theme.accentArgb } };
-    for (let r = boxTop; r <= boxBottom; r++) {
-      const cell = sheet.getCell(r, 1);
-      cell.border = {
-        top: r === boxTop ? boxRule : cell.border?.top,
-        bottom: r === boxBottom ? boxRule : cell.border?.bottom,
-        left: boxRule, right: boxRule,
-      };
-    }
   }
 
   if (title === "PROFORMA INVOICE") {
