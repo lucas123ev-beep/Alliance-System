@@ -31,14 +31,16 @@ const FS = { body: 10, small: 9, heading: 11, title: 14, hero: 16 };
 
 // Which theme (accent ARGB + logo) this workbook should use — same
 // acq.code-driven rule as pdf/layout.js's themeFor(). logoWidth/logoHeight
-// keep each logo's own real aspect ratio at the same ~200px placement
+// keep each logo's own real aspect ratio at the same ~260px placement
 // width — the Ningbo wordmark (1600x378, ~4.23:1) is noticeably flatter
 // than the HKAG one (~900x297, ~3.03:1), so a single fixed height for both
-// would stretch one of them.
+// would stretch one of them. Bumped up from an earlier, still-too-small
+// 200px per the client's feedback that it needed to read as clearly as the
+// PDF's own logo, not a small icon tucked in the corner.
 function themeForXlsx(acq) {
   return acq && acq.code === "NINGBO"
-    ? { accentArgb: GRAY_ARGB, logo: LOGO_NINGBO, logoWidth: 200, logoHeight: 47 }
-    : { accentArgb: NAVY_ARGB, logo: LOGO, logoWidth: 200, logoHeight: 66 };
+    ? { accentArgb: GRAY_ARGB, logo: LOGO_NINGBO, logoWidth: 260, logoHeight: 61 }
+    : { accentArgb: NAVY_ARGB, logo: LOGO, logoWidth: 260, logoHeight: 86 };
 }
 
 // Widest item table (the "other goods" one, now with Thickness — see
@@ -105,18 +107,20 @@ function buildSalesInvoiceWorkbook(params) {
   ];
   companyLines.forEach((line, i) => {
     const row = sheet.addRow([]);
-    // A touch taller than before, on purpose — the bigger logo (see
-    // themeForXlsx above) needs the whole letterhead block a bit taller so
-    // it never runs into the title bar underneath it, especially for
-    // Ningbo's shorter 3-line block (name/address/tel only, no email/site).
-    row.height = i === 0 ? 22 : 16;
+    // Taller than the surrounding body rows, on purpose — the logo (see
+    // themeForXlsx above, now a full 86pt/61pt tall) needs the whole
+    // letterhead block tall enough that it never runs into the title bar
+    // underneath it, especially for Ningbo's shorter 3-line block (name/
+    // address/tel only, no email/site — 4 rows total incl. spacer vs.
+    // HK's 6) which has less natural height to work with.
+    row.height = i === 0 ? 26 : 18;
     sheet.mergeCells(row.number, 4, row.number, NUM_COLS);
     const cell = sheet.getCell(row.number, 4);
     cell.value = line.text;
     cell.font = { bold: !!line.bold, size: line.size, color: { argb: line.color } };
     cell.alignment = { vertical: "middle", horizontal: "right" };
   });
-  sheet.addRow([]).height = 6; // spacer
+  sheet.addRow([]).height = 10; // spacer
 
   // ── Title bar — full-width accent bar, same as the PDF's .title-bar ────
   const titleRow = sheet.addRow([title]);
