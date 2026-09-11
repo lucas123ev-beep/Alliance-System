@@ -30,9 +30,18 @@ function themeForXlsx(acq) {
     : { accentArgb: NAVY_ARGB, logo: LOGO, logoWidth: 150, logoHeight: 50 };
 }
 
-// Widest item table (the "other goods" one) needs 8 columns — every other
-// block on the sheet merges across however many of these 8 it needs.
-const NUM_COLS = 8;
+// Widest item table (the "other goods" one, now with Thickness — see
+// itemSections.js's showThickness) needs 9 columns — every other block on
+// the sheet merges across however many of these 9 it needs.
+const NUM_COLS = 9;
+
+// Per-column widths, sized for what actually lands in each one across both
+// item tables — Description is by far the longest (full product text +
+// NCM), Product needs enough room for a two-line wrap of "NAME (CODE: X)"
+// instead of the cramped 3-4 line wrap a generic width produced, and the
+// short categorical columns (Color/Thickness/Unit) only need to fit a
+// couple of words.
+const COL_WIDTHS = [20, 38, 11, 10, 11, 15, 12, 12, 14];
 
 // "TT payment" is only a sensible trigger when the chosen Payment Terms
 // actually has an advance/deposit leg — see pdf/salesInvoice.js's daysOrNote
@@ -67,7 +76,7 @@ function buildSalesInvoiceWorkbook(params) {
   const sheet = workbook.addWorksheet(title === "PROFORMA INVOICE" ? "Proforma Invoice" : "Commercial Invoice", {
     views: [{ showGridLines: false }],
   });
-  sheet.columns = Array.from({ length: NUM_COLS }, (_, i) => ({ key: `c${i}`, width: i === 1 ? 30 : 14 }));
+  sheet.columns = COL_WIDTHS.map((width, i) => ({ key: `c${i}`, width }));
 
   // ── Letterhead: logo + title ──────────────────────────────────────────
   sheet.mergeCells(1, 1, 1, NUM_COLS);
@@ -137,9 +146,21 @@ function buildSalesInvoiceWorkbook(params) {
     });
     return row;
   };
+  // Column 1 (Product) and every column from 3 onward (Color, Thickness,
+  // Unit/Weight, Quantity/Total Length, Total Weight, Unit Price, Total
+  // Amount) read as a tidy grid when centered — same as the PDF's own
+  // "center"/"num" cell classes (see itemSections.js). Column 2
+  // (Description) is the one full paragraph of running text, so it stays
+  // left-aligned and top-anchored instead of vertically centered against
+  // the row's tallest cell.
   const addTableDataRow = values => {
     const row = sheet.addRow(values);
-    row.eachCell(c => { c.border = { bottom: THIN_SEP }; c.alignment = { vertical: "middle", wrapText: true }; });
+    row.eachCell((c, colNumber) => {
+      c.border = { bottom: THIN_SEP };
+      c.alignment = colNumber === 2
+        ? { vertical: "top", horizontal: "left", wrapText: true }
+        : { vertical: "middle", horizontal: "center", wrapText: true };
+    });
     return row;
   };
   const itemDescription = item => [item.description, item.descriptionText, ...(item.bullets || []), item.ncm ? `NCM: ${item.ncm}` : ""].filter(Boolean).join("\n");

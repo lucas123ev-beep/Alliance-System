@@ -132,13 +132,16 @@ function renderSalesInvoice(params) {
   // <td>s spanning the full table width, which left a wide empty gap
   // between them) — right-aligned together so "Total Quantity: X   Grand
   // Total Amount: $Y" reads as one adjacent pair instead of opposite ends
-  // of the row.
+  // of the row. Explicit inline style here (not just the shared ".num"
+  // class, which now centers per-column figures in the item rows above —
+  // this combined summary line is a different case and stays right-aligned
+  // regardless of that).
   sectionsHtml += `
     <table class="items-table" style="margin-top:4px;">
       <tbody>
-        ${freight > 0 ? `<tr><td class="num">Total CIF Freight: ${fmtMoney(freight, currency)}</td></tr>` : ""}
+        ${freight > 0 ? `<tr><td class="num" style="text-align:right;">Total CIF Freight: ${fmtMoney(freight, currency)}</td></tr>` : ""}
         <tr class="totals-row">
-          <td class="num">${escapeHtml(summaryLabel)} &nbsp;&nbsp;|&nbsp;&nbsp; Grand Total Amount: ${fmtMoney(grandTotal, currency)}</td>
+          <td class="num" style="text-align:right;">${escapeHtml(summaryLabel)} &nbsp;&nbsp;|&nbsp;&nbsp; Grand Total Amount: ${fmtMoney(grandTotal, currency)}</td>
         </tr>
       </tbody>
     </table>

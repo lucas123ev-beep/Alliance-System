@@ -141,7 +141,7 @@ function baseCss(accent = NAVY) {
        whole rather than splitting across the boundary. */
     .items-table tr { break-inside: avoid; page-break-inside: avoid; }
     .items-table td { border-bottom: 0.75px solid #ddd; padding: 4px 7px; font-size: 9px; vertical-align: middle; }
-    .items-table .num { text-align: right; }
+    .items-table .num { text-align: center; }
     /* Short single-value columns (Color, Width/Unit, Quantity, weight
        spec...) read as a tidy grid when centered — unlike Product/
        Description, which stay left-aligned since they hold running text. */

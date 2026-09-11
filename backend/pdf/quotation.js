@@ -59,9 +59,9 @@ function renderQuotation(params) {
 
     <table class="items-table" style="margin-top:4px;">
       <tbody>
-        ${freight > 0 ? `<tr><td class="num">Total CIF Freight: ${fmtMoney(freight, currency)}</td></tr>` : ""}
+        ${freight > 0 ? `<tr><td class="num" style="text-align:right;">Total CIF Freight: ${fmtMoney(freight, currency)}</td></tr>` : ""}
         <tr class="totals-row">
-          <td class="num">Grand Total Amount: ${fmtMoney(grandTotal, currency)}</td>
+          <td class="num" style="text-align:right;">Grand Total Amount: ${fmtMoney(grandTotal, currency)}</td>
         </tr>
       </tbody>
     </table>
