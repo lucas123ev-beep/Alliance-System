@@ -116,7 +116,9 @@ function renderSalesInvoice(params) {
   // per-category logic/peculiarities (ton-priced Chemical, textile meterage,
   // units_per_package...).
   const textileItems = items.filter(i => i.isTextile);
-  let sectionsHtml = renderItemSections(items, currency);
+  // Thickness column shown here (Proforma/Commercial Invoice) but not on
+  // the Quotation PDF, per the client's request.
+  let sectionsHtml = renderItemSections(items, currency, { showThickness: true });
 
   // Total Length (Textile/DTF Film) or Total Quantity (everything else) now
   // shares the same row as Grand Total Amount instead of living in its own

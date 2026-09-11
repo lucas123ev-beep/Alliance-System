@@ -19,11 +19,14 @@ const { escapeHtml, fmtNumber, fmtMoney } = require("./helpers");
 // used by the Quotation PDF, which carries product photos; Proforma/
 // Commercial Invoice don't set imageUrl on their items, so this stays off
 // for them (unchanged output).
+// opts.showThickness: adds a Thickness column (item.thickness, same
+// "value+unit" string Contract PDF already prints) — used by Proforma/
+// Commercial Invoice (see salesInvoice.js), off for Quotation.
 // Returns just the category table(s) HTML — NOT any grand-total/summary
 // row, since what belongs in that row (Total Length vs Total Quantity,
 // which currency/amount) differs per document and stays the caller's job.
 function renderItemSections(items, currency, opts = {}) {
-  const { showImage = false } = opts;
+  const { showImage = false, showThickness = false } = opts;
 
   const textileItems = items.filter(i => i.isTextile);
   const otherItems = items.filter(i => !i.isTextile);
@@ -48,6 +51,7 @@ function renderItemSections(items, currency, opts = {}) {
         : `<div style="width:90px; height:90px; border:1px dashed #ccc; border-radius:5px; margin:0 auto;"></div>`}
     </td>`;
   const nameCell = item => `<td class="center"><strong>${escapeHtml(item.description)}</strong></td>`;
+  const thicknessCell = item => `<td class="center">${escapeHtml(item.thickness || "—")}</td>`;
   const descCell = item => `
     <td>
       ${item.descriptionText ? `<p class="desc-text">${escapeHtml(item.descriptionText)}</p>` : ""}
@@ -62,6 +66,7 @@ function renderItemSections(items, currency, opts = {}) {
       ${nameCell(item)}
       ${descCell(item)}
       <td class="center">${escapeHtml(item.color || "—")}${item.clientColorCode ? `<div style="font-size:10px; color:#666; margin-top:2px;">${escapeHtml(item.clientColorCode)}</div>` : ""}</td>
+      ${showThickness ? thicknessCell(item) : ""}
       <td class="center">${escapeHtml(item.weightSpec || "—")}</td>
       <td class="num">${fmtNumber(item.totalLength, 0)}</td>
       <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
@@ -75,6 +80,7 @@ function renderItemSections(items, currency, opts = {}) {
       ${nameCell(item)}
       ${descCell(item)}
       <td class="center">${escapeHtml(item.color || "—")}${item.clientColorCode ? `<div style="font-size:10px; color:#666; margin-top:2px;">${escapeHtml(item.clientColorCode)}</div>` : ""}</td>
+      ${showThickness ? thicknessCell(item) : ""}
       <td class="center">${escapeHtml(item.priceUnitLabel || item.width || "—")}</td>
       <td class="center">${item.quantityLabel
         ? escapeHtml(item.quantityLabel)
@@ -89,6 +95,8 @@ function renderItemSections(items, currency, opts = {}) {
 
   const imgTh = showImage ? `<th style="width:16%">Image</th>` : "";
   const imgColAdjust = showImage ? 16 : 0;
+  const thicknessTh = showThickness ? `<th style="width:8%">Thickness</th>` : "";
+  const thicknessColAdjust = showThickness ? 8 : 0;
 
   let sectionsHtml = "";
 
@@ -99,8 +107,9 @@ function renderItemSections(items, currency, opts = {}) {
         <tr>
           ${imgTh}
           <th style="width:${15 - imgColAdjust * 0.4}%">Product</th>
-          <th style="width:${38 - imgColAdjust * 0.6}%">Description</th>
+          <th style="width:${38 - imgColAdjust * 0.6 - thicknessColAdjust}%">Description</th>
           <th style="width:8%">Color</th>
+          ${thicknessTh}
           <th style="width:9%">Weight</th>
           <th style="width:10%">Total Length</th>
           <th style="width:9%">Unit Price</th>
@@ -122,8 +131,9 @@ function renderItemSections(items, currency, opts = {}) {
         <tr>
           ${imgTh}
           <th style="width:${16 - imgColAdjust * 0.4}%">Product</th>
-          <th style="width:${28 - imgColAdjust * 0.6}%">Description</th>
+          <th style="width:${28 - imgColAdjust * 0.6 - thicknessColAdjust}%">Description</th>
           <th style="width:8%">Color</th>
+          ${thicknessTh}
           <th style="width:9%">Unit</th>
           <th style="width:10%">Quantity</th>
           <th style="width:10%">Total Weight</th>

@@ -145,21 +145,25 @@ function buildSalesInvoiceWorkbook(params) {
   const itemDescription = item => [item.description, item.descriptionText, ...(item.bullets || []), item.ncm ? `NCM: ${item.ncm}` : ""].filter(Boolean).join("\n");
   const itemColor = item => item.clientColorCode ? `${item.color || "—"} (${item.clientColorCode})` : (item.color || "—");
 
+  // Thickness column — same "value+unit" string Contract PDF already prints
+  // (item.thickness, sourced from the product in normalizeSalesItem) — shown
+  // here and on the PDF version (see pdf/itemSections.js's showThickness),
+  // not on the Quotation.
   if (textileItems.length > 0) {
-    addTableHeader(["Product", "Description", "Color", "Weight", "Total Length", "Unit Price", "Total Amount"]);
+    addTableHeader(["Product", "Description", "Color", "Thickness", "Weight", "Total Length", "Unit Price", "Total Amount"]);
     textileItems.forEach(item => {
       addTableDataRow([
-        item.description, itemDescription(item), itemColor(item), item.weightSpec || "—",
+        item.description, itemDescription(item), itemColor(item), item.thickness || "—", item.weightSpec || "—",
         fmtNumber(item.totalLength, 0), fmtMoney(item.unitPrice, currency), fmtMoney(item.total, currency),
       ]);
     });
     sheet.addRow([]);
   }
   otherGroups.forEach(group => {
-    addTableHeader(["Product", "Description", "Color", "Unit", "Quantity", "Total Weight", "Unit Price", "Total Amount"]);
+    addTableHeader(["Product", "Description", "Color", "Thickness", "Unit", "Quantity", "Total Weight", "Unit Price", "Total Amount"]);
     group.items.forEach(item => {
       addTableDataRow([
-        item.description, itemDescription(item), itemColor(item), item.priceUnitLabel || item.width || "—",
+        item.description, itemDescription(item), itemColor(item), item.thickness || "—", item.priceUnitLabel || item.width || "—",
         item.quantityLabel || (item.quantity != null ? `${item.quantity} ${item.unit || ""}`.trim() : "—"),
         (item.category === "Chemical" && item.priceBasis !== "ton") ? (item.totalWeight ? `${fmtNumber(item.totalWeight, 1)} kg` : "—") : "",
         fmtMoney(item.unitPrice, currency), fmtMoney(item.total, currency),

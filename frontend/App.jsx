@@ -511,6 +511,8 @@ const TRANSLATIONS = {
     "All screens": "所有模块",
     "All actions": "所有操作",
     "Search by record or person…": "按记录或人员搜索…",
+    "Search by client or description…": "按客户或描述搜索…",
+    "Search by supplier or description…": "按供应商或描述搜索…",
     "Created": "已创建",
     "Updated": "已修改",
     "Status changed": "状态已变更",
@@ -3589,8 +3591,8 @@ const handleUnitChange = (e) => {
     // (Quantity below = total meters wanted, roll count derived) — not the
     // general package-type list, which doesn't apply here.
     <Select value={item.unit || "Rolls"} onChange={handleUnitChange}>
-      <option value="Rolls">Rolls</option>
       <option value="Meters">Meters</option>
+      <option value="Rolls">Rolls</option>
     </Select>
   ) : item.category === "Chemical" ? (
     // Chemical (drums/tanks) is already counted in a physical package unit,
@@ -8341,6 +8343,7 @@ function Financial({ type }) {
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [notify, setNotify] = useState(null);
+  const [search, setSearch] = useState("");
   const entityType = isClient ? "financial-clients" : "financial-suppliers";
   const endpoint = isClient ? "/financial/clients" : "/financial/suppliers";
   const load = useCallback(() => {
@@ -8364,6 +8367,13 @@ function Financial({ type }) {
 
   const color = isClient ? "#3b82f6" : "#8b5cf6";
   const party = isClient ? "client" : "supplier";
+
+  // Search only narrows the table below — the summary cards above keep
+  // reflecting every record, same as Activity's own filters.
+  const q = search.toLowerCase();
+  const filteredRecords = !q ? records : records.filter(r =>
+    (r[party] || "").toLowerCase().includes(q) ||
+    (r.description || "").toLowerCase().includes(q));
 
   return (
     <div>
@@ -8397,6 +8407,11 @@ function Financial({ type }) {
         </Modal>
       )}
       {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
+      <div style={{ marginBottom: "16px" }}>
+        <Input value={search} onChange={e => setSearch(e.target.value)}
+          placeholder={isClient ? "Search by client or description…" : "Search by supplier or description…"}
+          style={{ maxWidth: "320px" }} />
+      </div>
       <Table
 cols={[
   { label: isClient ? "Client" : "Supplier", sortValue: r => r[party], render: r => <span style={{ fontWeight: 600 }}>{r[party]}</span> },
@@ -8501,7 +8516,7 @@ cols={[
     </div>
   )},
 ]}
-        rows={records}
+        rows={filteredRecords}
       />
     </div>
   );

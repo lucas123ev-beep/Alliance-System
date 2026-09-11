@@ -1831,6 +1831,11 @@ function normalizeSalesItem(item, fallbackCurrency) {
     color: product?.color || '',
     clientColorCode: product?.client_color_code || '',
     width: product?.width ? `${product.width}${product.width_unit || ''}` : '',
+    // Same format Contract PDF's own item builder already uses (see
+    // server.js's contract-generation code) — only rendered on Proforma/
+    // Commercial Invoice (see itemSections.js's showThickness option),
+    // not Quotation, which doesn't have this column.
+    thickness: product?.thickness ? `${product.thickness}${product.thickness_unit || ''}` : '',
     // Non-textile items don't have a real Width, so their column shows what
     // unit the Quantity is expressed in instead (see priceUnitLabel above).
     priceUnitLabel: !isTextile ? priceUnitLabel(category, priceBasis, item.unit || product?.unit) : null,
