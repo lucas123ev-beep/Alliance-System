@@ -9766,9 +9766,10 @@ function SwiftHkag({ navSeed, onConsumeNav } = {}) {
   const totals = swiftTransfers.reduce((acc, r) => {
     const amount = parseFloat(r.amount) || 0;
     acc.total += amount;
-    if (r.status === "Paid") acc.paid += amount;
-    else if (r.status === "Partial") acc.paid += parseFloat(r.paid_amount) || 0;
-    else acc.pending += amount;
+    const paidSoFar = r.status === "Paid" ? amount : r.status === "Partial" ? (parseFloat(r.paid_amount) || 0) : 0;
+    acc.paid += paidSoFar;
+    if (r.status === "Pending") acc.pending += amount;
+    if (r.status === "Partial") acc.pending += Math.max(0, amount - paidSoFar);
     return acc;
   }, { total: 0, pending: 0, paid: 0 });
 
