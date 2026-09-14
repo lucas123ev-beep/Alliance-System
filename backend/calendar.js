@@ -85,8 +85,21 @@ function buildCalendarEvents(db) {
   for (const ci of db.prepare("SELECT id, number, client, issue_date FROM commercial_invoices WHERE status = 'Pending'").all()) {
     push('commercial_payment_pending', ci.issue_date, 'commercial', ci.number, { id: ci.id, client: ci.client }, true);
   }
-  for (const sw of db.prepare("SELECT id, number, date, status FROM swift_transfers WHERE status = 'Pending'").all()) {
-    push('swift_pending', sw.date, 'swift-hkag', sw.number, { id: sw.id }, true);
+  // Same split-schedule treatment as Supplier Flow above (see comment
+  // there) — Swift HKAG now mirrors that Contract's own Deposit/Balance
+  // dates instead of one flat date, so a 20/80 shows as two events here too.
+  // Falls back to `date` (the original single field) for older rows saved
+  // before due_date/payment_schedule existed.
+  for (const sw of db.prepare("SELECT id, number, date, due_date, due_date_2, payment_schedule, status FROM swift_transfers WHERE status IN ('Pending','Partial')").all()) {
+    const schedule = PAYMENT_SCHEDULES[sw.payment_schedule || '100'] || PAYMENT_SCHEDULES['100'];
+    const primaryDate = sw.due_date || sw.date;
+    if (schedule.parts.length > 1) {
+      const [first, second] = schedule.parts;
+      push('swift_pending', primaryDate, 'swift-hkag', sw.number, { id: `${sw.id}-1`, part: `${first.label} (${first.pct}%)` }, true);
+      push('swift_pending', sw.due_date_2, 'swift-hkag', sw.number, { id: `${sw.id}-2`, part: `${second.label} (${second.pct}%)` }, true);
+    } else {
+      push('swift_pending', primaryDate, 'swift-hkag', sw.number, { id: sw.id }, true);
+    }
   }
 
   events.sort((a, b) => a.date.localeCompare(b.date));

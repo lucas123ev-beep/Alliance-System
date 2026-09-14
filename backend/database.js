@@ -307,14 +307,33 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
     commercial_invoice_id INTEGER REFERENCES commercial_invoices(id) ON DELETE SET NULL,
-    -- Same number as the Commercial Invoice that triggered this row (e.g.
-    -- "HKAG 084") — easy to match the two up visually, no separate
-    -- numbering sequence to maintain.
+    -- Now auto-created alongside the Supplier Contract's own Supplier Flow
+    -- payment (see POST /api/financial/suppliers) instead of when the
+    -- Commercial Invoice is generated — the client needs HKAG to fund
+    -- Ningbo well before shipment, since that's what actually pays the
+    -- factory's deposit. commercial_invoice_id above is kept only for older
+    -- rows created under the previous behavior.
+    contract_id INTEGER REFERENCES supplier_contracts(id) ON DELETE SET NULL,
+    -- Same number as whatever triggered this row (e.g. the Commercial
+    -- Invoice's "HKAG 084", or now the Contract's own number) — easy to
+    -- match the two up visually, no separate numbering sequence to maintain.
     number TEXT,
     date TEXT,
     amount REAL,
     currency TEXT DEFAULT 'USD',
     status TEXT DEFAULT 'Pending',
+    -- Mirrors the linked Supplier Flow payment's own schedule/dates (see
+    -- financial_suppliers.payment_schedule/due_date/due_date_2) — kept in
+    -- sync whenever that Supplier Payment is edited (see PUT
+    -- /api/financial/suppliers/:id), so a 30% Deposit / 70% Balance
+    -- purchase shows the same split here instead of one flat figure with
+    -- no visibility into what's actually been sent yet.
+    payment_schedule TEXT DEFAULT '100',
+    due_date TEXT,
+    due_date_2 TEXT,
+    -- Only meaningful when status is "Partial" — same convention as
+    -- financial_suppliers.paid_amount.
+    paid_amount REAL DEFAULT 0,
     paid_date TEXT,
     media TEXT,
     notes TEXT,
@@ -808,6 +827,15 @@ const migrations = [
   ['inspections', 'updated_by', 'TEXT'],
   ['financial_suppliers', 'updated_by', 'TEXT'],
   ['financial_suppliers', 'due_date_2', 'TEXT'],
+  // Swift HKAG now ties to the Supplier Contract that triggered it (see
+  // POST /api/financial/suppliers) and mirrors that Contract's own Supplier
+  // Flow payment schedule/dates/partial-paid amount, instead of only ever
+  // being one flat Pending/Paid figure tied to a Commercial Invoice.
+  ['swift_transfers', 'contract_id', 'INTEGER'],
+  ['swift_transfers', 'payment_schedule', "TEXT DEFAULT '100'"],
+  ['swift_transfers', 'due_date', 'TEXT'],
+  ['swift_transfers', 'due_date_2', 'TEXT'],
+  ['swift_transfers', 'paid_amount', 'REAL DEFAULT 0'],
   ['financial_clients', 'updated_by', 'TEXT'],
   ['samples', 'updated_by', 'TEXT'],
   ['packing_lists', 'updated_by', 'TEXT'],

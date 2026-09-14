@@ -183,6 +183,7 @@ const TRANSLATIONS = {
     "Status": "状态",
     "Photos / Videos": "照片 / 视频",
     "Linked Order": "关联订单",
+    "Linked Contract": "关联合同",
     "Proforma Number": "形式发票编号",
     "Issue Date": "开票日期",
     "Validity Date": "有效日期",
@@ -9549,11 +9550,12 @@ function Inspections({ navSeed, onConsumeNav } = {}) {
 // "Missing" flag when nothing's attached — plus an Amount/Currency and a
 // Pending/Paid Status, since this screen also doubles as the tracker for
 // whether that transfer actually went out.
-function SwiftForm({ onSave, onClose, initial, orders, commercialInvoices }) {
+function SwiftForm({ onSave, onClose, initial, orders, commercialInvoices, contracts, supplierPayments }) {
   const t = useT();
   const [f, setF] = useState(initial || {
-    order_id: "", commercial_invoice_id: "", number: "", date: "",
+    order_id: "", contract_id: "", commercial_invoice_id: "", number: "", date: "",
     amount: "", currency: "USD", status: "Pending", notes: "",
+    payment_schedule: "100", due_date: "", due_date_2: "", paid_amount: "",
   });
   const [media, setMedia] = useState(() => {
     if (!initial?.media) return [];
@@ -9588,6 +9590,34 @@ function SwiftForm({ onSave, onClose, initial, orders, commercialInvoices }) {
           {(orders || []).map(o => <option key={o.id} value={o.id}>{o.order_number} – {o.client}</option>)}
         </Select>
       </Field>
+      {/* Ties this Swift transfer to the specific Supplier Contract it's
+          funding — one Contract, one Swift row (see syncSwiftForContract on
+          the backend). Picking a Contract here also pulls in its Payment
+          Schedule/due dates below, same as the Supplier Flow entry created
+          alongside it, so a 20/80 shows the same split in both places. */}
+      <Field label="Linked Contract" half>
+        <Select value={f.contract_id} onChange={e => {
+          const contractId = e.target.value;
+          const c = (contracts || []).find(c => String(c.id) === String(contractId));
+          // The Contract itself has no payment_schedule/due_date/due_date_2
+          // columns — only its Supplier Flow entry does (see database.js) —
+          // so the dates here must come from that linked Supplier Payment,
+          // exactly as entered there, not from the Contract row.
+          const sp = (supplierPayments || []).find(s => String(s.contract_id) === String(contractId));
+          setF(p => ({
+            ...p, contract_id: contractId,
+            ...(c ? { order_id: c.order_id || p.order_id, currency: sp?.currency || c.currency || p.currency } : {}),
+            ...(sp ? {
+              amount: sp.amount != null ? String(sp.amount) : p.amount,
+              payment_schedule: sp.payment_schedule || "100",
+              due_date: sp.due_date || "", due_date_2: sp.due_date_2 || "",
+            } : {}),
+          }));
+        }}>
+          <option value="">None</option>
+          {(contracts || []).map(c => <option key={c.id} value={c.id}>{c.contract_number} – {c.supplier}</option>)}
+        </Select>
+      </Field>
       <Field label="Linked Commercial Invoice" half>
         <Select value={f.commercial_invoice_id} onChange={set("commercial_invoice_id")}>
           <option value="">None</option>
@@ -9608,9 +9638,32 @@ function SwiftForm({ onSave, onClose, initial, orders, commercialInvoices }) {
       <Field label="Status" half>
         <Select value={f.status} onChange={set("status")}>
           <option value="Pending">Pending</option>
+          <option value="Partial">Partial</option>
           <option value="Paid">Paid</option>
         </Select>
       </Field>
+      {/* Only meaningful with status "Partial" — mirrors Supplier Flow's own
+          "Amount Paid So Far" field (see FinForm). */}
+      {f.status === "Partial" && (
+        <Field label="Amount Paid So Far" half>
+          <Input type="text" inputMode="decimal" value={f.paid_amount}
+            onChange={e => setF(p => ({ ...p, paid_amount: maskMoney(e.target.value) }))} />
+        </Field>
+      )}
+      <Field label="Payment Schedule" half>
+        <Select value={f.payment_schedule || "100"} onChange={set("payment_schedule")}>
+          {Object.entries(PAYMENT_SCHEDULES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </Select>
+      </Field>
+      {/* One date field per installment in the chosen schedule — same
+          pattern as FinForm's own Supplier Payment dates, so a Deposit/
+          Balance split shows both dates here instead of just one. */}
+      {(PAYMENT_SCHEDULES[f.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"]).parts.map((part, i) => (
+        <Field key={i} label={part.label ? `${part.label} (${part.pct}%) Date` : "Due Date"} half>
+          <Input type="date" value={(i === 0 ? f.due_date : f.due_date_2) || ""}
+            onChange={e => setF(p => ({ ...p, [i === 0 ? "due_date" : "due_date_2"]: e.target.value }))} />
+        </Field>
+      ))}
       <Field label="Notes"><Textarea value={f.notes || ""} onChange={set("notes")} /></Field>
 
       <Field label="Swift Copy / Proof">
@@ -9655,7 +9708,10 @@ function SwiftForm({ onSave, onClose, initial, orders, commercialInvoices }) {
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
         <Btn onClick={async () => {
-          await onSave({ ...f, amount: parseLocaleNumber(f.amount) ?? 0, media: JSON.stringify(media) });
+          await onSave({
+            ...f, amount: parseLocaleNumber(f.amount) ?? 0, media: JSON.stringify(media),
+            paid_amount: f.paid_amount !== "" && f.paid_amount != null ? (parseLocaleNumber(f.paid_amount) ?? 0) : f.paid_amount,
+          });
           onClose();
         }}>Save Swift Transfer</Btn>
       </div>
@@ -9673,18 +9729,27 @@ function SwiftHkag({ navSeed, onConsumeNav } = {}) {
   const [swiftTransfers, setSwiftTransfers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [commercialInvoices, setCommercialInvoices] = useState([]);
+  const [contracts, setContracts] = useState([]);
+  const [supplierPayments, setSupplierPayments] = useState([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
   useNavSeed(navSeed, onConsumeNav, setSearch);
   const [notify, setNotify] = useState(null);
   const load = useCallback(async () => {
-    const [swiftTransfers, orders, commercialInvoices] = await Promise.all([
-      api("/swift-transfers"), api("/orders"), api("/commercial-invoices"),
+    // Supplier Payments (financial_suppliers) fetched too — a Contract
+    // itself has no payment_schedule/due_date/due_date_2 columns, only its
+    // Supplier Flow entry does (see database.js), so pulling a Contract's
+    // dates into the Swift form means looking up THAT record, not the
+    // Contract row itself.
+    const [swiftTransfers, orders, commercialInvoices, contracts, supplierPayments] = await Promise.all([
+      api("/swift-transfers"), api("/orders"), api("/commercial-invoices"), api("/contracts"), api("/financial/suppliers"),
     ]);
     setSwiftTransfers(swiftTransfers || []);
     setOrders(orders || []);
     setCommercialInvoices(commercialInvoices || []);
+    setContracts(contracts || []);
+    setSupplierPayments(supplierPayments || []);
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -9695,12 +9760,15 @@ function SwiftHkag({ navSeed, onConsumeNav } = {}) {
   );
 
   // Same Total/Pending/Paid summary header as Supplier Cash Flow (see
-  // Financial() above) — every Swift transfer is either Pending or Paid, no
-  // Partial state here, so this is the plain two-way split.
+  // Financial() above) — now also splits out Partial, same as that screen,
+  // since a Swift row can sit at a deposit-only state too (see the Status
+  // column below).
   const totals = swiftTransfers.reduce((acc, r) => {
     const amount = parseFloat(r.amount) || 0;
     acc.total += amount;
-    if (r.status === "Paid") acc.paid += amount; else acc.pending += amount;
+    if (r.status === "Paid") acc.paid += amount;
+    else if (r.status === "Partial") acc.paid += parseFloat(r.paid_amount) || 0;
+    else acc.pending += amount;
     return acc;
   }, { total: 0, pending: 0, paid: 0 });
 
@@ -9719,7 +9787,7 @@ function SwiftHkag({ navSeed, onConsumeNav } = {}) {
         placeholder="Search by number, order or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       {modal && (
         <Modal title={t("New Swift Transfer")} onClose={() => setModal(false)} wide>
-          <SwiftForm orders={orders} commercialInvoices={commercialInvoices} onSave={async b => {
+          <SwiftForm orders={orders} commercialInvoices={commercialInvoices} contracts={contracts} supplierPayments={supplierPayments} onSave={async b => {
             await api("/swift-transfers", "POST", b);
             load();
             setNotify({ entityType: "swift-hkag", recordLabel: b.number, eventType: "created" });
@@ -9728,7 +9796,7 @@ function SwiftHkag({ navSeed, onConsumeNav } = {}) {
       )}
       {editing && (
         <Modal title={t("Edit Swift Transfer")} onClose={() => setEditing(null)} wide>
-          <SwiftForm orders={orders} commercialInvoices={commercialInvoices}
+          <SwiftForm orders={orders} commercialInvoices={commercialInvoices} contracts={contracts} supplierPayments={supplierPayments}
             initial={{ ...editing, media: editing.media ? (typeof editing.media === 'string' ? JSON.parse(editing.media) : editing.media) : [] }}
             onSave={async b => {
               const oldStatus = editing.status;
@@ -9741,23 +9809,69 @@ function SwiftHkag({ navSeed, onConsumeNav } = {}) {
       {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
       <Table
         cols={[
-          { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
+          { label: "Number", sortValue: r => r.number, render: r => (
+            <span style={{ fontWeight: 700, color: "#60a5fa" }}>
+              {r.number}
+              {r.contract_number && (
+                <div style={{ fontSize: "11px", fontWeight: 400, color: "#94a3b8" }}>{r.contract_number}</div>
+              )}
+            </span>
+          )},
           { label: "Order", sortValue: r => r.order_number, render: r => r.order_number ? `${r.order_number} – ${r.client || ""}` : "—" },
-          { label: "Amount", sortValue: r => r.amount, render: r => <span style={{ fontWeight: 600, color: "#8b5cf6" }}>{fmt(r.amount, r.currency)}</span> },
-          { label: "Date", sortValue: r => r.date, render: r => fmtDate(r.date) },
+          { label: "Amount", sortValue: r => r.amount, render: r => (
+            <span style={{ fontWeight: 600, color: "#8b5cf6" }}>
+              {fmt(r.amount, r.currency)}
+              {r.status === "Partial" && (
+                <div style={{ fontSize: "11px", fontWeight: 400, color: "#94a3b8" }}>
+                  Paid: {fmt(r.paid_amount || 0, r.currency)}
+                </div>
+              )}
+            </span>
+          )},
+          { label: "Due Date", sortValue: r => r.due_date || r.date, render: r => {
+            // Same split-schedule display as Supplier Flow (see Financial()
+            // above) — a 20/80 Contract shows both Deposit/Balance dates
+            // instead of one flat date. Falls back to the original single
+            // `date` field for rows created before this existed.
+            const schedule = PAYMENT_SCHEDULES[r.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"];
+            if (schedule.parts.length <= 1) return fmtDate(r.due_date || r.date);
+            return (
+              <div style={{ fontSize: "12px", lineHeight: 1.5 }}>
+                <div>{schedule.parts[0].label} ({schedule.parts[0].pct}%): {fmtDate(r.due_date)}</div>
+                <div>{schedule.parts[1].label} ({schedule.parts[1].pct}%): {fmtDate(r.due_date_2)}</div>
+              </div>
+            );
+          }},
           { label: "Status", sortValue: r => r.status, render: r => (
             <Select value={r.status}
               onChange={async e => {
-                const oldStatus = r.status, newStatus = e.target.value;
-                await api(`/swift-transfers/${r.id}`, "PUT", {
-                  ...r, status: newStatus,
-                  paid_date: newStatus === "Paid" ? new Date().toISOString().slice(0, 10) : r.paid_date,
+                const status = e.target.value;
+                let paid_amount;
+                if (status === "Partial") {
+                  // Same "derive from the schedule's Deposit installment,
+                  // only ask if there's no schedule to infer from" logic as
+                  // Supplier Flow's own Status column (see Financial()).
+                  const schedule = PAYMENT_SCHEDULES[r.payment_schedule || "100"] || PAYMENT_SCHEDULES["100"];
+                  if (schedule.parts.length > 1) {
+                    paid_amount = Math.round(r.amount * (schedule.parts[0].pct / 100) * 100) / 100;
+                  } else {
+                    const input = prompt(`How much of ${fmt(r.amount, r.currency)} has been paid so far?`, r.paid_amount || "");
+                    if (input === null) return;
+                    paid_amount = parseFloat(input.replace(",", ".")) || 0;
+                  }
+                }
+                const oldStatus = r.status;
+                await api(`/swift-transfers/${r.id}/status`, "PATCH", {
+                  status,
+                  paid_date: (status === "Paid" || status === "Partial") ? new Date().toISOString().slice(0, 10) : null,
+                  paid_amount,
                 });
                 load();
-                setNotify({ entityType: "swift-hkag", recordLabel: r.number, oldStatus, newStatus });
+                setNotify({ entityType: "swift-hkag", recordLabel: r.number, oldStatus, newStatus: status });
               }}
-              style={{ padding: "4px 8px", fontSize: "12px", width: "auto", color: r.status === "Paid" ? "#10b981" : "#f59e0b" }}>
+              style={{ padding: "4px 8px", fontSize: "12px", width: "auto", color: r.status === "Paid" ? "#10b981" : r.status === "Partial" ? "#3b82f6" : "#f59e0b" }}>
               <option value="Pending">Pending</option>
+              <option value="Partial">Partial</option>
               <option value="Paid">Paid</option>
             </Select>
           )},

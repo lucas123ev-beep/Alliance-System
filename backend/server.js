@@ -373,6 +373,7 @@ app.delete('/api/orders/:id', guardScreen('orders'), (req, res) => {
     // has to be cleaned up explicitly here too, before the contracts
     // themselves are gone and there's no order_id left to find them by.
     db.prepare('DELETE FROM financial_suppliers WHERE contract_id IN (SELECT id FROM supplier_contracts WHERE order_id=?)').run(req.params.id);
+    db.prepare('DELETE FROM swift_transfers WHERE contract_id IN (SELECT id FROM supplier_contracts WHERE order_id=?)').run(req.params.id);
     db.prepare('DELETE FROM supplier_contracts WHERE order_id=?').run(req.params.id);
     db.prepare('DELETE FROM commercial_invoices WHERE order_id=?').run(req.params.id);
     db.prepare('DELETE FROM inspections WHERE order_id=?').run(req.params.id);
@@ -410,6 +411,10 @@ app.delete('/api/contracts/:id', guardScreen('contracts'), (req, res) => {
   // even if already marked Paid — matches the Swift/Commercial Invoice
   // cascade-delete precedent.
   db.prepare('DELETE FROM financial_suppliers WHERE contract_id=?').run(req.params.id);
+  // Same orphan risk as the Supplier Flow entry right above — Swift HKAG is
+  // now auto-created per Contract too (see syncSwiftForContract), so it has
+  // to go with it.
+  db.prepare('DELETE FROM swift_transfers WHERE contract_id=?').run(req.params.id);
   db.prepare('DELETE FROM supplier_contracts WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -735,6 +740,10 @@ app.delete('/api/contracts/:id', guardScreen('contracts'), (req, res) => {
   // even if already marked Paid — matches the Swift/Commercial Invoice
   // cascade-delete precedent.
   db.prepare('DELETE FROM financial_suppliers WHERE contract_id=?').run(req.params.id);
+  // Same orphan risk as the Supplier Flow entry right above — Swift HKAG is
+  // now auto-created per Contract too (see syncSwiftForContract), so it has
+  // to go with it.
+  db.prepare('DELETE FROM swift_transfers WHERE contract_id=?').run(req.params.id);
   db.prepare('DELETE FROM supplier_contracts WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -785,6 +794,39 @@ app.get('/api/financial/suppliers', (req, res) => {
   res.json(db.prepare('SELECT * FROM financial_suppliers ORDER BY due_date ASC').all());
 });
 
+// Swift HKAG's row for a given Supplier Contract, kept in sync with that
+// Contract's own Supplier Flow payment (this table) whenever it's created
+// or its amount/schedule/dates are edited — see the POST/PUT routes below.
+// Only orders billed under the Hong Kong entity need this (HKAG owes Ningbo
+// the corresponding intercompany wire so Ningbo can actually pay the
+// factory); Ningbo orders already paid the factory directly, so there's
+// nothing to fund here. This used to only fire when the Commercial Invoice
+// was generated (near shipment) — moved up to Contract time instead, since
+// Ningbo needs that money well before then to cover the factory's deposit.
+function syncSwiftForContract({ contractId, orderId, amount, currency, dueDate, dueDate2, paymentSchedule, actor }) {
+  if (!contractId) return;
+  const order = orderId ? db.prepare('SELECT acquisition_company FROM orders WHERE id=?').get(orderId) : null;
+  if (!order || order.acquisition_company !== 'HK') return;
+  const existing = db.prepare('SELECT id FROM swift_transfers WHERE contract_id=?').get(contractId);
+  if (existing) {
+    // Status/paid_date/paid_amount are Swift HKAG's own independent
+    // tracking from here on — only the figures that originate on the
+    // Supplier Payment (amount, currency, schedule, due dates) get
+    // overwritten on every edit.
+    db.prepare(`
+      UPDATE swift_transfers SET amount=?, currency=?, due_date=?, due_date_2=?, payment_schedule=?, updated_by=?
+      WHERE id=?
+    `).run(amount, currency || 'USD', dueDate || null, dueDate2 || null, paymentSchedule || '100', actor, existing.id);
+  } else {
+    const contract = db.prepare('SELECT contract_number, sign_date FROM supplier_contracts WHERE id=?').get(contractId);
+    db.prepare(`
+      INSERT INTO swift_transfers (order_id, contract_id, number, date, amount, currency, status, payment_schedule, due_date, due_date_2, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?)
+    `).run(orderId || null, contractId, contract?.contract_number || '', contract?.sign_date || new Date().toISOString().slice(0, 10),
+      amount, currency || 'USD', paymentSchedule || '100', dueDate || null, dueDate2 || null, actor);
+  }
+}
+
 // POST intentionally NOT guarded by "fin-suppliers": generating a Supplier
 // Contract from the Orders screen ("Generate Supplier Contracts") auto-
 // creates the matching payment requirement here as a side effect (see
@@ -803,6 +845,10 @@ app.post('/api/financial/suppliers', (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, due_date_2 || null, status || 'Pending', notes, contract_id || null, items_json || null,
       payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', payment_schedule || '100', paid_amount || 0, actorName(req));
+    syncSwiftForContract({
+      contractId: contract_id || null, orderId: order_id || null, amount, currency,
+      dueDate: due_date, dueDate2: due_date_2, paymentSchedule: payment_schedule, actor: actorName(req),
+    });
     res.status(201).json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(result.lastInsertRowid));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -819,6 +865,10 @@ app.put('/api/financial/suppliers/:id', guardScreen('fin-suppliers'), (req, res)
       WHERE id=?
     `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, due_date_2 || null, status || 'Pending', notes,
       contract_id || null, items_json || null, payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', paid_date || null, payment_schedule || '100', paid_amount || 0, actorName(req), req.params.id);
+    syncSwiftForContract({
+      contractId: contract_id || null, orderId: order_id || null, amount, currency,
+      dueDate: due_date, dueDate2: due_date_2, paymentSchedule: payment_schedule, actor: actorName(req),
+    });
     res.json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(req.params.id));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -902,19 +952,12 @@ app.post('/api/commercial-invoices', (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, number, issue_date, client, total, currency || 'USD', status || 'Pending', notes, actorName(req));
 
-    // Whenever a Commercial Invoice is generated for an Order billed under
-    // the Hong Kong entity, HKAG owes Ningbo the corresponding intercompany
-    // wire — auto-create the Swift HKAG tracking row here instead of relying
-    // on someone to remember to log it by hand from that dedicated screen.
-    // Ningbo orders never get one: there's no HK->Ningbo transfer to track
-    // when Ningbo already is the entity that was paid directly.
-    const order = order_id ? db.prepare('SELECT acquisition_company FROM orders WHERE id=?').get(order_id) : null;
-    if (order && order.acquisition_company === 'HK') {
-      db.prepare(`
-        INSERT INTO swift_transfers (order_id, commercial_invoice_id, number, date, amount, currency, status, updated_by)
-        VALUES (?, ?, ?, ?, ?, ?, 'Pending', ?)
-      `).run(order_id, result.lastInsertRowid, number, issue_date, total, currency || 'USD', actorName(req));
-    }
+    // Swift HKAG used to be auto-created here, but by the time a Commercial
+    // Invoice exists (near shipment) HKAG should have already funded Ningbo
+    // long ago — Ningbo needs that money to pay the factory's deposit well
+    // before then. It's now auto-created per Supplier Contract instead, at
+    // the same time as that Contract's own Supplier Flow payment (see POST
+    // /api/financial/suppliers) — see that route's own comment for details.
 
     res.status(201).json(redactCommercialStatus(req, getCommercialInvoiceWithDates(result.lastInsertRowid)));
   } catch (err) {
@@ -1250,8 +1293,11 @@ app.delete('/api/inspections/:id', guardScreen('inspections'), (req, res) => {
 // itself, which only Lucas/Martiello/Gabriel/Juliana have access to.
 app.get('/api/swift-transfers', guardScreen('swift-hkag'), (req, res) => {
   res.json(db.prepare(`
-    SELECT s.*, o.order_number AS order_number, o.client AS client
-    FROM swift_transfers s LEFT JOIN orders o ON o.id = s.order_id
+    SELECT s.*, o.order_number AS order_number, o.client AS client,
+      sc.contract_number AS contract_number, sc.supplier AS contract_supplier
+    FROM swift_transfers s
+    LEFT JOIN orders o ON o.id = s.order_id
+    LEFT JOIN supplier_contracts sc ON sc.id = s.contract_id
     ORDER BY s.created_at DESC
   `).all());
 });
@@ -1268,17 +1314,32 @@ app.post('/api/swift-transfers', guardScreen('swift-hkag'), (req, res) => {
 });
 
 app.put('/api/swift-transfers/:id', guardScreen('swift-hkag'), (req, res) => {
-  const { order_id, commercial_invoice_id, number, date, amount, currency, status, paid_date, media, notes } = req.body;
+  const { order_id, contract_id, commercial_invoice_id, number, date, amount, currency, status,
+    paid_date, media, notes, payment_schedule, due_date, due_date_2, paid_amount } = req.body;
   db.prepare(`
-    UPDATE swift_transfers SET order_id=?, commercial_invoice_id=?, number=?, date=?, amount=?, currency=?, status=?, paid_date=?, media=?, notes=?, updated_by=?
+    UPDATE swift_transfers SET order_id=?, contract_id=?, commercial_invoice_id=?, number=?, date=?, amount=?, currency=?, status=?,
+      paid_date=?, media=?, notes=?, payment_schedule=?, due_date=?, due_date_2=?, paid_amount=?, updated_by=?
     WHERE id=?
-  `).run(order_id || null, commercial_invoice_id || null, number, date, amount || 0, currency || 'USD', status, paid_date || null, media || null, notes, actorName(req), req.params.id);
+  `).run(order_id || null, contract_id || null, commercial_invoice_id || null, number, date, amount || 0, currency || 'USD', status,
+    paid_date || null, media || null, notes, payment_schedule || '100', due_date || null, due_date_2 || null, paid_amount || 0, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM swift_transfers WHERE id=?').get(req.params.id));
 });
 
 app.delete('/api/swift-transfers/:id', guardScreen('swift-hkag'), (req, res) => {
   db.prepare('DELETE FROM swift_transfers WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// Same "Partial" normalization Supplier Flow uses (see PATCH
+// /api/financial/suppliers/:id/status) — paid_amount only matters when
+// status is "Partial", full amount is implied for "Paid" and 0 otherwise, so
+// this is enforced server-side rather than trusting the client's cache.
+app.patch('/api/swift-transfers/:id/status', guardScreen('swift-hkag'), (req, res) => {
+  const { status, paid_date, paid_amount } = req.body;
+  const row = db.prepare('SELECT amount FROM swift_transfers WHERE id=?').get(req.params.id);
+  const normalizedPaidAmount = status === 'Paid' ? (row?.amount || 0) : status === 'Partial' ? (paid_amount || 0) : 0;
+  db.prepare('UPDATE swift_transfers SET status=?, paid_date=?, paid_amount=?, updated_by=? WHERE id=?').run(status, paid_date || null, normalizedPaidAmount, actorName(req), req.params.id);
+  res.json(db.prepare('SELECT * FROM swift_transfers WHERE id=?').get(req.params.id));
 });
 
 // ─── REPORTS ─────────────────────────────────────────────────────────────────
@@ -1438,7 +1499,7 @@ const supplierPaid = db.prepare(`
   const pendingSwiftTransfers = canSeeSwift ? db.prepare(`
     SELECT s.*, o.order_number AS order_number
     FROM swift_transfers s LEFT JOIN orders o ON o.id = s.order_id
-    WHERE s.status = 'Pending' ORDER BY s.created_at DESC
+    WHERE s.status != 'Paid' ORDER BY s.created_at DESC
   `).all() : [];
 
   // Both clientFinancial (Pending/Paid counts) and pendingCommercials are
