@@ -100,6 +100,11 @@ const TRANSLATIONS = {
     "Used only to generate a second, internal PDF documenting Ningbo selling these same items to Hong Kong — saved on this Proforma, doesn't affect the real client-facing document.": "仅用于生成第二份内部PDF，记录宁波向香港销售相同货品的情况——保存在此形式发票中，不影响面向客户的正式文件。",
     "Item Values (Ningbo → HKAG)": "货品金额（宁波 → HKAG）",
     "No products on this Proforma yet.": "此形式发票尚无货品。",
+    "Generate Swift Transfer": "生成Swift转账",
+    "Generating…": "生成中…",
+    "Save the Proforma first.": "请先保存形式发票。",
+    "Swift Transfer generated — check the Swift HKAG screen.": "Swift转账已生成——请查看Swift HKAG界面。",
+    "Failed to generate Swift Transfer: ": "生成Swift转账失败：",
     "Client document (HKAG/Ningbo)": "客户文件（HKAG/宁波）",
     "Internal document (Ningbo → HKAG)": "内部文件（宁波 → HKAG）",
     "Questionnaire": "问卷",
@@ -183,7 +188,6 @@ const TRANSLATIONS = {
     "Status": "状态",
     "Photos / Videos": "照片 / 视频",
     "Linked Order": "关联订单",
-    "Linked Contract": "关联合同",
     "Proforma Number": "形式发票编号",
     "Issue Date": "开票日期",
     "Validity Date": "有效日期",
@@ -5534,6 +5538,8 @@ function NingboInternalForm({ items, currency, initial, onSave, onClose }) {
   const [wayOfShipment, setWayOfShipment] = useState(initial.ningbo_way_of_shipment || initial.way_of_shipment || "By Sea");
   const [incoterm, setIncoterm] = useState(initial.ningbo_incoterm || initial.incoterm || "");
   const [paymentTerms, setPaymentTerms] = useState(initial.ningbo_payment_terms || initial.payment_terms || "");
+  const [generatingSwift, setGeneratingSwift] = useState(false);
+  const [swiftMessage, setSwiftMessage] = useState(null);
 
   // Isolates "how much of this item" the unit price multiplies against —
   // meters for Textile/DTF Film (matches the per-meter rate normalizeSalesItem
@@ -5603,6 +5609,30 @@ function NingboInternalForm({ items, currency, initial, onSave, onClose }) {
     });
   };
 
+  // Swift HKAG (Hong Kong wiring Ningbo the funds to cover this deal) is
+  // generated straight from here — this popup's own Item Values total/
+  // currency and Payment Terms text are exactly the numbers HKAG owes
+  // Ningbo, no relation to Supplier Contracts or the Commercial Invoice.
+  // Only usable once the Proforma itself has been saved (needs a real id to
+  // link the Swift row to) — same "don't generate before the edit is
+  // actually persisted" reasoning as every other document button in this
+  // app (see the removed DocButtons in modals elsewhere).
+  const handleGenerateSwift = async () => {
+    if (!initial.id) return;
+    setGeneratingSwift(true);
+    setSwiftMessage(null);
+    try {
+      await api(`/proformas/${initial.id}/generate-swift`, "POST", {
+        amount: rowsTotal, currency, notes: paymentTerms,
+        number: initial.number, date: new Date().toISOString().slice(0, 10),
+      });
+      setSwiftMessage({ ok: true, text: t("Swift Transfer generated — check the Swift HKAG screen.") });
+    } catch (err) {
+      setSwiftMessage({ ok: false, text: t("Failed to generate Swift Transfer: ") + err.message });
+    }
+    setGeneratingSwift(false);
+  };
+
   return (
     <Modal title={t("Ningbo → HKAG Internal Proforma")} onClose={onClose} wide>
       <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "16px", lineHeight: 1.5 }}>
@@ -5659,9 +5689,23 @@ function NingboInternalForm({ items, currency, initial, onSave, onClose }) {
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-        <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={handleSave}>Save</Btn>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+        <div>
+          <Btn small outline color="#8b5cf6" disabled={!initial.id || generatingSwift || items.length === 0}
+            onClick={handleGenerateSwift}>
+            🏦 {generatingSwift ? t("Generating…") : t("Generate Swift Transfer")}
+          </Btn>
+          {!initial.id && (
+            <div style={{ fontSize: "11px", color: "#64748b", marginTop: "6px" }}>{t("Save the Proforma first.")}</div>
+          )}
+          {swiftMessage && (
+            <div style={{ fontSize: "11px", color: swiftMessage.ok ? "#10b981" : "#ef4444", marginTop: "6px" }}>{swiftMessage.text}</div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: "10px" }}>
+          <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
+          <Btn onClick={handleSave}>Save</Btn>
+        </div>
       </div>
     </Modal>
   );
@@ -8040,7 +8084,10 @@ function Samples({ navSeed, onConsumeNav } = {}) {
   placeholder="Search by product, client or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       {modal && (
         <Modal title={t("New Sample Request")} onClose={() => setModal(false)}>
-          <SampleForm onSave={b => api("/samples", "POST", b).then(load)} onClose={() => setModal(false)} />
+          <SampleForm onSave={async b => {
+            const saved = await api("/samples", "POST", b); load();
+            setNotify({ entityType: "samples", recordLabel: saved.code || b.code, eventType: "created" });
+          }} onClose={() => setModal(false)} />
         </Modal>
       )}
 
@@ -8336,7 +8383,7 @@ function Contracts({ navSeed, onConsumeNav } = {}) {
   );
 }
 
-function Financial({ type }) {
+function Financial({ type, navSeed, onConsumeNav }) {
   const t = useT();
   const isClient = type === "client";
   const [records, setRecords] = useState([]);
@@ -8345,6 +8392,7 @@ function Financial({ type }) {
   const [editing, setEditing] = useState(null);
   const [notify, setNotify] = useState(null);
   const [search, setSearch] = useState("");
+  useNavSeed(navSeed, onConsumeNav, setSearch);
   const entityType = isClient ? "financial-clients" : "financial-suppliers";
   const endpoint = isClient ? "/financial/clients" : "/financial/suppliers";
   const load = useCallback(() => {
@@ -9550,10 +9598,10 @@ function Inspections({ navSeed, onConsumeNav } = {}) {
 // "Missing" flag when nothing's attached — plus an Amount/Currency and a
 // Pending/Paid Status, since this screen also doubles as the tracker for
 // whether that transfer actually went out.
-function SwiftForm({ onSave, onClose, initial, orders, commercialInvoices, contracts, supplierPayments }) {
+function SwiftForm({ onSave, onClose, initial, orders, commercialInvoices }) {
   const t = useT();
   const [f, setF] = useState(initial || {
-    order_id: "", contract_id: "", commercial_invoice_id: "", number: "", date: "",
+    order_id: "", commercial_invoice_id: "", number: "", date: "",
     amount: "", currency: "USD", status: "Pending", notes: "",
     payment_schedule: "100", due_date: "", due_date_2: "", paid_amount: "",
   });
@@ -9588,34 +9636,6 @@ function SwiftForm({ onSave, onClose, initial, orders, commercialInvoices, contr
         <Select value={f.order_id} onChange={set("order_id")}>
           <option value="">None</option>
           {(orders || []).map(o => <option key={o.id} value={o.id}>{o.order_number} – {o.client}</option>)}
-        </Select>
-      </Field>
-      {/* Ties this Swift transfer to the specific Supplier Contract it's
-          funding — one Contract, one Swift row (see syncSwiftForContract on
-          the backend). Picking a Contract here also pulls in its Payment
-          Schedule/due dates below, same as the Supplier Flow entry created
-          alongside it, so a 20/80 shows the same split in both places. */}
-      <Field label="Linked Contract" half>
-        <Select value={f.contract_id} onChange={e => {
-          const contractId = e.target.value;
-          const c = (contracts || []).find(c => String(c.id) === String(contractId));
-          // The Contract itself has no payment_schedule/due_date/due_date_2
-          // columns — only its Supplier Flow entry does (see database.js) —
-          // so the dates here must come from that linked Supplier Payment,
-          // exactly as entered there, not from the Contract row.
-          const sp = (supplierPayments || []).find(s => String(s.contract_id) === String(contractId));
-          setF(p => ({
-            ...p, contract_id: contractId,
-            ...(c ? { order_id: c.order_id || p.order_id, currency: sp?.currency || c.currency || p.currency } : {}),
-            ...(sp ? {
-              amount: sp.amount != null ? String(sp.amount) : p.amount,
-              payment_schedule: sp.payment_schedule || "100",
-              due_date: sp.due_date || "", due_date_2: sp.due_date_2 || "",
-            } : {}),
-          }));
-        }}>
-          <option value="">None</option>
-          {(contracts || []).map(c => <option key={c.id} value={c.id}>{c.contract_number} – {c.supplier}</option>)}
         </Select>
       </Field>
       <Field label="Linked Commercial Invoice" half>
@@ -9729,27 +9749,18 @@ function SwiftHkag({ navSeed, onConsumeNav } = {}) {
   const [swiftTransfers, setSwiftTransfers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [commercialInvoices, setCommercialInvoices] = useState([]);
-  const [contracts, setContracts] = useState([]);
-  const [supplierPayments, setSupplierPayments] = useState([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
   useNavSeed(navSeed, onConsumeNav, setSearch);
   const [notify, setNotify] = useState(null);
   const load = useCallback(async () => {
-    // Supplier Payments (financial_suppliers) fetched too — a Contract
-    // itself has no payment_schedule/due_date/due_date_2 columns, only its
-    // Supplier Flow entry does (see database.js), so pulling a Contract's
-    // dates into the Swift form means looking up THAT record, not the
-    // Contract row itself.
-    const [swiftTransfers, orders, commercialInvoices, contracts, supplierPayments] = await Promise.all([
-      api("/swift-transfers"), api("/orders"), api("/commercial-invoices"), api("/contracts"), api("/financial/suppliers"),
+    const [swiftTransfers, orders, commercialInvoices] = await Promise.all([
+      api("/swift-transfers"), api("/orders"), api("/commercial-invoices"),
     ]);
     setSwiftTransfers(swiftTransfers || []);
     setOrders(orders || []);
     setCommercialInvoices(commercialInvoices || []);
-    setContracts(contracts || []);
-    setSupplierPayments(supplierPayments || []);
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -9788,7 +9799,7 @@ function SwiftHkag({ navSeed, onConsumeNav } = {}) {
         placeholder="Search by number, order or status…" style={{ ...inputStyle, marginBottom: "16px" }} />
       {modal && (
         <Modal title={t("New Swift Transfer")} onClose={() => setModal(false)} wide>
-          <SwiftForm orders={orders} commercialInvoices={commercialInvoices} contracts={contracts} supplierPayments={supplierPayments} onSave={async b => {
+          <SwiftForm orders={orders} commercialInvoices={commercialInvoices} onSave={async b => {
             await api("/swift-transfers", "POST", b);
             load();
             setNotify({ entityType: "swift-hkag", recordLabel: b.number, eventType: "created" });
@@ -9797,7 +9808,7 @@ function SwiftHkag({ navSeed, onConsumeNav } = {}) {
       )}
       {editing && (
         <Modal title={t("Edit Swift Transfer")} onClose={() => setEditing(null)} wide>
-          <SwiftForm orders={orders} commercialInvoices={commercialInvoices} contracts={contracts} supplierPayments={supplierPayments}
+          <SwiftForm orders={orders} commercialInvoices={commercialInvoices}
             initial={{ ...editing, media: editing.media ? (typeof editing.media === 'string' ? JSON.parse(editing.media) : editing.media) : [] }}
             onSave={async b => {
               const oldStatus = editing.status;
@@ -9813,8 +9824,8 @@ function SwiftHkag({ navSeed, onConsumeNav } = {}) {
           { label: "Number", sortValue: r => r.number, render: r => (
             <span style={{ fontWeight: 700, color: "#60a5fa" }}>
               {r.number}
-              {r.contract_number && (
-                <div style={{ fontSize: "11px", fontWeight: 400, color: "#94a3b8" }}>{r.contract_number}</div>
+              {r.proforma_number && (
+                <div style={{ fontSize: "11px", fontWeight: 400, color: "#94a3b8" }}>{r.proforma_number}</div>
               )}
             </span>
           )},
@@ -10430,7 +10441,7 @@ const renderTab = () => {
       case "swift-hkag": return <SwiftHkag navSeed={navSeedFor("swift-hkag")} onConsumeNav={() => consumeNav("swift-hkag")} />;
       case "packing-lists": return <PackingLists navSeed={navSeedFor("packing-lists")} onConsumeNav={() => consumeNav("packing-lists")} />;
       case "contracts": return <Contracts navSeed={navSeedFor("contracts")} onConsumeNav={() => consumeNav("contracts")} />;
-      case "fin-suppliers": return <Financial type="supplier" />;
+      case "fin-suppliers": return <Financial type="supplier" navSeed={navSeedFor("fin-suppliers")} onConsumeNav={() => consumeNav("fin-suppliers")} />;
       case "reports": return <Reports />;
       case "activity": return <Activity />;
       default: return null;
