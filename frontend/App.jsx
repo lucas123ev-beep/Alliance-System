@@ -1847,9 +1847,15 @@ function RichTextEditor({ value, onChange, placeholder }) {
         <button type="button" title="Italic" style={{ ...btnStyle, fontStyle: "italic" }} onMouseDown={e => e.preventDefault()} onClick={() => exec("italic")}>I</button>
         <button type="button" title="Underline" style={{ ...btnStyle, textDecoration: "underline" }} onMouseDown={e => e.preventDefault()} onClick={() => exec("underline")}>U</button>
         <div style={{ width: "1px", background: "#334155", margin: "3px 2px" }} />
-        <button type="button" title="Align left" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("justifyLeft")}>⯇</button>
-        <button type="button" title="Align center" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("justifyCenter")}>≡</button>
-        <button type="button" title="Align right" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("justifyRight")}>⯈</button>
+        <button type="button" title="Align left" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("justifyLeft")}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="14" y2="12" /><line x1="4" y1="18" x2="17" y2="18" /></svg>
+        </button>
+        <button type="button" title="Align center" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("justifyCenter")}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="4" y1="6" x2="20" y2="6" /><line x1="7" y1="12" x2="17" y2="12" /><line x1="5.5" y1="18" x2="18.5" y2="18" /></svg>
+        </button>
+        <button type="button" title="Align right" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("justifyRight")}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="4" y1="6" x2="20" y2="6" /><line x1="10" y1="12" x2="20" y2="12" /><line x1="7" y1="18" x2="20" y2="18" /></svg>
+        </button>
         <div style={{ width: "1px", background: "#334155", margin: "3px 2px" }} />
         <button type="button" title="Bullet list" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("insertUnorderedList")}>•—</button>
         <button type="button" title="Clear formatting" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("removeFormat")}>✕</button>
