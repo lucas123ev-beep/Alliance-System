@@ -1797,6 +1797,77 @@ function Select({ children, style, ...props }) {
 }
 function Textarea(props) { return <textarea style={{ ...inputStyle, resize: "vertical", minHeight: "80px" }} {...props} />; }
 
+// Minimal rich-text field (bold/italic/underline/alignment/bullet list) —
+// used for the Product's own Description, which prints as the item's
+// descriptive paragraph on Proforma/Commercial Invoice PDFs (see
+// splitDescription in server.js). Stores its value as a small HTML string
+// instead of plain text so that formatting actually survives into the
+// generated documents, instead of the old "just split on newlines" scheme.
+// Deliberately kept to `document.execCommand` + a handful of toolbar
+// buttons rather than pulling in a full editor library — this field never
+// needs more than what a factory/product description realistically uses.
+function RichTextEditor({ value, onChange, placeholder }) {
+  const ref = useRef(null);
+  const lastValue = useRef(value);
+
+  useEffect(() => {
+    // Only push `value` into the DOM when it changed from OUTSIDE this
+    // editor (e.g. switching which product is being edited, or the Edit
+    // modal first opening) — writing on every keystroke would reset the
+    // cursor position mid-typing, since `value` is also updated by our own
+    // onChange below.
+    if (ref.current && value !== lastValue.current && value !== ref.current.innerHTML) {
+      ref.current.innerHTML = value || "";
+    }
+    lastValue.current = value;
+  }, [value]);
+
+  const handleInput = () => {
+    const html = ref.current?.innerHTML || "";
+    lastValue.current = html;
+    onChange(html);
+  };
+
+  const exec = (cmd, arg) => {
+    ref.current?.focus();
+    document.execCommand(cmd, false, arg);
+    handleInput();
+  };
+
+  const btnStyle = {
+    background: "#1e293b", border: "1px solid #334155", borderRadius: "6px",
+    color: "#cbd5e1", width: "28px", height: "28px", cursor: "pointer",
+    fontSize: "13px", display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: "4px", marginBottom: "6px", flexWrap: "wrap" }}>
+        <button type="button" title="Bold" style={{ ...btnStyle, fontWeight: 700 }} onMouseDown={e => e.preventDefault()} onClick={() => exec("bold")}>B</button>
+        <button type="button" title="Italic" style={{ ...btnStyle, fontStyle: "italic" }} onMouseDown={e => e.preventDefault()} onClick={() => exec("italic")}>I</button>
+        <button type="button" title="Underline" style={{ ...btnStyle, textDecoration: "underline" }} onMouseDown={e => e.preventDefault()} onClick={() => exec("underline")}>U</button>
+        <div style={{ width: "1px", background: "#334155", margin: "3px 2px" }} />
+        <button type="button" title="Align left" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("justifyLeft")}>⯇</button>
+        <button type="button" title="Align center" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("justifyCenter")}>≡</button>
+        <button type="button" title="Align right" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("justifyRight")}>⯈</button>
+        <div style={{ width: "1px", background: "#334155", margin: "3px 2px" }} />
+        <button type="button" title="Bullet list" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("insertUnorderedList")}>•—</button>
+        <button type="button" title="Clear formatting" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("removeFormat")}>✕</button>
+      </div>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={handleInput}
+        onBlur={handleInput}
+        data-placeholder={placeholder || ""}
+        className="rich-text-editable"
+        style={{ ...inputStyle, minHeight: "80px", overflowY: "auto", whiteSpace: "pre-wrap" }}
+      />
+    </div>
+  );
+}
+
 // "Refresh from registered product" icon — two vertical U-shaped arrows
 // forming a sync/refresh symbol, matching the exact glyph requested for the
 // Order/Quotation item list's refresh buttons. stroke="currentColor" so it
@@ -2997,8 +3068,13 @@ function buildPackingListDraft(order, products) {
     // splitDescription in server.js): the product's registered description
     // renders as its own paragraph (descriptionText), separate from the
     // bold product name above it — any further lines (e.g. a CAS number)
-    // stay as a bulleted facts list underneath.
-    const descLines = product?.description ? String(product.description).split(/\r?\n/).map(s => s.trim()).filter(Boolean) : [];
+    // stay as a bulleted facts list underneath. A rich-text description
+    // (saved by RichTextEditor as HTML — detected the same way
+    // isHtmlDescription does server-side) skips this split entirely and
+    // renders as one trusted HTML block instead (see descriptionIsHtml
+    // below and pdf/packingList.js's descCell).
+    const isHtmlDesc = !!product?.description && /<[a-z][\s\S]*>/i.test(product.description);
+    const descLines = (product?.description && !isHtmlDesc) ? String(product.description).split(/\r?\n/).map(s => s.trim()).filter(Boolean) : [];
     // "Width" only means something for Textile/DTF Film rolls — every other
     // category shows what unit the Quantity is expressed in instead (TON,
     // LITER, or the registered package unit), same as the PDF backend logic.
@@ -3022,8 +3098,9 @@ function buildPackingListDraft(order, products) {
     return {
       product_id: item.product_id,
       description: product?.name || item.product_name,
-      descriptionText: descLines[0] || "",
-      bullets: descLines.slice(1),
+      descriptionText: isHtmlDesc ? product.description : (descLines[0] || ""),
+      descriptionIsHtml: isHtmlDesc,
+      bullets: isHtmlDesc ? [] : descLines.slice(1),
       ncm: product?.ncm || "",
       color: product?.color || "",
       width: product?.width ? `${product.width}${product.width_unit || ""}` : "",
@@ -4039,6 +4116,8 @@ useEffect(() => {
       <option>20' Standard</option>
       <option>40' High Cube</option>
       <option>40' Standard</option>
+      <option>40' NOR</option>
+      <option>LCL</option>
     </Select>
     <Input type="number" value={f.container_qty || ""} onChange={set("container_qty")} placeholder="Qty" style={{ ...inputStyle, flex: 1 }} />
   </div>
@@ -4873,7 +4952,9 @@ const handleSalePerLiterChange = (e) => {
   </div>
 )}
 
-      <Field label="Description"><Textarea value={f.description} onChange={set("description")} /></Field>
+      <Field label="Description">
+        <RichTextEditor value={f.description} onChange={html => setF(p => ({ ...p, description: html }))} placeholder={t("Description")} />
+      </Field>
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         {initial?.id && (
           <Btn outline color="#8b5cf6" onClick={() => setShowPriceHistory(true)}>📈 Price History</Btn>
@@ -6895,6 +6976,35 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
   });
   const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }));
 
+  // Supporting files (loading photos, customs docs, etc.) — same
+  // { url, name } media pattern used by Inspections/Samples/Swift HKAG.
+  const [media, setMedia] = useState(() => {
+    if (!initial?.media) return [];
+    let parsed = initial.media;
+    if (typeof parsed === 'string') {
+      try { parsed = JSON.parse(parsed); } catch { return []; }
+    }
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(item => typeof item === 'string' ? { url: item, name: item.split('/').pop() } : item);
+  });
+  // Snapshot of how many attachments existed when this popup opened — the
+  // Save button below compares the live count against this to tell the
+  // caller whether an attachment was actually added in this save (see
+  // "notify only when saved with an attachment" further down).
+  const [initialMediaCount] = useState(() => media.filter(Boolean).length);
+  const [uploading, setUploading] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+  useEscapeToClose(!!lightbox, () => setLightbox(null));
+  const handleUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    setUploading(true);
+    try {
+      const results = await Promise.all(files.map(uploadToCloudinary));
+      setMedia(prev => [...prev, ...results.filter(Boolean)]);
+    } catch (err) { alert(t("Upload failed: ") + err.message); }
+    setUploading(false);
+  };
+
   // Freight Agent — same searchable "type or pick from the registered list"
   // pattern used for Client/Supplier elsewhere in the app. Just a text
   // snapshot on the packing list (like orders.supplier), not a foreign key,
@@ -7183,13 +7293,60 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
 
       <Field label="Notes"><Textarea value={f.notes || ""} onChange={set("notes")} /></Field>
 
+      <Field label="Attachments">
+        <div>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 16px", cursor: "pointer", fontSize: "13px", color: "#94a3b8", marginBottom: "12px" }}>
+            {uploading ? t("⏳ Uploading...") : t("📎 Add Photos / PDFs")}
+            <input type="file" multiple accept="image/*,application/pdf" onChange={handleUpload} style={{ display: "none" }} disabled={uploading} />
+          </label>
+          {lightbox && (
+            <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <img src={lightbox} style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: "8px", objectFit: "contain" }} alt="" onClick={e => e.stopPropagation()} />
+              <button onClick={() => setLightbox(null)} style={{ position: "fixed", top: "20px", right: "20px", background: "#ef4444", border: "none", borderRadius: "50%", width: "36px", height: "36px", color: "#fff", fontSize: "18px", cursor: "pointer" }}>✕</button>
+            </div>
+          )}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+            {media.filter(Boolean).map((item, i) => {
+              const url = typeof item === 'string' ? item : item.url;
+              const name = typeof item === 'string' ? url.split('/').pop() : item.name;
+              return (
+                <div key={i} style={{ position: "relative" }}>
+                  {url.match(/\.pdf$/i) || name.match(/\.pdf$/i) ? (
+                    <a href={url} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "80px", height: "80px", background: "#1e293b", borderRadius: "6px", border: "1px solid #334155", color: "#f1f5f9", fontSize: "28px", textDecoration: "none" }}>📄</a>
+                  ) : (
+                    <img src={url} onClick={() => setLightbox(url)} style={{ width: "80px", height: "80px", objectFit: "cover", borderRadius: "6px", border: "1px solid #334155", cursor: "pointer" }} alt="" />
+                  )}
+                  <button onClick={async () => {
+                    const res = await fetch(url);
+                    const blob = await res.blob();
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = name;
+                    a.click();
+                  }} style={{ position: "absolute", bottom: "-6px", left: "-6px", background: "#3b82f6", border: "none", borderRadius: "50%", width: "18px", height: "18px", color: "#fff", fontSize: "10px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⬇</button>
+                  <button onClick={() => setMedia(prev => prev.filter((_, idx) => idx !== i))} style={{ position: "absolute", top: "-6px", right: "-6px", background: "#ef4444", border: "none", borderRadius: "50%", width: "18px", height: "18px", color: "#fff", fontSize: "10px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </Field>
+
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
         {/* Document-generation button was removed from this modal —
             generating here (before Save) risked the edit never actually
             being persisted. It lives only on the Packing Lists screen's own
             Actions column now, where the record is already saved. */}
-        <Btn onClick={async () => { await onSave(f); onClose(); }}>Save Packing List</Btn>
+        <Btn onClick={async () => {
+          // Compares against the media count this popup was opened with
+          // (initialMediaCount, captured once at mount) so the caller only
+          // notifies when THIS save actually added a new attachment — not
+          // on every subsequent save of a Packing List that already had one.
+          const newCount = media.filter(Boolean).length;
+          await onSave({ ...f, media: JSON.stringify(media) }, { mediaAdded: newCount > initialMediaCount });
+          onClose();
+        }}>Save Packing List</Btn>
       </div>
     </div>
   );
@@ -9204,6 +9361,20 @@ function CommercialInvoices({ navSeed, onConsumeNav } = {}) {
     (i.status || "").toLowerCase().includes(search.toLowerCase()))
   );
 
+  // Same Total/Pending/Paid summary header as Swift HKAG/Supplier Cash Flow
+  // (see SwiftHkag() / Financial()) — hidden entirely for accounts with
+  // hideCommercialStatus, since it reveals the same payment-progress info
+  // the Status column itself is already hidden for.
+  const totals = invoices.reduce((acc, r) => {
+    const total = parseFloat(r.total) || 0;
+    acc.total += total;
+    const paidSoFar = r.status === "Paid" ? total : r.status === "Partial" ? (parseFloat(r.paid_amount) || 0) : 0;
+    acc.paid += paidSoFar;
+    if (r.status === "Pending") acc.pending += total;
+    if (r.status === "Partial") acc.pending += Math.max(0, total - paidSoFar);
+    return acc;
+  }, { total: 0, pending: 0, paid: 0 });
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
@@ -9224,8 +9395,20 @@ function CommercialInvoices({ navSeed, onConsumeNav } = {}) {
             {!hideCommercialStatus && (
               <Field label="Status" half>
                 <Select value={editing.status} onChange={e => setEditing(p => ({ ...p, status: e.target.value }))}>
-                  <option>Pending</option><option>Paid</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Partial">Partial</option>
+                  <option value="Paid">Paid</option>
                 </Select>
+              </Field>
+            )}
+            {/* Only meaningful with status "Partial" — same "Amount Paid So
+                Far" field Swift HKAG/Supplier Flow already use. Commercial
+                Invoices have no payment schedule to derive it from, so it's
+                always a manual entry here. */}
+            {!hideCommercialStatus && editing.status === "Partial" && (
+              <Field label="Amount Paid So Far" half>
+                <Input type="text" inputMode="decimal" value={editing.paid_amount || ""}
+                  onChange={e => setEditing(p => ({ ...p, paid_amount: maskMoney(e.target.value) }))} />
               </Field>
             )}
             {/* Shipment/Arrival Date live on the linked Order, not on the CI
@@ -9258,7 +9441,10 @@ function CommercialInvoices({ navSeed, onConsumeNav } = {}) {
         <Modal title={t("Generate Packing List")} onClose={() => { setPackingListModal(null); load(); }} wide>
           <PackingListForm
             initial={packingListModal}
-            onSave={async b => { await api("/packing-lists", "POST", b); load(); }}
+            onSave={async (b, { mediaAdded } = {}) => {
+              const saved = await api("/packing-lists", "POST", b); load();
+              if (mediaAdded) setNotify({ entityType: "packing-lists", recordLabel: saved.number || b.number, eventType: "created" });
+            }}
             onClose={() => { setPackingListModal(null); load(); }}
           />
         </Modal>
@@ -9267,12 +9453,22 @@ function CommercialInvoices({ navSeed, onConsumeNav } = {}) {
         <Modal title={t("Edit Packing List")} onClose={() => { setEditPackingList(null); load(); }} wide>
           <PackingListForm
             initial={editPackingList}
-            onSave={async b => { await api(`/packing-lists/${editPackingList.id}`, "PUT", b); load(); }}
+            onSave={async (b, { mediaAdded } = {}) => {
+              await api(`/packing-lists/${editPackingList.id}`, "PUT", b); load();
+              if (mediaAdded) setNotify({ entityType: "packing-lists", recordLabel: b.number || editPackingList.number, eventType: "created" });
+            }}
             onClose={() => { setEditPackingList(null); load(); }}
           />
         </Modal>
       )}
       {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
+      {!hideCommercialStatus && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
+          <StatCard label="Total" value={fmt(totals.total)} color="#8b5cf6" />
+          <StatCard label="Pending" value={fmt(totals.pending)} color="#f59e0b" />
+          <StatCard label="Paid" value={fmt(totals.paid)} color="#10b981" />
+        </div>
+      )}
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder={hideCommercialStatus ? "Search by number or client…" : "Search by number, client or status…"} style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
@@ -9280,16 +9476,41 @@ function CommercialInvoices({ navSeed, onConsumeNav } = {}) {
           { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
           { label: "Client", key: "client" },
           { label: "Issue Date", sortValue: r => r.issue_date, render: r => fmtDate(r.issue_date) },
-          { label: "Total", sortValue: r => r.total, render: r => fmt(r.total, r.currency) },
+          { label: "Total", sortValue: r => r.total, render: r => (
+            <span>
+              {fmt(r.total, r.currency)}
+              {r.status === "Partial" && !hideCommercialStatus && (
+                <div style={{ fontSize: "11px", fontWeight: 400, color: "#94a3b8" }}>
+                  Paid: {fmt(r.paid_amount || 0, r.currency)}
+                </div>
+              )}
+            </span>
+          ) },
           ...(hideCommercialStatus ? [] : [{ label: "Status", sortValue: r => r.status, render: r => (
             <Select value={r.status}
               onChange={async e => {
-                const oldStatus = r.status, newStatus = e.target.value;
-                await api(`/commercial-invoices/${r.id}`, "PUT", { ...r, status: newStatus }); load();
-                setNotify({ entityType: "commercial-invoices", recordLabel: r.number, oldStatus, newStatus });
+                const status = e.target.value;
+                let paid_amount;
+                if (status === "Partial") {
+                  // No payment schedule to derive from here (unlike Swift
+                  // HKAG/Supplier Flow), so always ask.
+                  const input = prompt(`How much of ${fmt(r.total, r.currency)} has been paid so far?`, r.paid_amount || "");
+                  if (input === null) return;
+                  paid_amount = parseFloat(input.replace(",", ".")) || 0;
+                }
+                const oldStatus = r.status;
+                await api(`/commercial-invoices/${r.id}/status`, "PATCH", {
+                  status,
+                  paid_date: (status === "Paid" || status === "Partial") ? new Date().toISOString().slice(0, 10) : null,
+                  paid_amount,
+                });
+                load();
+                setNotify({ entityType: "commercial-invoices", recordLabel: r.number, oldStatus, newStatus: status });
               }}
-              style={{ padding: "4px 8px", fontSize: "12px", width: "auto", color: r.status === "Paid" ? "#10b981" : "#f59e0b" }}>
-              <option>Pending</option><option>Paid</option>
+              style={{ padding: "4px 8px", fontSize: "12px", width: "auto", color: r.status === "Paid" ? "#10b981" : r.status === "Partial" ? "#3b82f6" : "#f59e0b" }}>
+              <option value="Pending">Pending</option>
+              <option value="Partial">Partial</option>
+              <option value="Paid">Paid</option>
             </Select>
           )}]),
           { label: "Actions", render: r => {
@@ -9331,6 +9552,7 @@ function PackingLists({ navSeed, onConsumeNav } = {}) {
   const [search, setSearch] = useState("");
   useNavSeed(navSeed, onConsumeNav, setSearch);
   const [editList, setEditList] = useState(null);
+  const [notify, setNotify] = useState(null);
   const load = useCallback(() => { api("/packing-lists").then(setLists); }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -9349,11 +9571,15 @@ function PackingLists({ navSeed, onConsumeNav } = {}) {
         <Modal title={t("Edit Packing List")} onClose={() => { setEditList(null); load(); }} wide>
           <PackingListForm
             initial={editList}
-            onSave={async b => { await api(`/packing-lists/${editList.id}`, "PUT", b); load(); }}
+            onSave={async (b, { mediaAdded } = {}) => {
+              await api(`/packing-lists/${editList.id}`, "PUT", b); load();
+              if (mediaAdded) setNotify({ entityType: "packing-lists", recordLabel: b.number || editList.number, eventType: "created" });
+            }}
             onClose={() => { setEditList(null); load(); }}
           />
         </Modal>
       )}
+      {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
       <Input value={search} onChange={e => setSearch(e.target.value)}
         placeholder="Search by number, order or client…" style={{ ...inputStyle, marginBottom: "16px" }} />
       <Table
@@ -10458,6 +10684,9 @@ const renderTab = () => {
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
         input:focus, select:focus, textarea:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+        .rich-text-editable:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+        .rich-text-editable:empty:before { content: attr(data-placeholder); color: #64748b; }
+        .rich-text-editable ul { margin: 4px 0; padding-left: 20px; }
         @keyframes notifToastIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
       `}</style>
       {/* Wraps the WHOLE layout (sidebar included) — it used to only wrap

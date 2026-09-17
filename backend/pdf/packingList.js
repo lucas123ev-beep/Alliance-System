@@ -28,9 +28,17 @@ function isTextileItem(item) {
 // plain lines under the description, same as the reference documents
 // (flush-left, no bullet marker/indent — see .desc-line in layout.js).
 const nameCell = item => `<td class="center"><strong>${escapeHtml(item.description)}</strong></td>`;
+// item.descriptionIsHtml (set by buildPackingListDraft on the frontend,
+// same convention as server.js's splitDescription for Proforma/Commercial
+// Invoice) means this came from the RichTextEditor toolbar, not hand-typed
+// text — safe to render as trusted HTML instead of escaping it.
 const descCell = item => `
   <td>
-    ${item.descriptionText ? `<p class="desc-text">${escapeHtml(item.descriptionText)}</p>` : ""}
+    ${item.descriptionText
+      ? (item.descriptionIsHtml
+          ? `<div class="desc-text">${item.descriptionText}</div>`
+          : `<p class="desc-text">${escapeHtml(item.descriptionText)}</p>`)
+      : ""}
     ${(item.bullets || []).map(b => `<p class="desc-line">${escapeHtml(b)}</p>`).join("")}
     ${item.ncm ? `<p class="desc-line"><strong>NCM: ${escapeHtml(item.ncm)}</strong></p>` : ""}
   </td>

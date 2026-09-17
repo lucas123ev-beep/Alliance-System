@@ -9,6 +9,7 @@ const ExcelJS = require("exceljs");
 const LOGO = require("../pdf/logo");
 const LOGO_NINGBO = require("../pdf/logoNingbo");
 const { fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLabel } = require("../pdf/helpers");
+const { htmlToExcelRuns } = require("./richText");
 
 const NAVY_ARGB = "FF0D1627";
 // Second, lighter-palette theme for documents issued under the Ningbo
@@ -36,6 +37,7 @@ const FS = { body: 10, small: 9, heading: 11, title: 14, hero: 16 };
 const NAME_ROW_H = 26;
 const OTHER_ROW_H = 18;
 const SPACER_ROW_H = 10;
+
 
 // Which theme (accent ARGB + logo) this workbook should use — same
 // acq.code-driven rule as pdf/layout.js's themeFor(). logoWidth/logoHeight
@@ -279,7 +281,21 @@ function buildSalesInvoiceWorkbook(params) {
   // row with an extra line it didn't need (contributing to the "too tall"
   // rows the PDF doesn't have — its own descCell() never repeats the name
   // either, see itemSections.js).
-  const itemDescription = item => [item.descriptionText, ...(item.bullets || []), item.ncm ? `NCM: ${item.ncm}` : ""].filter(Boolean).join("\n");
+  // A rich-text Description (item.descriptionIsHtml) returns an ExcelJS
+  // { richText: [...] } object instead of a plain string, preserving
+  // whatever bold/italic/underline the user applied in the editor — see
+  // htmlToExcelRuns above. Plain-text descriptions (older products, saved
+  // before that editor existed) keep the original joined-string behavior.
+  const itemDescription = item => {
+    const extra = [...(item.bullets || []), item.ncm ? `NCM: ${item.ncm}` : ""].filter(Boolean);
+    if (item.descriptionIsHtml && item.descriptionText) {
+      const baseFont = { size: FS.small };
+      const runs = htmlToExcelRuns(item.descriptionText, baseFont);
+      if (extra.length) runs.push({ font: baseFont, text: "\n" + extra.join("\n") });
+      return { richText: runs };
+    }
+    return [item.descriptionText, ...extra].filter(Boolean).join("\n");
+  };
   const itemColor = item => item.clientColorCode ? `${item.color || "—"} (${item.clientColorCode})` : (item.color || "—");
 
   // Thickness column — same "value+unit" string Contract PDF already prints

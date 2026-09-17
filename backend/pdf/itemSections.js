@@ -52,9 +52,21 @@ function renderItemSections(items, currency, opts = {}) {
     </td>`;
   const nameCell = item => `<td class="center"><strong>${escapeHtml(item.description)}</strong></td>`;
   const thicknessCell = item => `<td class="center">${escapeHtml(item.thickness || "—")}</td>`;
+  // A rich-text Description (item.descriptionIsHtml — see splitDescription
+  // in server.js) is only ever produced by the frontend's own RichTextEditor
+  // toolbar (bold/italic/underline/alignment/bullet-list), never hand-typed,
+  // so it's rendered as trusted HTML straight into the "desc-text" wrapper
+  // instead of being escaped — that's what lets the actual formatting show
+  // up in the PDF instead of printing literal <b> tags. Older plain-text
+  // descriptions (isHtml false/undefined) keep the original escaped
+  // paragraph-plus-bullets rendering.
   const descCell = item => `
     <td>
-      ${item.descriptionText ? `<p class="desc-text">${escapeHtml(item.descriptionText)}</p>` : ""}
+      ${item.descriptionText
+        ? (item.descriptionIsHtml
+            ? `<div class="desc-text">${item.descriptionText}</div>`
+            : `<p class="desc-text">${escapeHtml(item.descriptionText)}</p>`)
+        : ""}
       ${(item.bullets || []).map(b => `<p class="desc-line">${escapeHtml(b)}</p>`).join("")}
       ${item.ncm ? `<p class="desc-line"><strong>NCM: ${escapeHtml(item.ncm)}</strong></p>` : ""}
     </td>

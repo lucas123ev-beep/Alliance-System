@@ -151,6 +151,12 @@ function baseCss(accent = NAVY) {
        prints as its own plain line underneath — NOT a bulleted/indented
        list, matching the client's own reference documents. */
     .items-table .desc-text, .items-table .desc-line { margin: 0.5px 0; font-size: 7.5px; line-height: 1.15; color: #222; }
+    /* Rich-text Description (see RichTextEditor on the frontend) renders as
+       trusted HTML inside .desc-text — its own bullet lists/paragraphs need
+       a bit of their own spacing/reset since they're not the plain <p>
+       elements the rule above was written for. */
+    .items-table .desc-text ul { margin: 0.5px 0; padding-left: 12px; }
+    .items-table .desc-text p, .items-table .desc-text div { margin: 0.5px 0; }
     .totals-row td { font-weight: bold; border-top: 1.5px solid ${accent}; border-bottom: none; }
     /* Footer: up to three columns (Payment & Terms / Bank Information /
        Importer-Consignee), each its own light card with a navy heading row

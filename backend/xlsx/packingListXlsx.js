@@ -7,6 +7,7 @@ const ExcelJS = require("exceljs");
 const LOGO = require("../pdf/logo");
 const LOGO_NINGBO = require("../pdf/logoNingbo");
 const { fmtDateLong, fmtNumber } = require("../pdf/helpers");
+const { htmlToExcelRuns } = require("./richText");
 
 const NAVY_ARGB = "FF0D1627";
 // Second, lighter-palette theme for documents issued under the Ningbo
@@ -125,7 +126,20 @@ function buildPackingListWorkbook(params) {
     row.eachCell(c => { c.fill = LABEL_FILL; c.border = { top: THIN_SEP, bottom: THIN_SEP }; });
     return row;
   };
-  const itemDescription = item => [item.description, item.descriptionText, ...(item.bullets || []), item.ncm ? `NCM: ${item.ncm}` : ""].filter(Boolean).join("\n");
+  // item.descriptionIsHtml (set by buildPackingListDraft on the frontend,
+  // same convention as normalizeSalesItem's descriptionIsHtml server-side)
+  // means the Description came from the RichTextEditor toolbar — rendered
+  // as ExcelJS rich-text runs (see htmlToExcelRuns) so bold/italic/underline
+  // survive into the cell instead of printing literal tags.
+  const itemDescription = item => {
+    const extra = [...(item.bullets || []), item.ncm ? `NCM: ${item.ncm}` : ""].filter(Boolean);
+    if (item.descriptionIsHtml && item.descriptionText) {
+      const runs = htmlToExcelRuns(item.descriptionText, {});
+      if (extra.length) runs.push({ font: {}, text: "\n" + extra.join("\n") });
+      return { richText: runs };
+    }
+    return [item.description, item.descriptionText, ...extra].filter(Boolean).join("\n");
+  };
   const itemColor = item => item.clientColorCode ? `${item.color || "—"} (${item.clientColorCode})` : (item.color || "—");
 
   // Renders the (up to) two category tables for one group of items — same

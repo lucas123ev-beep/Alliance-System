@@ -61,6 +61,7 @@ const ACTIVITY_ROUTES = [
 
   { method: 'POST',   regex: /^\/api\/commercial-invoices$/,               entityType: 'commercial-invoices', table: 'commercial_invoices', labelCols: ['number'], statusCol: 'status' },
   { method: 'PUT',    regex: /^\/api\/commercial-invoices\/(\d+)$/,        entityType: 'commercial-invoices', table: 'commercial_invoices', labelCols: ['number'], statusCol: 'status' },
+  { method: 'PATCH',  regex: /^\/api\/commercial-invoices\/(\d+)\/status$/, entityType: 'commercial-invoices', table: 'commercial_invoices', labelCols: ['number'], statusCol: 'status' },
   { method: 'DELETE', regex: /^\/api\/commercial-invoices\/(\d+)$/,        entityType: 'commercial-invoices', table: 'commercial_invoices', labelCols: ['number'] },
 
   { method: 'POST',   regex: /^\/api\/packing-lists$/,                     entityType: 'packing-lists',       table: 'packing_lists',       labelCols: ['number'] },
@@ -79,7 +80,18 @@ const ACTIVITY_ROUTES = [
 
   { method: 'POST',   regex: /^\/api\/swift-transfers$/,                   entityType: 'swift-hkag',          table: 'swift_transfers',     labelCols: ['number'], statusCol: 'status' },
   { method: 'PUT',    regex: /^\/api\/swift-transfers\/(\d+)$/,            entityType: 'swift-hkag',          table: 'swift_transfers',     labelCols: ['number'], statusCol: 'status' },
+  { method: 'PATCH',  regex: /^\/api\/swift-transfers\/(\d+)\/status$/,    entityType: 'swift-hkag',          table: 'swift_transfers',     labelCols: ['number'], statusCol: 'status' },
   { method: 'DELETE', regex: /^\/api\/swift-transfers\/(\d+)$/,            entityType: 'swift-hkag',          table: 'swift_transfers',     labelCols: ['number'] },
+  // The "Generate Swift Transfer" button on the Proforma's Ningbo -> HKAG
+  // popup (see POST /api/proformas/:id/generate-swift in server.js) upserts
+  // a single row per proforma via POST on both the first click (create) and
+  // any later click (update) — this always logs as "created" since the
+  // route is a POST either way, which is an acceptable simplification: the
+  // point is that *something* happened to that proforma's Swift, not a
+  // perfectly worded verb. The :id captured here is the PROFORMA id, not
+  // the swift_transfers row id, but that's harmless — it's only used for
+  // the DELETE/status-change pre-fetch paths, never for a POST.
+  { method: 'POST',   regex: /^\/api\/proformas\/(\d+)\/generate-swift$/,  entityType: 'swift-hkag',          table: 'swift_transfers',     labelCols: ['number'] },
 
   { method: 'POST',   regex: /^\/api\/clients$/,                           entityType: 'clients',             table: 'clients',             labelCols: ['company_name'] },
   { method: 'PUT',    regex: /^\/api\/clients\/(\d+)$/,                    entityType: 'clients',             table: 'clients',             labelCols: ['company_name'] },

@@ -372,8 +372,10 @@ app.delete('/api/orders/:id', guardScreen('orders'), (req, res) => {
     // as deleting a Contract directly (see DELETE /api/contracts/:id), so it
     // has to be cleaned up explicitly here too, before the contracts
     // themselves are gone and there's no order_id left to find them by.
+    // (Swift HKAG isn't tied to Contracts — see swift_transfers.proforma_id
+    // — and Proformas themselves survive an Order delete, just unlinked
+    // above, so there's no Swift row to clean up here.)
     db.prepare('DELETE FROM financial_suppliers WHERE contract_id IN (SELECT id FROM supplier_contracts WHERE order_id=?)').run(req.params.id);
-    db.prepare('DELETE FROM swift_transfers WHERE contract_id IN (SELECT id FROM supplier_contracts WHERE order_id=?)').run(req.params.id);
     db.prepare('DELETE FROM supplier_contracts WHERE order_id=?').run(req.params.id);
     db.prepare('DELETE FROM commercial_invoices WHERE order_id=?').run(req.params.id);
     db.prepare('DELETE FROM inspections WHERE order_id=?').run(req.params.id);
@@ -411,10 +413,6 @@ app.delete('/api/contracts/:id', guardScreen('contracts'), (req, res) => {
   // even if already marked Paid — matches the Swift/Commercial Invoice
   // cascade-delete precedent.
   db.prepare('DELETE FROM financial_suppliers WHERE contract_id=?').run(req.params.id);
-  // Same orphan risk as the Supplier Flow entry right above — Swift HKAG is
-  // now auto-created per Contract too (see syncSwiftForContract), so it has
-  // to go with it.
-  db.prepare('DELETE FROM swift_transfers WHERE contract_id=?').run(req.params.id);
   db.prepare('DELETE FROM supplier_contracts WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -697,6 +695,11 @@ app.put('/api/proformas/:id', (req, res) => {
 });
 
 app.delete('/api/proformas/:id', guardScreen('proformas'), (req, res) => {
+  // A Swift HKAG transfer generated from this Proforma's own Ningbo -> HKAG
+  // Internal Proforma popup (see POST /api/proformas/:id/generate-swift)
+  // would otherwise survive as an orphan with no way back to the deal it
+  // was funding.
+  db.prepare('DELETE FROM swift_transfers WHERE proforma_id=?').run(req.params.id);
   db.prepare('DELETE FROM proformas WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -740,10 +743,6 @@ app.delete('/api/contracts/:id', guardScreen('contracts'), (req, res) => {
   // even if already marked Paid — matches the Swift/Commercial Invoice
   // cascade-delete precedent.
   db.prepare('DELETE FROM financial_suppliers WHERE contract_id=?').run(req.params.id);
-  // Same orphan risk as the Supplier Flow entry right above — Swift HKAG is
-  // now auto-created per Contract too (see syncSwiftForContract), so it has
-  // to go with it.
-  db.prepare('DELETE FROM swift_transfers WHERE contract_id=?').run(req.params.id);
   db.prepare('DELETE FROM supplier_contracts WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -794,39 +793,6 @@ app.get('/api/financial/suppliers', (req, res) => {
   res.json(db.prepare('SELECT * FROM financial_suppliers ORDER BY due_date ASC').all());
 });
 
-// Swift HKAG's row for a given Supplier Contract, kept in sync with that
-// Contract's own Supplier Flow payment (this table) whenever it's created
-// or its amount/schedule/dates are edited — see the POST/PUT routes below.
-// Only orders billed under the Hong Kong entity need this (HKAG owes Ningbo
-// the corresponding intercompany wire so Ningbo can actually pay the
-// factory); Ningbo orders already paid the factory directly, so there's
-// nothing to fund here. This used to only fire when the Commercial Invoice
-// was generated (near shipment) — moved up to Contract time instead, since
-// Ningbo needs that money well before then to cover the factory's deposit.
-function syncSwiftForContract({ contractId, orderId, amount, currency, dueDate, dueDate2, paymentSchedule, actor }) {
-  if (!contractId) return;
-  const order = orderId ? db.prepare('SELECT acquisition_company FROM orders WHERE id=?').get(orderId) : null;
-  if (!order || order.acquisition_company !== 'HK') return;
-  const existing = db.prepare('SELECT id FROM swift_transfers WHERE contract_id=?').get(contractId);
-  if (existing) {
-    // Status/paid_date/paid_amount are Swift HKAG's own independent
-    // tracking from here on — only the figures that originate on the
-    // Supplier Payment (amount, currency, schedule, due dates) get
-    // overwritten on every edit.
-    db.prepare(`
-      UPDATE swift_transfers SET amount=?, currency=?, due_date=?, due_date_2=?, payment_schedule=?, updated_by=?
-      WHERE id=?
-    `).run(amount, currency || 'USD', dueDate || null, dueDate2 || null, paymentSchedule || '100', actor, existing.id);
-  } else {
-    const contract = db.prepare('SELECT contract_number, sign_date FROM supplier_contracts WHERE id=?').get(contractId);
-    db.prepare(`
-      INSERT INTO swift_transfers (order_id, contract_id, number, date, amount, currency, status, payment_schedule, due_date, due_date_2, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?)
-    `).run(orderId || null, contractId, contract?.contract_number || '', contract?.sign_date || new Date().toISOString().slice(0, 10),
-      amount, currency || 'USD', paymentSchedule || '100', dueDate || null, dueDate2 || null, actor);
-  }
-}
-
 // POST intentionally NOT guarded by "fin-suppliers": generating a Supplier
 // Contract from the Orders screen ("Generate Supplier Contracts") auto-
 // creates the matching payment requirement here as a side effect (see
@@ -845,10 +811,6 @@ app.post('/api/financial/suppliers', (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, due_date_2 || null, status || 'Pending', notes, contract_id || null, items_json || null,
       payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', payment_schedule || '100', paid_amount || 0, actorName(req));
-    syncSwiftForContract({
-      contractId: contract_id || null, orderId: order_id || null, amount, currency,
-      dueDate: due_date, dueDate2: due_date_2, paymentSchedule: payment_schedule, actor: actorName(req),
-    });
     res.status(201).json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(result.lastInsertRowid));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -865,10 +827,6 @@ app.put('/api/financial/suppliers/:id', guardScreen('fin-suppliers'), (req, res)
       WHERE id=?
     `).run(order_id || null, supplier, description, type, amount, currency || 'USD', due_date, due_date_2 || null, status || 'Pending', notes,
       contract_id || null, items_json || null, payer || '', payment_method || '网银汇款 Online bank payment', applicant || '', approved_by || '', paid_date || null, payment_schedule || '100', paid_amount || 0, actorName(req), req.params.id);
-    syncSwiftForContract({
-      contractId: contract_id || null, orderId: order_id || null, amount, currency,
-      dueDate: due_date, dueDate2: due_date_2, paymentSchedule: payment_schedule, actor: actorName(req),
-    });
     res.json(db.prepare('SELECT * FROM financial_suppliers WHERE id=?').get(req.params.id));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -907,7 +865,9 @@ app.delete('/api/financial/suppliers/:id', guardScreen('fin-suppliers'), (req, r
 // Invoice row goes back to the frontend (list, create, update).
 function redactCommercialStatus(req, row) {
   if (!row || !(req.user && req.user.permissions && req.user.permissions.hideCommercialStatus)) return row;
-  const { status, ...rest } = row;
+  // paid_amount/paid_date reveal the same Pending/Partial/Paid picture
+  // status itself does — same redaction, same accounts (yukin, max).
+  const { status, paid_amount, paid_date, ...rest } = row;
   return rest;
 }
 
@@ -952,12 +912,12 @@ app.post('/api/commercial-invoices', (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, number, issue_date, client, total, currency || 'USD', status || 'Pending', notes, actorName(req));
 
-    // Swift HKAG used to be auto-created here, but by the time a Commercial
-    // Invoice exists (near shipment) HKAG should have already funded Ningbo
-    // long ago — Ningbo needs that money to pay the factory's deposit well
-    // before then. It's now auto-created per Supplier Contract instead, at
-    // the same time as that Contract's own Supplier Flow payment (see POST
-    // /api/financial/suppliers) — see that route's own comment for details.
+    // Swift HKAG used to be auto-created here — moved to a manual "Generate
+    // Swift Transfer" button on the Proforma's own Ningbo -> HKAG Internal
+    // Proforma popup instead (see POST /api/proformas/:id/generate-swift),
+    // since Swift HKAG (HK wiring Ningbo) has no real relation to the
+    // Commercial Invoice or to Supplier Contracts — it's driven by that
+    // popup's own Item Values total and Payment Terms.
 
     res.status(201).json(redactCommercialStatus(req, getCommercialInvoiceWithDates(result.lastInsertRowid)));
   } catch (err) {
@@ -972,15 +932,16 @@ app.put('/api/commercial-invoices/:id', (req, res) => {
   // whatever is already in the database instead of trusting req.body.status
   // here (defense in depth: the frontend already hides this field for
   // them, this just means a raw API call can't slip a status change
-  // through even if attempted).
+  // through even if attempted). paid_amount rides along with status for
+  // the same reason — see redactCommercialStatus.
   const hidesStatus = req.user && req.user.permissions && req.user.permissions.hideCommercialStatus;
-  const status = hidesStatus
-    ? db.prepare('SELECT status FROM commercial_invoices WHERE id=?').get(req.params.id)?.status
-    : req.body.status;
+  const existing = hidesStatus ? db.prepare('SELECT status, paid_amount FROM commercial_invoices WHERE id=?').get(req.params.id) : null;
+  const status = hidesStatus ? existing?.status : req.body.status;
+  const paid_amount = hidesStatus ? existing?.paid_amount : req.body.paid_amount;
   db.prepare(`
-    UPDATE commercial_invoices SET order_id=?, number=?, issue_date=?, client=?, total=?, currency=?, status=?, notes=?, updated_by=?
+    UPDATE commercial_invoices SET order_id=?, number=?, issue_date=?, client=?, total=?, currency=?, status=?, notes=?, paid_amount=?, updated_by=?
     WHERE id=?
-  `).run(order_id || null, number, issue_date, client, total, currency, status, notes, actorName(req), req.params.id);
+  `).run(order_id || null, number, issue_date, client, total, currency, status, notes, paid_amount || 0, actorName(req), req.params.id);
   // Editing the shipment/arrival date from the Commercial Invoice screen
   // writes straight through to the linked Order — same value, same column,
   // so a change made here is immediately reflected back on the Order (and
@@ -995,6 +956,24 @@ app.put('/api/commercial-invoices/:id', (req, res) => {
              linkedOrderId);
     }
   }
+  res.json(redactCommercialStatus(req, getCommercialInvoiceWithDates(req.params.id)));
+});
+
+// Same "Partial" normalization Supplier Flow/Swift HKAG already use (see
+// PATCH /api/financial/suppliers/:id/status) — paid_amount only matters
+// when status is "Partial", full total is implied for "Paid" and 0
+// otherwise. Blocked the same way the PUT route above blocks a status
+// change for hideCommercialStatus accounts (yukin, max) — they never see
+// this control on the frontend, so a request reaching this route for them
+// is either stale UI or a direct API call, neither legitimate.
+app.patch('/api/commercial-invoices/:id/status', (req, res) => {
+  const hidesStatus = req.user && req.user.permissions && req.user.permissions.hideCommercialStatus;
+  if (hidesStatus) return res.status(403).json({ error: 'Not permitted' });
+  const { status, paid_date, paid_amount } = req.body;
+  const row = db.prepare('SELECT total FROM commercial_invoices WHERE id=?').get(req.params.id);
+  const normalizedPaidAmount = status === 'Paid' ? (row?.total || 0) : status === 'Partial' ? (paid_amount || 0) : 0;
+  db.prepare('UPDATE commercial_invoices SET status=?, paid_date=?, paid_amount=?, updated_by=? WHERE id=?')
+    .run(status, paid_date || null, normalizedPaidAmount, actorName(req), req.params.id);
   res.json(redactCommercialStatus(req, getCommercialInvoiceWithDates(req.params.id)));
 });
 
@@ -1040,19 +1019,19 @@ app.post('/api/packing-lists', guardScreen('packing-lists'), (req, res) => {
     // Packing List PDF itself (renderPackingList/packingList.js never
     // receives these), only ever surfaced on the Order's own report.
     freight_agent, agent_cost, freight_cost, loading_cost,
-    agent_currency, freight_currency, loading_currency } = req.body;
+    agent_currency, freight_currency, loading_currency, media } = req.body;
   try {
     const result = db.prepare(`
       INSERT INTO packing_lists (order_id, number, date, way_of_shipment, country_of_origin, country_of_acquisition,
         port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
         total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date,
-        freight_agent, agent_cost, freight_cost, loading_cost, agent_currency, freight_currency, loading_currency, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        freight_agent, agent_cost, freight_cost, loading_cost, agent_currency, freight_currency, loading_currency, media, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(order_id || null, number, date, way_of_shipment || 'By Sea', country_of_origin || 'China', country_of_acquisition || '',
       port_of_origin || '', port_of_destination || '', incoterm || '', manufacturer || '', manufacturer_address || '', items_json || null,
       total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null,
       freight_agent || '', agent_cost || null, freight_cost || null, loading_cost || null,
-      agent_currency || 'USD', freight_currency || 'USD', loading_currency || 'USD', actorName(req));
+      agent_currency || 'USD', freight_currency || 'USD', loading_currency || 'USD', media || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -1064,18 +1043,18 @@ app.put('/api/packing-lists/:id', guardScreen('packing-lists'), (req, res) => {
     port_of_origin, port_of_destination, incoterm, manufacturer, manufacturer_address, items_json,
     total_length, total_roll, total_gross_weight, total_net_weight, total_cbm, status, notes, containers_json, loading_date,
     freight_agent, agent_cost, freight_cost, loading_cost,
-    agent_currency, freight_currency, loading_currency } = req.body;
+    agent_currency, freight_currency, loading_currency, media } = req.body;
   db.prepare(`
     UPDATE packing_lists SET order_id=?, number=?, date=?, way_of_shipment=?, country_of_origin=?, country_of_acquisition=?,
       port_of_origin=?, port_of_destination=?, incoterm=?, manufacturer=?, manufacturer_address=?, items_json=?,
       total_length=?, total_roll=?, total_gross_weight=?, total_net_weight=?, total_cbm=?, status=?, notes=?, containers_json=?, loading_date=?,
-      freight_agent=?, agent_cost=?, freight_cost=?, loading_cost=?, agent_currency=?, freight_currency=?, loading_currency=?, updated_by=?
+      freight_agent=?, agent_cost=?, freight_cost=?, loading_cost=?, agent_currency=?, freight_currency=?, loading_currency=?, media=?, updated_by=?
     WHERE id=?
   `).run(order_id || null, number, date, way_of_shipment || 'By Sea', country_of_origin || 'China', country_of_acquisition || '',
     port_of_origin || '', port_of_destination || '', incoterm || '', manufacturer || '', manufacturer_address || '', items_json || null,
     total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null,
     freight_agent || '', agent_cost || null, freight_cost || null, loading_cost || null,
-    agent_currency || 'USD', freight_currency || 'USD', loading_currency || 'USD', actorName(req), req.params.id);
+    agent_currency || 'USD', freight_currency || 'USD', loading_currency || 'USD', media || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(req.params.id));
 });
 
@@ -1282,22 +1261,23 @@ app.delete('/api/inspections/:id', guardScreen('inspections'), (req, res) => {
 });
 
 // ─── SWIFT HKAG ───────────────────────────────────────────────────────────────
-// Tracks the international wire (SWIFT copy) the Hong Kong entity owes
-// Ningbo per Commercial Invoice — see the CREATE TABLE comment in
-// database.js for the full reasoning. Rows are normally created
-// automatically (see the POST /api/commercial-invoices handler further
-// down), but every route here still exists/works for manual entries and
-// corrections, same as Inspections. Unlike Inspections' POST/PUT, these are
-// ALL guarded by "swift-hkag" — there's no other screen's flow that
-// legitimately needs to call them, only the dedicated Swift HKAG screen
-// itself, which only Lucas/Martiello/Gabriel/Juliana have access to.
+// Tracks the international wire the Hong Kong entity sends Ningbo — has NO
+// relation to Supplier Contracts or Commercial Invoices, see the CREATE
+// TABLE comment in database.js. Rows are normally created via the "Generate
+// Swift Transfer" button on the Proforma's own Ningbo -> HKAG Internal
+// Proforma popup (see POST /api/proformas/:id/generate-swift below), but
+// every route here still exists/works for manual entries and corrections,
+// same as Inspections. Unlike Inspections' POST/PUT, these are ALL guarded
+// by "swift-hkag" — there's no other screen's flow that legitimately needs
+// to call them, only the dedicated Swift HKAG screen itself, which only
+// Lucas/Martiello/Gabriel/Juliana have access to.
 app.get('/api/swift-transfers', guardScreen('swift-hkag'), (req, res) => {
   res.json(db.prepare(`
     SELECT s.*, o.order_number AS order_number, o.client AS client,
-      sc.contract_number AS contract_number, sc.supplier AS contract_supplier
+      p.number AS proforma_number
     FROM swift_transfers s
     LEFT JOIN orders o ON o.id = s.order_id
-    LEFT JOIN supplier_contracts sc ON sc.id = s.contract_id
+    LEFT JOIN proformas p ON p.id = s.proforma_id
     ORDER BY s.created_at DESC
   `).all());
 });
@@ -1314,13 +1294,13 @@ app.post('/api/swift-transfers', guardScreen('swift-hkag'), (req, res) => {
 });
 
 app.put('/api/swift-transfers/:id', guardScreen('swift-hkag'), (req, res) => {
-  const { order_id, contract_id, commercial_invoice_id, number, date, amount, currency, status,
+  const { order_id, commercial_invoice_id, number, date, amount, currency, status,
     paid_date, media, notes, payment_schedule, due_date, due_date_2, paid_amount } = req.body;
   db.prepare(`
-    UPDATE swift_transfers SET order_id=?, contract_id=?, commercial_invoice_id=?, number=?, date=?, amount=?, currency=?, status=?,
+    UPDATE swift_transfers SET order_id=?, commercial_invoice_id=?, number=?, date=?, amount=?, currency=?, status=?,
       paid_date=?, media=?, notes=?, payment_schedule=?, due_date=?, due_date_2=?, paid_amount=?, updated_by=?
     WHERE id=?
-  `).run(order_id || null, contract_id || null, commercial_invoice_id || null, number, date, amount || 0, currency || 'USD', status,
+  `).run(order_id || null, commercial_invoice_id || null, number, date, amount || 0, currency || 'USD', status,
     paid_date || null, media || null, notes, payment_schedule || '100', due_date || null, due_date_2 || null, paid_amount || 0, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM swift_transfers WHERE id=?').get(req.params.id));
 });
@@ -1328,6 +1308,35 @@ app.put('/api/swift-transfers/:id', guardScreen('swift-hkag'), (req, res) => {
 app.delete('/api/swift-transfers/:id', guardScreen('swift-hkag'), (req, res) => {
   db.prepare('DELETE FROM swift_transfers WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// The "Generate Swift Transfer" button on the Proforma's own Ningbo -> HKAG
+// Internal Proforma popup (see NingboInternalForm on the frontend) — the
+// popup already computed its own Item Values total/currency and has its own
+// freeform Payment Terms text, so this just upserts a single Swift row keyed
+// by proforma_id: first click creates it (status Pending), a later click
+// (e.g. after editing the Internal Proforma's items/prices) updates the same
+// row's amount/currency/notes instead of creating a duplicate — status/
+// paid_date/paid_amount are left alone on updates since those are Swift
+// HKAG's own independent tracking once a transfer actually exists.
+app.post('/api/proformas/:id/generate-swift', guardScreen('swift-hkag'), (req, res) => {
+  const { amount, currency, notes, number, date } = req.body;
+  const proforma = db.prepare('SELECT id, order_id FROM proformas WHERE id=?').get(req.params.id);
+  if (!proforma) return res.status(404).json({ error: 'Proforma not found' });
+  const existing = db.prepare('SELECT id FROM swift_transfers WHERE proforma_id=?').get(proforma.id);
+  if (existing) {
+    db.prepare(`
+      UPDATE swift_transfers SET amount=?, currency=?, notes=?, updated_by=?
+      WHERE id=?
+    `).run(amount || 0, currency || 'USD', notes || '', actorName(req), existing.id);
+    return res.json(db.prepare('SELECT * FROM swift_transfers WHERE id=?').get(existing.id));
+  }
+  const r = db.prepare(`
+    INSERT INTO swift_transfers (order_id, proforma_id, number, date, amount, currency, status, notes, updated_by)
+    VALUES (?, ?, ?, ?, ?, ?, 'Pending', ?, ?)
+  `).run(proforma.order_id || null, proforma.id, number || '', date || new Date().toISOString().slice(0, 10),
+    amount || 0, currency || 'USD', notes || '', actorName(req));
+  res.status(201).json(db.prepare('SELECT * FROM swift_transfers WHERE id=?').get(r.lastInsertRowid));
 });
 
 // Same "Partial" normalization Supplier Flow uses (see PATCH
@@ -1768,14 +1777,30 @@ function descriptionBullets(product) {
   return String(product.description).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 }
 
+// True when a product's saved Description looks like the small HTML the
+// frontend's RichTextEditor produces (bold/italic/underline/alignment/
+// bullet-list — see App.jsx) rather than the older plain multi-line
+// convention every product registered before that editor existed still
+// uses. Only ever produced by that editor's own toolbar commands, never by
+// hand-typed text, so it's safe to render straight into the PDF without
+// escaping (see splitDescription below and itemSections.js).
+function isHtmlDescription(str) {
+  return !!str && /<[a-z][\s\S]*>/i.test(str);
+}
+
 // Splits a product's registered description into a lead paragraph (first
 // line — the actual descriptive text, shown as its own field on
 // Proforma/Commercial Invoice/Packing List, like the client's own reference
 // docs) plus any remaining lines (extra facts such as a CAS number), which
-// keep rendering as a bulleted list underneath it.
+// keep rendering as a bulleted list underneath it. A rich-text description
+// (isHtml: true) skips that split entirely — it's rendered as one trusted
+// HTML block instead, since the user already controls its layout directly
+// with the editor's own bold/italic/alignment/bullet-list tools.
 function splitDescription(product) {
+  const raw = product?.description;
+  if (isHtmlDescription(raw)) return { text: raw, bullets: [], isHtml: true };
   const lines = descriptionBullets(product);
-  return { text: lines[0] || '', bullets: lines.slice(1) };
+  return { text: lines[0] || '', bullets: lines.slice(1), isHtml: false };
 }
 
 // "Width" only means something for Textile/DTF Film rolls — for every other
@@ -1883,10 +1908,11 @@ function normalizeSalesItem(item, fallbackCurrency) {
   const metersPerRoll = isTextile
     ? (metersOf(item.height, item.height_unit) ?? metersOf(product?.height, product?.height_unit))
     : null;
-  const { text: descriptionText, bullets } = splitDescription(product);
+  const { text: descriptionText, bullets, isHtml: descriptionIsHtml } = splitDescription(product);
   return {
     description: product?.name || item.product_name || '—',
     descriptionText,
+    descriptionIsHtml,
     bullets,
     ncm: product?.ncm || '',
     color: product?.color || '',
