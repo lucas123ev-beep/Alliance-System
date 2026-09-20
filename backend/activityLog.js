@@ -65,7 +65,11 @@ const ACTIVITY_ROUTES = [
   { method: 'DELETE', regex: /^\/api\/commercial-invoices\/(\d+)$/,        entityType: 'commercial-invoices', table: 'commercial_invoices', labelCols: ['number'] },
 
   { method: 'POST',   regex: /^\/api\/packing-lists$/,                     entityType: 'packing-lists',       table: 'packing_lists',       labelCols: ['number'] },
-  { method: 'PUT',    regex: /^\/api\/packing-lists\/(\d+)$/,              entityType: 'packing-lists',       table: 'packing_lists',       labelCols: ['number'] },
+  // Status (Draft/Confirmed/Shipped) is now editable inline on the Packing
+  // Lists screen — PUT still submits the whole record like every other
+  // inline dropdown here, so statusCol lets the logger tell a real status
+  // change apart from any other field edit, same as Quotations/Proformas.
+  { method: 'PUT',    regex: /^\/api\/packing-lists\/(\d+)$/,              entityType: 'packing-lists',       table: 'packing_lists',       labelCols: ['number'], statusCol: 'status' },
   { method: 'DELETE', regex: /^\/api\/packing-lists\/(\d+)$/,              entityType: 'packing-lists',       table: 'packing_lists',       labelCols: ['number'] },
 
   { method: 'POST',   regex: /^\/api\/quotations$/,                        entityType: 'quotations',          table: 'quotations',          labelCols: ['number'], statusCol: 'status' },

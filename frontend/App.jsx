@@ -1811,12 +1811,12 @@ function RichTextEditor({ value, onChange, placeholder }) {
   const lastValue = useRef(value);
 
   useEffect(() => {
-    // Only push `value` into the DOM when it changed from OUTSIDE this
-    // editor (e.g. switching which product is being edited, or the Edit
-    // modal first opening) — writing on every keystroke would reset the
-    // cursor position mid-typing, since `value` is also updated by our own
-    // onChange below.
-    if (ref.current && value !== lastValue.current && value !== ref.current.innerHTML) {
+    // Escreve no DOM sempre que o valor vindo de fora for diferente do que
+    // já está renderizado. Não comparar com lastValue aqui: na primeira
+    // renderização (quando o form abre já com uma descrição salva) o
+    // lastValue já é igual ao value, então a escrita nunca acontecia e o
+    // campo aparecia vazio.
+    if (ref.current && value !== ref.current.innerHTML) {
       ref.current.innerHTML = value || "";
     }
     lastValue.current = value;
@@ -9599,7 +9599,18 @@ function PackingLists({ navSeed, onConsumeNav } = {}) {
           { label: "Gross Weight", sortValue: r => r.total_gross_weight, render: r => r.total_gross_weight ? `${parseFloat(r.total_gross_weight).toLocaleString("en-US", { maximumFractionDigits: 1 })} kg` : "—" },
           { label: "Net Weight", sortValue: r => r.total_net_weight, render: r => r.total_net_weight ? `${parseFloat(r.total_net_weight).toLocaleString("en-US", { maximumFractionDigits: 1 })} kg` : "—" },
           { label: "CBM", sortValue: r => r.total_cbm, render: r => r.total_cbm || "—" },
-          { label: "Status", key: "status" },
+          { label: "Status", sortValue: r => r.status, render: r => (
+            <Select value={r.status || "Draft"}
+              onChange={async e => {
+                const oldStatus = r.status, newStatus = e.target.value;
+                await api(`/packing-lists/${r.id}`, "PUT", { ...r, status: newStatus }); load();
+                setNotify({ entityType: "packing-lists", recordLabel: r.number, oldStatus, newStatus });
+              }}
+              style={{ padding: "4px 8px", fontSize: "12px", width: "auto",
+                color: r.status === "Shipped" ? "#10b981" : r.status === "Confirmed" ? "#60a5fa" : "#94a3b8" }}>
+              {["Draft", "Confirmed", "Shipped"].map(s => <option key={s}>{s}</option>)}
+            </Select>
+          )},
           { label: "Actions", render: r => (
             <div style={{ display: "flex", gap: "6px" }}>
               <DocButtons url={authUrl(`${API}/packing-lists/${r.id}/pdf`)} filename={`PackingList-${r.number}.pdf`}
