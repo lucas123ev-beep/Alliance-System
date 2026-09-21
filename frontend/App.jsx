@@ -4358,8 +4358,14 @@ const [f, setF] = useState(initial || {
   // have their own pricing unit (Chemical=liter/ton, Textile/DTF=meter) —
   // see the Sold By field below.
   selling_unit: "Unit",
-  category: "", supplier: "",
+  category: "", supplier: "", supplier_id: null,
 });
+  // Blocking conflict modal state — set whenever the backend rejects a save
+  // because the typed Supplier name already belongs to a DIFFERENT supplier
+  // than the one this product is linked to (see resolveSupplierLink in
+  // server.js). Holds the existing supplier's name+code so the message can
+  // show exactly which one it collided with.
+  const [supplierConflict, setSupplierConflict] = useState(null);
   const [suppliers, setSuppliers] = useState([]);
   const [supplierSearch, setSupplierSearch] = useState(initial?.supplier || "");
   const [showSupplierList, setShowSupplierList] = useState(false);
@@ -4674,7 +4680,15 @@ const handleSalePerLiterChange = (e) => {
         <div style={{ position: "relative" }}>
           <Input
             value={supplierSearch}
-            onChange={e => { setSupplierSearch(e.target.value); setF(p => ({ ...p, supplier: e.target.value })); setShowSupplierList(true); }}
+            onChange={e => {
+              setSupplierSearch(e.target.value);
+              // Free typing invalidates whatever supplier_id was previously
+              // linked — the backend re-resolves by name on save (auto-
+              // registering if it's genuinely new, or rejecting if it now
+              // collides with a DIFFERENT supplier than before).
+              setF(p => ({ ...p, supplier: e.target.value, supplier_id: null }));
+              setShowSupplierList(true);
+            }}
             onFocus={() => setShowSupplierList(true)}
             onBlur={() => setTimeout(() => setShowSupplierList(false), 200)}
             placeholder="Search supplier…"
@@ -4683,7 +4697,7 @@ const handleSalePerLiterChange = (e) => {
             <div style={dropdownStyle}>
               {filteredSuppliers.map(s => (
                 <div key={s.id} style={dropItemStyle}
-                  onMouseDown={() => { setSupplierSearch(s.company_name); setF(p => ({ ...p, supplier: s.company_name })); setShowSupplierList(false); }}
+                  onMouseDown={() => { setSupplierSearch(s.company_name); setF(p => ({ ...p, supplier: s.company_name, supplier_id: s.id })); setShowSupplierList(false); }}
                   onMouseEnter={e => e.currentTarget.style.background = "#334155"}
                   onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                   {s.company_name}
@@ -5023,25 +5037,56 @@ const handleSalePerLiterChange = (e) => {
           // the source instead of leaving every downstream parseFloat() to
           // get it wrong the same way.
           const normNum = (v) => (v === "" || v == null ? v : (parseLocaleNumber(v) ?? v));
-          await onSave({
-            ...f,
-            unit_cost: parseLocaleNumber(f.unit_cost) ?? 0,
-            sale_price: parseLocaleNumber(f.sale_price) ?? 0,
-            width: normNum(f.width),
-            height: normNum(f.height),
-            thickness: normNum(f.thickness),
-            weight: normNum(f.weight),
-            net_weight: normNum(f.net_weight),
-            tube_weight: normNum(f.tube_weight),
-            roll_diameter: normNum(f.roll_diameter),
-            volume: normNum(f.volume),
-            units_per_package: normNum(f.units_per_package),
-            package_weight: normNum(f.package_weight),
-            media: JSON.stringify(media),
-          });
-          onClose();
+          try {
+            await onSave({
+              ...f,
+              unit_cost: parseLocaleNumber(f.unit_cost) ?? 0,
+              sale_price: parseLocaleNumber(f.sale_price) ?? 0,
+              width: normNum(f.width),
+              height: normNum(f.height),
+              thickness: normNum(f.thickness),
+              weight: normNum(f.weight),
+              net_weight: normNum(f.net_weight),
+              tube_weight: normNum(f.tube_weight),
+              roll_diameter: normNum(f.roll_diameter),
+              volume: normNum(f.volume),
+              units_per_package: normNum(f.units_per_package),
+              package_weight: normNum(f.package_weight),
+              media: JSON.stringify(media),
+            });
+            onClose();
+          } catch (err) {
+            // The backend rejects the save (409) instead of creating a
+            // second Supplier row when the typed name already belongs to a
+            // different one than this product is linked to — see
+            // resolveSupplierLink in server.js. Anything else just leaves
+            // the modal open, same as before this existed.
+            let parsed = null;
+            try { parsed = JSON.parse(err.message); } catch {}
+            if (parsed?.error === "supplier_exists") {
+              setSupplierConflict(parsed.supplier);
+            } else {
+              alert(t("Could not save: ") + err.message);
+            }
+          }
         }}>Save Product</Btn>
       </div>
+      {supplierConflict && (
+        <Modal title={t("Supplier already registered")} onClose={() => setSupplierConflict(null)}>
+          <p style={{ color: "#cbd5e1", fontSize: "14px", lineHeight: 1.6 }}>
+            {t("This supplier is already registered:")}
+          </p>
+          <p style={{ fontSize: "15px", fontWeight: 700, color: "#f1f5f9", margin: "8px 0" }}>
+            {supplierConflict.company_name} — {t("code")} {supplierConflict.code}
+          </p>
+          <p style={{ color: "#94a3b8", fontSize: "13px", lineHeight: 1.6 }}>
+            {t("Pick it from the Supplier list above instead of retyping it, so the product links to the existing record instead of creating a duplicate.")}
+          </p>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "16px" }}>
+            <Btn onClick={() => setSupplierConflict(null)}>{t("OK")}</Btn>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -9050,7 +9095,12 @@ function SupplierForm({ initial, onSave, onClose, onEvaluationsChanged }) {
       {showEvaluation && (
         <SupplierEvaluationModal supplier={initial} onClose={() => { setShowEvaluation(false); onEvaluationsChanged?.(); }} />
       )}
-      <Field label="Company Name"><Input value={f.company_name} onChange={set("company_name")} /></Field>
+      {initial?.code && (
+        <Field label="Code" half>
+          <input value={initial.code} readOnly onChange={() => {}} style={{ ...inputStyle, opacity: 0.6, cursor: "not-allowed" }} />
+        </Field>
+      )}
+      <Field label="Company Name" half={!!initial?.code}><Input value={f.company_name} onChange={set("company_name")} /></Field>
       <Field label="Trade Name">
         <Input value={f.trade_name || ""} onChange={set("trade_name")} placeholder="English name, e.g. for Chinese suppliers" />
       </Field>
@@ -9225,6 +9275,7 @@ function Suppliers() {
       )}
       <Table
         cols={[
+          { label: "Code", sortValue: r => r.code, render: r => <span style={{ fontFamily: "monospace", color: "#60a5fa" }}>{r.code || "—"}</span> },
           { label: "Company", sortValue: r => r.company_name, render: r => <span style={{ fontWeight: 600, color: "#a78bfa" }}>{r.company_name}</span> },
           { label: "Rating", sortValue: r => r.rating, render: r => <StarRating value={r.rating} size={12} /> },
           { label: "Trade Name", key: "trade_name" },

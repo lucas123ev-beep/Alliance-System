@@ -927,6 +927,21 @@ const migrations = [
   // notifications.js). Existing rows land NULL here and get backfilled by
   // USER_EMAILS below, keyed by username so it's safe to run every boot.
   ['users', 'email', 'TEXT'],
+  // Sequential 3-digit reference code (same "next number after the current
+  // max" scheme as products.code), so a supplier can be referred to by a
+  // short code instead of its full name — needed so the auto-registration
+  // flow below (see resolveSupplierLink in server.js) can tell the user
+  // "already registered as code 007" instead of just repeating the name
+  // back at them. Existing rows get backfilled just below.
+  ['suppliers', 'code', 'TEXT'],
+  // Product's own "Supplier" field used to be pure free text with no link
+  // back to the suppliers registry at all — a product could say "ABC
+  // Textiles" and there was no way to tell whether that referred to an
+  // already-registered supplier or just a name someone typed. This ties a
+  // product to the actual supplier row once one's been resolved (created or
+  // matched) for it, while the old `supplier` text column stays as-is for
+  // every existing PDF/report/filter that already reads it directly.
+  ['products', 'supplier_id', 'INTEGER'],
 ];
 
 for (const [table, column, definition] of migrations) {
@@ -975,6 +990,28 @@ const USER_EMAILS = {
 };
 for (const [username, email] of Object.entries(USER_EMAILS)) {
   db.prepare(`UPDATE users SET email = ? WHERE username = ? AND (email IS NULL OR email = '')`).run(email, username);
+}
+
+// One-time backfill assigning a sequential code to every supplier that
+// doesn't have one yet (every supplier registered before this existed) —
+// oldest first, so the numbering reads in the order suppliers were actually
+// added, same reasoning as the Product Code auto-generator on the frontend.
+// Safe on every boot: only rows with a NULL/blank code get touched, and the
+// numbering always continues after whatever's already the highest assigned
+// code, so it never collides with one a later Product-save auto-registers.
+{
+  const needsCode = db.prepare(`
+    SELECT id FROM suppliers WHERE code IS NULL OR code = '' ORDER BY id ASC
+  `).all();
+  if (needsCode.length) {
+    const maxRow = db.prepare(`SELECT code FROM suppliers WHERE code GLOB '[0-9]*'`).all();
+    let next = maxRow.reduce((max, r) => Math.max(max, parseInt(r.code, 10) || 0), 0) + 1;
+    const setCode = db.prepare(`UPDATE suppliers SET code = ? WHERE id = ?`);
+    for (const s of needsCode) {
+      setCode.run(String(next).padStart(3, '0'), s.id);
+      next += 1;
+    }
+  }
 }
 
 // One-time backfill for orders already sitting at status='Completed' from

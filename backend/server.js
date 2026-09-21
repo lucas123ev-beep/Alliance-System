@@ -474,12 +474,18 @@ function recordPriceHistory(productId, oldRow, newRow, actor) {
 }
 
 app.post('/api/products', guardScreen('products'), (req, res) => {
-  const { code, name, name_zh, description, unit, ncm, hs_code, color, color_zh, client_color_code, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit } = req.body;
+  const { code, name, name_zh, description, unit, ncm, hs_code, color, color_zh, client_color_code, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, supplier_id, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit } = req.body;
+  // Auto-registers a brand-new Supplier name, links to an already-matching
+  // one, or rejects with the existing record's name+code if the typed name
+  // collides with a DIFFERENT supplier than the one already linked here —
+  // see resolveSupplierLink's own comment above for the full reasoning.
+  const resolved = resolveSupplierLink(supplier, supplier_id, actorName(req));
+  if (resolved.conflict) return res.status(409).json({ error: 'supplier_exists', supplier: resolved.conflict });
   try {
     const result = db.prepare(`
-      INSERT INTO products (code, name, name_zh, description, unit, ncm, hs_code, color, color_zh, client_color_code, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(code, name, name_zh || '', description, unit || 'unit', ncm || '', hs_code || '', color || '', color_zh || '', client_color_code || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', net_weight || null, tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost || 0, cost_currency || 'USD', category, supplier, sale_price || 0, sale_currency || 'USD', cost_per_meter || 0, sale_per_meter || 0, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, price_basis || 'liter', cost_per_ton || 0, sale_per_ton || 0, vat_pct || null, units_per_package || null, package_weight || null, selling_unit || null, actorName(req));
+      INSERT INTO products (code, name, name_zh, description, unit, ncm, hs_code, color, color_zh, client_color_code, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, supplier_id, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(code, name, name_zh || '', description, unit || 'unit', ncm || '', hs_code || '', color || '', color_zh || '', client_color_code || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', net_weight || null, tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost || 0, cost_currency || 'USD', category, supplier, resolved.supplier_id, sale_price || 0, sale_currency || 'USD', cost_per_meter || 0, sale_per_meter || 0, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, price_basis || 'liter', cost_per_ton || 0, sale_per_ton || 0, vat_pct || null, units_per_package || null, package_weight || null, selling_unit || null, actorName(req));
     const created = db.prepare('SELECT * FROM products WHERE id=?').get(result.lastInsertRowid);
     recordPriceHistory(result.lastInsertRowid, null, created, actorName(req));
     res.status(201).json(created);
@@ -489,12 +495,14 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 });
 
 app.put('/api/products/:id', guardScreen('products'), (req, res) => {
-  const { code, name, name_zh, description, unit, ncm, hs_code, color, color_zh, client_color_code, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit } = req.body;
+  const { code, name, name_zh, description, unit, ncm, hs_code, color, color_zh, client_color_code, width, width_unit, height, height_unit, thickness, thickness_unit, weight, weight_unit, net_weight, tube_weight, tube_weight_unit, roll_diameter, roll_diameter_unit, volume, volume_unit, unit_cost, cost_currency, category, supplier, supplier_id, sale_price, sale_currency, cost_per_meter, sale_per_meter, cost_per_liter, sale_per_liter, sale_pct, media, price_basis, cost_per_ton, sale_per_ton, vat_pct, units_per_package, package_weight, selling_unit } = req.body;
+  const resolved = resolveSupplierLink(supplier, supplier_id, actorName(req));
+  if (resolved.conflict) return res.status(409).json({ error: 'supplier_exists', supplier: resolved.conflict });
   const oldRow = db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id);
   db.prepare(`
-    UPDATE products SET code=?, name=?, name_zh=?, description=?, unit=?, ncm=?, hs_code=?, color=?, color_zh=?, client_color_code=?, width=?, width_unit=?, height=?, height_unit=?, thickness=?, thickness_unit=?, weight=?, weight_unit=?, net_weight=?, tube_weight=?, tube_weight_unit=?, roll_diameter=?, roll_diameter_unit=?, volume=?, volume_unit=?, unit_cost=?, cost_currency=?, category=?, supplier=?, sale_price=?, sale_currency=?, cost_per_meter=?, sale_per_meter=?, cost_per_liter=?, sale_per_liter=?, sale_pct=?, media=?, price_basis=?, cost_per_ton=?, sale_per_ton=?, vat_pct=?, units_per_package=?, package_weight=?, selling_unit=?, updated_by=?
+    UPDATE products SET code=?, name=?, name_zh=?, description=?, unit=?, ncm=?, hs_code=?, color=?, color_zh=?, client_color_code=?, width=?, width_unit=?, height=?, height_unit=?, thickness=?, thickness_unit=?, weight=?, weight_unit=?, net_weight=?, tube_weight=?, tube_weight_unit=?, roll_diameter=?, roll_diameter_unit=?, volume=?, volume_unit=?, unit_cost=?, cost_currency=?, category=?, supplier=?, supplier_id=?, sale_price=?, sale_currency=?, cost_per_meter=?, sale_per_meter=?, cost_per_liter=?, sale_per_liter=?, sale_pct=?, media=?, price_basis=?, cost_per_ton=?, sale_per_ton=?, vat_pct=?, units_per_package=?, package_weight=?, selling_unit=?, updated_by=?
 WHERE id=?
-`).run(code, name, name_zh || '', description, unit, ncm || '', hs_code || '', color || '', color_zh || '', client_color_code || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', net_weight || null, tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost, cost_currency || 'USD', category, supplier, sale_price, sale_currency || 'USD', cost_per_meter, sale_per_meter, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, price_basis || 'liter', cost_per_ton || 0, sale_per_ton || 0, vat_pct || null, units_per_package || null, package_weight || null, selling_unit || null, actorName(req), req.params.id);
+`).run(code, name, name_zh || '', description, unit, ncm || '', hs_code || '', color || '', color_zh || '', client_color_code || '', width, width_unit || 'cm', height, height_unit || 'cm', thickness, thickness_unit || 'mm', weight, weight_unit || 'kg', net_weight || null, tube_weight || null, tube_weight_unit || 'kg', roll_diameter || null, roll_diameter_unit || 'cm', volume || null, volume_unit || 'L', unit_cost, cost_currency || 'USD', category, supplier, resolved.supplier_id, sale_price, sale_currency || 'USD', cost_per_meter, sale_per_meter, cost_per_liter || 0, sale_per_liter || 0, sale_pct || null, media || null, price_basis || 'liter', cost_per_ton || 0, sale_per_ton || 0, vat_pct || null, units_per_package || null, package_weight || null, selling_unit || null, actorName(req), req.params.id);
   const updated = db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id);
   recordPriceHistory(req.params.id, oldRow, updated, actorName(req));
   res.json(updated);
@@ -1574,6 +1582,52 @@ app.delete('/api/clients/:id', guardScreen('clients'), (req, res) => {
 
 // ─── SUPPLIERS ────────────────────────────────────────────────────────────────
 
+// Same "max numeric code + 1, zero-padded to 3 digits" scheme as the
+// Product Code auto-generator on the frontend (see ProductForm) — kept here
+// server-side (rather than mirrored in JS on the client) since suppliers can
+// now be created as a side effect of saving a Product (see
+// resolveSupplierLink below), where there's no form/screen open to run a
+// client-side generator against.
+function nextSupplierCode() {
+  const rows = db.prepare(`SELECT code FROM suppliers WHERE code GLOB '[0-9]*'`).all();
+  const max = rows.reduce((m, r) => Math.max(m, parseInt(r.code, 10) || 0), 0);
+  return String(max + 1).padStart(3, '0');
+}
+
+// Resolves what a Product's free-text Supplier field should link to, per
+// Lucas's spec: typing a brand-new name auto-registers it (so Contracts
+// later has somewhere to fill in the rest); typing a name that already
+// belongs to a DIFFERENT supplier than the one this product is already
+// linked to is rejected (409) instead of silently creating a near-duplicate
+// — the frontend's own autocomplete dropdown is the intended way to link to
+// an existing supplier, which sets supplierId itself so this never conflicts
+// for that path. Re-saving a product without touching the field (name still
+// matches its own already-linked supplier) is always a no-op here, so
+// clicking Save again never creates a second row for the same supplier.
+function resolveSupplierLink(name, providedId, actor) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return { supplier_id: null };
+  if (providedId) {
+    const linked = db.prepare('SELECT id, company_name FROM suppliers WHERE id=?').get(providedId);
+    if (linked && linked.company_name.trim().toLowerCase() === trimmed.toLowerCase()) {
+      return { supplier_id: providedId };
+    }
+  }
+  const existing = db.prepare(`
+    SELECT id, code, company_name FROM suppliers WHERE lower(trim(company_name)) = lower(trim(?))
+  `).get(trimmed);
+  if (existing) {
+    return { conflict: { company_name: existing.company_name, code: existing.code } };
+  }
+  const code = nextSupplierCode();
+  const r = db.prepare(`INSERT INTO suppliers (company_name, code, updated_by) VALUES (?, ?, ?)`).run(trimmed, code, actor);
+  try {
+    db.prepare(`INSERT INTO activity_log (entity_type, record_label, action, detail, actor) VALUES (?, ?, ?, ?, ?)`)
+      .run('suppliers', trimmed, 'created', 'Auto-registered from Product save', actor);
+  } catch (err) { console.error('activity_log insert (auto supplier) failed:', err.message); }
+  return { supplier_id: r.lastInsertRowid };
+}
+
 app.get('/api/suppliers', (req, res) => {
   // Addition order, not alphabetical — see the matching comment on
   // GET /api/products. Click any column header on the Suppliers screen to
@@ -1594,11 +1648,15 @@ app.post('/api/suppliers', guardScreen('suppliers'), (req, res) => {
     email, phone, contact_name, payment_terms, product_types, notes,
     beneficiary_name, bank_name, bank_branch, account_number, swift_code } = req.body;
   try {
+    // Always server-generated (never trusted from the client) — same
+    // sequential scheme every auto-registered-from-Product supplier gets,
+    // so every supplier has one regardless of which path created it.
+    const code = nextSupplierCode();
     const result = db.prepare(`
-      INSERT INTO suppliers (company_name, trade_name, address, address2, address_number, neighborhood, city, state, zip_code, country, email, phone, contact_name, payment_terms, product_types, notes,
+      INSERT INTO suppliers (company_name, code, trade_name, address, address2, address_number, neighborhood, city, state, zip_code, country, email, phone, contact_name, payment_terms, product_types, notes,
         beneficiary_name, bank_name, bank_branch, account_number, swift_code, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(company_name, trade_name || '', address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(company_name, code, trade_name || '', address, address2, address_number || '', neighborhood || '', city || '', state || '', zip_code || '', country || '',
       email, phone, contact_name, payment_terms, product_types, notes,
       beneficiary_name || '', bank_name || '', bank_branch || '', account_number || '', swift_code || '', actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM suppliers WHERE id=?').get(result.lastInsertRowid));
