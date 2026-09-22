@@ -100,7 +100,7 @@ function renderItemSections(items) {
       <td class="center">${item.quantityLabel
         ? escapeHtml(item.quantityLabel)
         : item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
-      <td class="num">${fmtNumber(item.roll, 0)}${item.unit ? `<div style="font-size:9px;color:#666;margin-top:2px;font-weight:normal;">${escapeHtml(item.unit)}</div>` : ""}</td>
+      <td class="num">${fmtNumber(item.roll, 0)}${(item.unit && item.unit !== "unit") ? `<div style="font-size:9px;color:#666;margin-top:2px;font-weight:normal;">${escapeHtml(item.unit)}</div>` : ""}</td>
       <td class="num">${fmtNumber(item.grossWeight, 3)}</td>
       <td class="num">${fmtNumber(item.netWeight, 3)}</td>
       <td class="num">${fmtNumber(item.cbm, 2)}</td>

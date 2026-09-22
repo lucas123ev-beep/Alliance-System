@@ -3131,7 +3131,16 @@ function buildPackingListDraft(order, products) {
       gross_weight_per_package: (isTonChemical || perPackageUnits > 0) ? perPackageWeightKg : null,
       quantity: item.quantity != null ? item.quantity : null,
       quantityLabel,
-      unit: item.unit || "",
+      // The order item's own `unit` column is heavily overloaded (Textile/
+      // DTF's Rolls-vs-Meters toggle, Chemical's package-type re-selection,
+      // and every other category's Sold By concept all share this one
+      // column) and still carries the order_items schema's literal 'unit'
+      // default whenever nobody's touched it for this specific line — that
+      // default isn't a real physical packaging type, so the Packages
+      // column's sub-label falls back to the Product's own registered
+      // Package field (set once at registration, applies to every order)
+      // instead of printing that meaningless placeholder.
+      unit: (item.unit && item.unit !== "unit") ? item.unit : ((product?.unit && product.unit !== "unit") ? product.unit : ""),
       totalLength,
       // Physical package/drum count — for ton-priced Chemical this is
       // DERIVED from the tons ordered (see rollCount above), not the raw

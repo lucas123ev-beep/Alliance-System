@@ -174,7 +174,7 @@ function buildPackingListWorkbook(params) {
         addTableDataRow([
           item.description, itemDescription(item), itemColor(item), item.priceUnitLabel || item.width || "—",
           item.quantityLabel || (item.quantity != null ? `${item.quantity} ${item.unit || ""}`.trim() : "—"),
-          `${fmtNumber(item.roll, 0)}${item.unit ? ` ${item.unit}` : ""}`, fmtNumber(item.grossWeight, 3), fmtNumber(item.netWeight, 3), fmtNumber(item.cbm, 2),
+          `${fmtNumber(item.roll, 0)}${(item.unit && item.unit !== "unit") ? ` ${item.unit}` : ""}`, fmtNumber(item.grossWeight, 3), fmtNumber(item.netWeight, 3), fmtNumber(item.cbm, 2),
         ]);
       });
       addTotalsRow("SUBTOTAL:", ["", "", "", "", fmtNumber(sumOf(group.items, "roll"), 0), fmtNumber(sumOf(group.items, "grossWeight"), 3), fmtNumber(sumOf(group.items, "netWeight"), 3), fmtNumber(sumOf(group.items, "cbm"), 2)]);
