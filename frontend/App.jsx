@@ -3131,16 +3131,21 @@ function buildPackingListDraft(order, products) {
       gross_weight_per_package: (isTonChemical || perPackageUnits > 0) ? perPackageWeightKg : null,
       quantity: item.quantity != null ? item.quantity : null,
       quantityLabel,
-      // The order item's own `unit` column is heavily overloaded (Textile/
-      // DTF's Rolls-vs-Meters toggle, Chemical's package-type re-selection,
-      // and every other category's Sold By concept all share this one
-      // column) and still carries the order_items schema's literal 'unit'
-      // default whenever nobody's touched it for this specific line — that
-      // default isn't a real physical packaging type, so the Packages
-      // column's sub-label falls back to the Product's own registered
-      // Package field (set once at registration, applies to every order)
-      // instead of printing that meaningless placeholder.
-      unit: (item.unit && item.unit !== "unit") ? item.unit : ((product?.unit && product.unit !== "unit") ? product.unit : ""),
+      // Kept exactly as the order item had it — this is read elsewhere as
+      // the Sold By label (e.g. "9000 Pair") and, for Textile/DTF, as the
+      // Rolls-vs-Meters toggle; never repurpose this one for packaging.
+      unit: item.unit || "",
+      // Separate field for what the Packages column's sub-label actually
+      // needs: the physical package type — always the Product's own
+      // registered Package field, per Lucas ("tem que ser sempre o tipo de
+      // package escolhido"), never the per-item order override. order_items
+      // itself has no reliable equivalent anyway: its `unit` column means
+      // Sold By for most categories (Pair/Unit/Meter/Liter) and the Rolls-
+      // vs-Meters toggle for Textile/DTF, so it's a different concept even
+      // where it happens to reuse the same PACKAGE_UNIT_OPTIONS list
+      // (Chemical) — the Product's registration is the one place this is
+      // actually meant to live, and it's what every order should reflect.
+      packageType: (product?.unit && product.unit !== "unit") ? product.unit : "",
       totalLength,
       // Physical package/drum count — for ton-priced Chemical this is
       // DERIVED from the tons ordered (see rollCount above), not the raw

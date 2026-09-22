@@ -1137,18 +1137,25 @@ for (const [table, columns] of Object.entries(ZH_ENUM_FIXES)) {
 }
 
 // Backfill for Packing Lists generated before the Packages column started
-// showing each item's package type (see buildPackingListDraft on the
-// frontend and pdf/packingList.js's Packages cell) — those already have
-// items_json saved with `unit` empty or stuck at the order_items schema's
-// literal 'unit' default, which regenerating the whole Packing List would
-// fix but at the cost of losing anything manually edited on it since (CBM
-// adjustments, media attachments...). Patches just the `unit` field of each
-// affected item in place instead, pulling from that item's own product
-// (by product_id) the same way buildPackingListDraft itself now does.
-// Safe on every boot: only items genuinely missing a real unit get touched,
-// and only when the linked product actually has one registered — a row
-// that's already fine, or whose product also has no real Package set
-// either, is left exactly as it is.
+// showing each item's physical package type (see buildPackingListDraft on
+// the frontend and pdf/packingList.js's Packages cell) — those already have
+// items_json with no `packageType` field at all, which regenerating the
+// whole Packing List would fix but at the cost of losing anything manually
+// edited on it since (CBM adjustments, media attachments...). Sets just that
+// one new field on each affected item in place instead, pulling from that
+// item's own product (by product_id) the same way buildPackingListDraft
+// itself now does. Deliberately a SEPARATE field from the item's existing
+// `unit` — that one is still read elsewhere as the Sold By label (e.g.
+// "9000 Pair") and, for Textile/DTF, as the Rolls-vs-Meters toggle, so it
+// must never be overwritten here.
+//
+// Always the Product's own registered Package field, per Lucas ("tem que
+// ser sempre o tipo de package escolhido") — never the order item's own
+// `unit`, which means something else entirely depending on category (Sold
+// By for most, the Rolls-vs-Meters toggle for Textile/DTF) even where it
+// happens to reuse the same option list (Chemical).
+// Safe on every boot: a row that already has the right packageType is a
+// no-op, so this isn't rewriting every Packing List on every restart.
 {
   const listsToCheck = db.prepare(`SELECT id, items_json FROM packing_lists WHERE items_json IS NOT NULL AND items_json != ''`).all();
   const fixList = db.prepare(`UPDATE packing_lists SET items_json = ? WHERE id = ?`);
@@ -1159,10 +1166,11 @@ for (const [table, columns] of Object.entries(ZH_ENUM_FIXES)) {
     if (!Array.isArray(items) || items.length === 0) continue;
     let changed = false;
     for (const item of items) {
-      if (isRealUnit(item.unit) || !item.product_id) continue;
+      if (!item.product_id) continue;
       const product = db.prepare('SELECT unit FROM products WHERE id = ?').get(item.product_id);
-      if (product && isRealUnit(product.unit)) {
-        item.unit = product.unit;
+      const nextType = (product && isRealUnit(product.unit)) ? product.unit : '';
+      if (nextType && item.packageType !== nextType) {
+        item.packageType = nextType;
         changed = true;
       }
     }
