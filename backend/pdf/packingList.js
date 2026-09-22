@@ -46,50 +46,6 @@ const descCell = item => `
 
 const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 0);
 
-// The per-container TOTAL and final GRAND TOTAL rows print as their own
-// small standalone table below the item table(s), not as one more row
-// inside them — but a <table> with no explicit widths lets the browser
-// auto-distribute its columns independently of whatever's above it, so
-// without this the two never lined up (Packages/Gross Weight/Net Weight/
-// CBM in the totals row would drift out from under their own columns).
-// Mirrors the exact same percentages as the textile table or the "other"
-// (Chemical/Machine/Accessory/...) table in renderItemSections above,
-// whichever this group of items actually used, so the browser lands each
-// value at the same on-page position as the column it's summarizing.
-// `sums` is whatever the caller already computed (sumOf() over just this
-// container's items, or the document-level `totals` param for the grand
-// total) — kept as plain numbers rather than an item list so the two
-// callers below don't have to agree on where the figures come from.
-function renderTotalsTable(label, sums, hasTextile, packageLbl, marginTop) {
-  // Labels kept ("Packages: 9", "Gross Weight: 166.500"...) but LEFT-aligned
-  // instead of centered — text-align:left means each cell's content starts
-  // right at that column's left edge, which is what actually lines up with
-  // the column above (a centered short number and a centered long label
-  // don't share the same start point even at identical widths — the same
-  // starting edge is what does, and matching widths is what makes that edge
-  // the right one).
-  const lengthCell = hasTextile
-    ? `<td style="width:9%; text-align:left;">Length: ${fmtNumber(sums.length, 0)}</td>`
-    : `<td style="width:9%"></td>`;
-  const labelWidth = hasTextile ? 56 : 52;
-  const packagesWidth = hasTextile ? 8 : 9;
-  const weightWidth = hasTextile ? 9 : 10;
-  return `
-    <table class="items-table" style="margin-top:${marginTop};">
-      <tbody>
-        <tr class="totals-row">
-          <td style="width:${labelWidth}%">${label}</td>
-          ${lengthCell}
-          <td style="width:${packagesWidth}%; text-align:left;">${packageLbl}: ${fmtNumber(sums.roll, 0)}</td>
-          <td style="width:${weightWidth}%; text-align:left;">Gross Weight: ${fmtNumber(sums.gross, 3)}</td>
-          <td style="width:${weightWidth}%; text-align:left;">Net Weight: ${fmtNumber(sums.net, 3)}</td>
-          <td style="width:${weightWidth}%; text-align:left;">CBM: ${fmtNumber(sums.cbm, 2)}</td>
-        </tr>
-      </tbody>
-    </table>
-  `;
-}
-
 // "Roll" only means something for Textile/DTF Film — everything else
 // (chemicals in drums, machines in crates...) reads "Packages" instead,
 // matching the column header already used for that section's table
@@ -264,13 +220,18 @@ function renderPackingList(params) {
       sectionsHtml += `
         <div class="section-bar" style="margin-top:14px;">Container ${String(c.seq).padStart(2, "0")}: ${escapeHtml(c.code || "—")}</div>
         ${renderItemSections(containerItems)}
-        ${renderTotalsTable("TOTAL:", {
-          length: sumOf(containerItems, "totalLength"),
-          roll: sumOf(containerItems, "roll"),
-          gross: sumOf(containerItems, "grossWeight"),
-          net: sumOf(containerItems, "netWeight"),
-          cbm: sumOf(containerItems, "cbm"),
-        }, containerHasTextile, packageLabel(containerItems), "0")}
+        <table class="items-table" style="margin-top:0;">
+          <tbody>
+            <tr class="totals-row">
+              <td>TOTAL:</td>
+              ${containerHasTextile ? `<td class="num">Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 0)}</td>` : ""}
+              <td class="num">${packageLabel(containerItems)}: ${fmtNumber(sumOf(containerItems, "roll"), 0)}</td>
+              <td class="num">Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)}</td>
+              <td class="num">Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)}</td>
+              <td class="num">CBM: ${fmtNumber(sumOf(containerItems, "cbm"), 2)}</td>
+            </tr>
+          </tbody>
+        </table>
       `;
     });
   } else {
@@ -282,13 +243,20 @@ function renderPackingList(params) {
   // so it needs to visibly stand apart from the last container's block
   // instead of reading as one more row crammed onto the end of it.
   const anyTextile = items.some(isTextileItem);
-  sectionsHtml += renderTotalsTable("GRAND TOTAL:", {
-    length: totals.totalLength,
-    roll: totals.totalRoll,
-    gross: totals.totalGrossWeight,
-    net: totals.totalNetWeight,
-    cbm: totals.totalCbm,
-  }, anyTextile, packageLabel(items), "22px");
+  sectionsHtml += `
+    <table class="items-table" style="margin-top:22px;">
+      <tbody>
+        <tr class="totals-row">
+          <td>GRAND TOTAL:</td>
+          ${anyTextile ? `<td class="num">Length: ${fmtNumber(totals.totalLength, 0)}</td>` : ""}
+          <td class="num">${packageLabel(items)}: ${fmtNumber(totals.totalRoll, 0)}</td>
+          <td class="num">Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}</td>
+          <td class="num">Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}</td>
+          <td class="num">CBM: ${fmtNumber(totals.totalCbm, 2)}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
 
   // Same Port-vs-Airport label switch as the Proforma/Commercial Invoice
   // PDF — Packing List has its own Way Of Shipment field too.
