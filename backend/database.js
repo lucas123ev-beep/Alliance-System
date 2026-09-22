@@ -1136,4 +1136,38 @@ for (const [table, columns] of Object.entries(ZH_ENUM_FIXES)) {
   }
 }
 
+// Backfill for Packing Lists generated before the Packages column started
+// showing each item's package type (see buildPackingListDraft on the
+// frontend and pdf/packingList.js's Packages cell) — those already have
+// items_json saved with `unit` empty or stuck at the order_items schema's
+// literal 'unit' default, which regenerating the whole Packing List would
+// fix but at the cost of losing anything manually edited on it since (CBM
+// adjustments, media attachments...). Patches just the `unit` field of each
+// affected item in place instead, pulling from that item's own product
+// (by product_id) the same way buildPackingListDraft itself now does.
+// Safe on every boot: only items genuinely missing a real unit get touched,
+// and only when the linked product actually has one registered — a row
+// that's already fine, or whose product also has no real Package set
+// either, is left exactly as it is.
+{
+  const listsToCheck = db.prepare(`SELECT id, items_json FROM packing_lists WHERE items_json IS NOT NULL AND items_json != ''`).all();
+  const fixList = db.prepare(`UPDATE packing_lists SET items_json = ? WHERE id = ?`);
+  const isRealUnit = v => !!v && v !== 'unit';
+  for (const list of listsToCheck) {
+    let items;
+    try { items = JSON.parse(list.items_json); } catch { continue; }
+    if (!Array.isArray(items) || items.length === 0) continue;
+    let changed = false;
+    for (const item of items) {
+      if (isRealUnit(item.unit) || !item.product_id) continue;
+      const product = db.prepare('SELECT unit FROM products WHERE id = ?').get(item.product_id);
+      if (product && isRealUnit(product.unit)) {
+        item.unit = product.unit;
+        changed = true;
+      }
+    }
+    if (changed) fixList.run(JSON.stringify(items), list.id);
+  }
+}
+
 module.exports = db;
