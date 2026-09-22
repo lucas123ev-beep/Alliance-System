@@ -86,7 +86,14 @@ function renderItemSections(items, currency, opts = {}) {
     </tr>
   `).join("");
 
-  const otherRowsFor = groupItems => groupItems.map(item => `
+  // Total Weight only ever holds a real figure for liter-priced Chemical
+  // (see the cell itself below) — every other category (Machine, Accessory,
+  // Packaging, Other, ton-priced Chemical) always printed it blank, which
+  // for a category like Accessory reads as a stray empty box with nothing
+  // to do with that item. Checked once per group (each otherGroups table is
+  // already homogeneous by category) so the whole column — header and
+  // cell — is dropped entirely for a group that would never fill it in.
+  const otherRowsFor = (groupItems, showWeightCol) => groupItems.map(item => `
     <tr>
       ${showImage ? imageCell(item) : ""}
       ${nameCell(item)}
@@ -97,9 +104,7 @@ function renderItemSections(items, currency, opts = {}) {
       <td class="center">${item.quantityLabel
         ? escapeHtml(item.quantityLabel)
         : item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
-      <td class="num">${(item.category === "Chemical" && item.priceBasis !== "ton")
-        ? (item.totalWeight ? `${fmtNumber(item.totalWeight, 1)} kg` : "—")
-        : ""}</td>
+      ${showWeightCol ? `<td class="num">${item.totalWeight ? `${fmtNumber(item.totalWeight, 1)} kg` : "—"}</td>` : ""}
       <td class="num">${fmtMoney(item.unitPrice, currency)}</td>
       <td class="num">${fmtMoney(item.total, currency)}</td>
     </tr>
@@ -137,6 +142,11 @@ function renderItemSections(items, currency, opts = {}) {
 
   otherGroups.forEach((group, idx) => {
     const isNewSection = separateOtherGroups && idx > 0;
+    const showWeightCol = group.items.some(item => item.category === "Chemical" && item.priceBasis !== "ton");
+    const weightTh = showWeightCol ? `<th style="width:10%">Total Weight</th>` : "";
+    // Quantity picks up the width Total Weight would've used when that
+    // column is dropped, instead of leaving a gap in the table.
+    const quantityWidth = showWeightCol ? 10 : 20;
     sectionsHtml += `
     <table class="items-table" style="margin-top:${isNewSection ? "12px" : "4px"};">
       <thead>
@@ -147,14 +157,14 @@ function renderItemSections(items, currency, opts = {}) {
           <th style="width:8%">Color</th>
           ${thicknessTh}
           <th style="width:9%">Unit</th>
-          <th style="width:10%">Quantity</th>
-          <th style="width:10%">Total Weight</th>
+          <th style="width:${quantityWidth}%">Quantity</th>
+          ${weightTh}
           <th style="width:9%">Unit Price</th>
           <th style="width:10%">Total Amount</th>
         </tr>
       </thead>
       <tbody>
-        ${otherRowsFor(group.items)}
+        ${otherRowsFor(group.items, showWeightCol)}
       </tbody>
     </table>
   `;

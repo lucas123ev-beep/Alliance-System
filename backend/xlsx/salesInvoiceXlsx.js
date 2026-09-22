@@ -313,14 +313,26 @@ function buildSalesInvoiceWorkbook(params) {
     sheet.addRow([]);
   }
   otherGroups.forEach(group => {
-    addTableHeader(["Product", "Description", "Color", "Thickness", "Unit", "Quantity", "Total Weight", "Unit Price", "Total Amount"]);
+    // Total Weight only ever holds a real figure for liter-priced Chemical
+    // (see the cell below) — every other category (Machine, Accessory,
+    // Packaging, Other, ton-priced Chemical) always printed it blank, which
+    // for a category like Accessory reads as a stray empty column with
+    // nothing to do with that item. Dropped entirely — header and cell —
+    // for a group that would never fill it in, same as the PDF (see
+    // pdf/itemSections.js).
+    const showWeightCol = group.items.some(item => item.category === "Chemical" && item.priceBasis !== "ton");
+    const headers = ["Product", "Description", "Color", "Thickness", "Unit", "Quantity"];
+    if (showWeightCol) headers.push("Total Weight");
+    headers.push("Unit Price", "Total Amount");
+    addTableHeader(headers);
     group.items.forEach(item => {
-      addTableDataRow([
+      const row = [
         item.description, itemDescription(item), itemColor(item), item.thickness || "—", item.priceUnitLabel || item.width || "—",
         item.quantityLabel || (item.quantity != null ? `${item.quantity} ${item.unit || ""}`.trim() : "—"),
-        (item.category === "Chemical" && item.priceBasis !== "ton") ? (item.totalWeight ? `${fmtNumber(item.totalWeight, 1)} kg` : "—") : "",
-        fmtMoney(item.unitPrice, currency), fmtMoney(item.total, currency),
-      ]);
+      ];
+      if (showWeightCol) row.push(item.totalWeight ? `${fmtNumber(item.totalWeight, 1)} kg` : "—");
+      row.push(fmtMoney(item.unitPrice, currency), fmtMoney(item.total, currency));
+      addTableDataRow(row);
     });
     sheet.addRow([]);
   });
