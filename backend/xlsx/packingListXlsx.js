@@ -174,7 +174,7 @@ function buildPackingListWorkbook(params) {
         addTableDataRow([
           item.description, itemDescription(item), itemColor(item), item.priceUnitLabel || item.width || "—",
           item.quantityLabel || (item.quantity != null ? `${item.quantity} ${item.unit || ""}`.trim() : "—"),
-          fmtNumber(item.roll, 0), fmtNumber(item.grossWeight, 3), fmtNumber(item.netWeight, 3), fmtNumber(item.cbm, 2),
+          `${fmtNumber(item.roll, 0)}${item.unit ? ` ${item.unit}` : ""}`, fmtNumber(item.grossWeight, 3), fmtNumber(item.netWeight, 3), fmtNumber(item.cbm, 2),
         ]);
       });
       addTotalsRow("SUBTOTAL:", ["", "", "", "", fmtNumber(sumOf(group.items, "roll"), 0), fmtNumber(sumOf(group.items, "grossWeight"), 3), fmtNumber(sumOf(group.items, "netWeight"), 3), fmtNumber(sumOf(group.items, "cbm"), 2)]);
@@ -192,9 +192,14 @@ function buildPackingListWorkbook(params) {
       headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
       headerRow.getCell(1).fill = HEADER_FILL;
       writeItemSections(containerItems);
+      // Length only means anything when this container actually has a
+      // Textile/DTF Film item in it — same reasoning as the PDF (see
+      // packingList.js), dropped entirely instead of printed as "Length: 0"
+      // for a Chemical/Accessory-only container.
+      const containerHasTextile = containerItems.some(isTextileItem);
       addTotalsRow(
         "TOTAL:",
-        [`Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 0)}`, "", "",
+        [containerHasTextile ? `Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 0)}` : "", "", "",
           `${packageLabel(containerItems)}: ${fmtNumber(sumOf(containerItems, "roll"), 0)}`,
           `Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)}`, "",
           `Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)}`, "",
@@ -206,8 +211,9 @@ function buildPackingListWorkbook(params) {
     writeItemSections(items);
   }
 
+  const anyTextile = items.some(isTextileItem);
   const grandTotalRow = sheet.addRow([
-    `GRAND TOTAL:   Length: ${fmtNumber(totals.totalLength, 0)}   |   ${packageLabel(items)}: ${fmtNumber(totals.totalRoll, 0)}   |   Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}   |   Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}   |   CBM: ${fmtNumber(totals.totalCbm, 2)}`,
+    `GRAND TOTAL:   ${anyTextile ? `Length: ${fmtNumber(totals.totalLength, 0)}   |   ` : ""}${packageLabel(items)}: ${fmtNumber(totals.totalRoll, 0)}   |   Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}   |   Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}   |   CBM: ${fmtNumber(totals.totalCbm, 2)}`,
   ]);
   sheet.mergeCells(grandTotalRow.number, 1, grandTotalRow.number, NUM_COLS);
   grandTotalRow.font = { bold: true };

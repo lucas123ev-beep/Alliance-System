@@ -100,7 +100,7 @@ function renderItemSections(items) {
       <td class="center">${item.quantityLabel
         ? escapeHtml(item.quantityLabel)
         : item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
-      <td class="num">${fmtNumber(item.roll, 0)}</td>
+      <td class="num">${fmtNumber(item.roll, 0)}${item.unit ? `<div style="font-size:9px;color:#666;margin-top:2px;font-weight:normal;">${escapeHtml(item.unit)}</div>` : ""}</td>
       <td class="num">${fmtNumber(item.grossWeight, 3)}</td>
       <td class="num">${fmtNumber(item.netWeight, 3)}</td>
       <td class="num">${fmtNumber(item.cbm, 2)}</td>
@@ -212,6 +212,11 @@ function renderPackingList(params) {
       // between them; a row nobody actually allocated here shouldn't print.
       const containerItems = items.filter(i => (i.container_seq || 1) === c.seq && (parseFloat(i.roll) || 0) > 0);
       if (containerItems.length === 0) return;
+      // Length only means anything when this container actually has a
+      // Textile/DTF Film item in it — a Chemical/Accessory-only container
+      // showing "Length: 0" reads as meaningless noise, so the cell is
+      // dropped entirely rather than printed as a stray zero.
+      const containerHasTextile = containerItems.some(isTextileItem);
       sectionsHtml += `
         <div class="section-bar" style="margin-top:14px;">Container ${String(c.seq).padStart(2, "0")}: ${escapeHtml(c.code || "—")}</div>
         ${renderItemSections(containerItems)}
@@ -219,7 +224,7 @@ function renderPackingList(params) {
           <tbody>
             <tr class="totals-row">
               <td>TOTAL:</td>
-              <td class="num">Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 0)}</td>
+              ${containerHasTextile ? `<td class="num">Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 0)}</td>` : ""}
               <td class="num">${packageLabel(containerItems)}: ${fmtNumber(sumOf(containerItems, "roll"), 0)}</td>
               <td class="num">Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)}</td>
               <td class="num">Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)}</td>
@@ -237,12 +242,13 @@ function renderPackingList(params) {
   // (every container combined), not just another per-container TOTAL row,
   // so it needs to visibly stand apart from the last container's block
   // instead of reading as one more row crammed onto the end of it.
+  const anyTextile = items.some(isTextileItem);
   sectionsHtml += `
     <table class="items-table" style="margin-top:22px;">
       <tbody>
         <tr class="totals-row">
           <td>GRAND TOTAL:</td>
-          <td class="num">Length: ${fmtNumber(totals.totalLength, 0)}</td>
+          ${anyTextile ? `<td class="num">Length: ${fmtNumber(totals.totalLength, 0)}</td>` : ""}
           <td class="num">${packageLabel(items)}: ${fmtNumber(totals.totalRoll, 0)}</td>
           <td class="num">Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}</td>
           <td class="num">Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}</td>
