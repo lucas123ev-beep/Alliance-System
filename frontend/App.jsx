@@ -4882,7 +4882,16 @@ const handleSalePerLiterChange = (e) => {
 <div style={{ gridColumn: "span 2", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
   <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
     <Field label="Cost Currency">
-      <Select value={f.cost_currency} onChange={set("cost_currency")}>
+      <Select value={f.cost_currency} onChange={e => {
+        const cur = e.target.value;
+        // VAT % here is the Chinese export rebate — only relevant when the
+        // cost itself was actually paid in RMB to a Chinese supplier. A
+        // USD-costed item (already-in-dollars supplier, e.g. bought abroad)
+        // never has that rebate to begin with, so switching Cost Currency to
+        // USD clears whatever VAT % was sitting there instead of leaving a
+        // stale rate that no longer applies to this item.
+        setF(p => ({ ...p, cost_currency: cur, vat_pct: cur === "USD" ? "" : p.vat_pct }));
+      }}>
         {currencies.map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
       </Select>
     </Field>
