@@ -5,7 +5,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const db = require('./database');
 const { scheduleBackups, runBackup, listBackups } = require('./backup');
-const { sendStatusChangeEmail, fetchAttachment, isRestricted, ENTITY_LABELS } = require('./notifications');
+const { sendStatusChangeEmail, fetchAttachment, fetchAttachments, isRestricted, ENTITY_LABELS } = require('./notifications');
 
 const { renderPdfBuffer } = require('./pdf/render');
 const { renderSalesInvoice } = require('./pdf/salesInvoice');
@@ -2995,7 +2995,7 @@ app.get('/api/notifications/recipients', requireAuth(db), (req, res) => {
 });
 
 app.post('/api/notifications/status-change', requireAuth(db), async (req, res) => {
-  const { entityType, recordLabel, oldStatus, newStatus, recipientUsernames, message, attachmentUrl, attachmentName, eventType, documentLabel } = req.body || {};
+  const { entityType, recordLabel, oldStatus, newStatus, recipientUsernames, message, attachmentUrl, attachmentName, attachments: attachmentsInput, eventType, documentLabel } = req.body || {};
   // newStatus is only required for the original 'status_change' flow — a
   // 'created' notification has no De/Para, and a 'document' one (someone
   // generated a PDF/Excel and chose to send it by e-mail) is keyed off the
@@ -3017,8 +3017,21 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
   const byUsername = Object.fromEntries(users.map(u => [u.username, u]));
 
   // Downloaded once here (not inside the per-recipient loop) so N
-  // recipients don't mean N redundant fetches of the same file.
-  const attachment = await fetchAttachment(attachmentUrl, attachmentName);
+  // recipients don't mean N redundant fetches of the same file(s).
+  // `attachments` (array, [{url,name},...] — the "Notify status change"
+  // modal's multi-attachment picker) takes priority over the legacy
+  // singular attachmentUrl/attachmentName (still sent by the single-document
+  // DocEmailModal call site, which only ever has one file).
+  const attachmentList = Array.isArray(attachmentsInput) && attachmentsInput.length > 0
+    ? attachmentsInput
+    : (attachmentUrl ? [{ url: attachmentUrl, name: attachmentName }] : []);
+  const resolvedAttachments = await fetchAttachments(attachmentList);
+  // First one still mirrored into the legacy singular columns so any old
+  // code (or a client-side inbox render that hasn't been updated) keeps
+  // showing at least the first attachment.
+  const firstAttachmentUrl = attachmentList[0]?.url || null;
+  const firstAttachmentName = attachmentList[0]?.name || null;
+  const attachmentsJson = attachmentList.length > 0 ? JSON.stringify(attachmentList) : null;
 
   const changedBy = actorName(req);
   // One id for this whole call, stamped on every recipient's row below —
@@ -3027,8 +3040,8 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
   // guessing from matching timestamps.
   const batchId = crypto.randomUUID();
   const insertInboxRow = db.prepare(`
-    INSERT INTO notifications (recipient_username, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name, attachment_url, attachment_name, batch_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO notifications (recipient_username, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name, attachment_url, attachment_name, attachments_json, batch_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const sent = [];
@@ -3041,7 +3054,7 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
     // actually succeeds — the inbox is the reliable channel, e-mail is a
     // best-effort extra, so a Resend hiccup shouldn't also hide this from
     // the person inside the system.
-    insertInboxRow.run(username, entityType, recordLabel || null, eventType || 'status_change', oldStatus || null, newStatus || null, documentLabel || null, message || null, changedBy, attachmentUrl || null, attachmentName || null, batchId);
+    insertInboxRow.run(username, entityType, recordLabel || null, eventType || 'status_change', oldStatus || null, newStatus || null, documentLabel || null, message || null, changedBy, firstAttachmentUrl, firstAttachmentName, attachmentsJson, batchId);
     try {
       await sendStatusChangeEmail({
         to: user.email,
@@ -3051,7 +3064,7 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
         newStatus,
         changedBy,
         message,
-        attachment,
+        attachments: resolvedAttachments,
         eventType,
         documentLabel,
       });
@@ -3071,7 +3084,7 @@ app.post('/api/notifications/status-change', requireAuth(db), async (req, res) =
 // correct even once older read items fall off that 50-row window.
 app.get('/api/notifications/inbox', requireAuth(db), (req, res) => {
   const items = db.prepare(`
-    SELECT id, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name, attachment_url, attachment_name, batch_id, is_read, created_at
+    SELECT id, entity_type, record_label, event_type, old_status, new_status, document_label, message, sender_name, attachment_url, attachment_name, attachments_json, batch_id, is_read, created_at
     FROM notifications WHERE recipient_username = ? ORDER BY created_at DESC, id DESC LIMIT 50
   `).all(req.user.username);
   const { unreadCount } = db.prepare(`SELECT COUNT(*) AS unreadCount FROM notifications WHERE recipient_username = ? AND is_read = 0`).get(req.user.username);

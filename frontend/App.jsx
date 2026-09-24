@@ -1930,7 +1930,7 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
   const [recipients, setRecipients] = useState(null); // null = still loading
   const [selected, setSelected] = useState(() => new Set());
   const [message, setMessage] = useState("");
-  const [attachment, setAttachment] = useState(null); // { url, name }
+  const [attachments, setAttachments] = useState([]); // [{ url, name }, ...]
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
@@ -1950,15 +1950,21 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
   }
 
   async function handleAttach(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
     setUploading(true);
     try {
-      setAttachment(await uploadToCloudinary(file));
+      const uploaded = await Promise.all(files.map(uploadToCloudinary));
+      setAttachments(prev => [...prev, ...uploaded]);
     } catch (err) {
       alert(t("Upload failed: ") + err.message);
     }
     setUploading(false);
+    e.target.value = "";
+  }
+
+  function removeAttachment(idx) {
+    setAttachments(prev => prev.filter((_, i) => i !== idx));
   }
 
   // Lucas is no longer force-added server-side (reverted per his explicit
@@ -1975,8 +1981,7 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
         entityType, recordLabel, oldStatus, newStatus, eventType,
         recipientUsernames: [...selected],
         message: message.trim() || undefined,
-        attachmentUrl: attachment?.url,
-        attachmentName: attachment?.name,
+        attachments: attachments.length > 0 ? attachments : undefined,
       });
       setResult(res);
       setTimeout(onClose, 1100);
@@ -2015,21 +2020,22 @@ function NotifyStatusChangeModal({ entityType, recordLabel, oldStatus, newStatus
       </div>
       <div style={{ marginBottom: "20px" }}>
         <label style={{ fontSize: "11px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "6px" }}>
-          {t("Attachment (optional)")}
+          {t("Attachments (optional)")}
         </label>
-        {attachment ? (
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13px", color: "#f1f5f9" }}>
-            📎 {attachment.name}
-            <Btn small outline color="#ef4444" onClick={() => setAttachment(null)}>Remove</Btn>
+        {attachments.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "10px" }}>
+            {attachments.map((a, idx) => (
+              <div key={idx} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13px", color: "#f1f5f9" }}>
+                📎 {a.name}
+                <Btn small outline color="#ef4444" onClick={() => removeAttachment(idx)}>Remove</Btn>
+              </div>
+            ))}
           </div>
-        ) : (
-          <>
-            <input id="notify-attach-input" type="file" onChange={handleAttach} style={{ display: "none" }} />
-            <Btn small outline color="#64748b" disabled={uploading} onClick={() => document.getElementById("notify-attach-input").click()}>
-              {uploading ? "Uploading…" : "📎 Attach file"}
-            </Btn>
-          </>
         )}
+        <input id="notify-attach-input" type="file" multiple onChange={handleAttach} style={{ display: "none" }} />
+        <Btn small outline color="#64748b" disabled={uploading} onClick={() => document.getElementById("notify-attach-input").click()}>
+          {uploading ? "Uploading…" : "📎 " + t("Attach file")}
+        </Btn>
       </div>
       {result && !result.error && (
         <p style={{ fontSize: "13px", color: "#4ade80", margin: "0 0 12px" }}>
@@ -2557,11 +2563,25 @@ function NotificationBell({ sidebarOpen }) {
               {detail.message}
             </div>
           )}
-          {detail.attachment_url && (
-            <Btn onClick={() => window.open(detail.attachment_url, "_blank")}>
-              📎 {detail.attachment_name || t("Open attachment")}
-            </Btn>
-          )}
+          {(() => {
+            let list = [];
+            if (detail.attachments_json) {
+              try { list = JSON.parse(detail.attachments_json) || []; } catch { list = []; }
+            }
+            if (list.length === 0 && detail.attachment_url) {
+              list = [{ url: detail.attachment_url, name: detail.attachment_name }];
+            }
+            if (list.length === 0) return null;
+            return (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                {list.map((a, idx) => (
+                  <Btn key={idx} onClick={() => window.open(a.url, "_blank")}>
+                    📎 {a.name || t("Open attachment")}
+                  </Btn>
+                ))}
+              </div>
+            );
+          })()}
           {detailRecipients && detailRecipients.length > 0 && (
             <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid #334155" }}>
               <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.03em" }}>
@@ -4364,10 +4384,14 @@ const [f, setF] = useState(initial || {
   cost_per_ton: "", sale_per_ton: "",
   // Informational only — not used in any pricing calculation, just a
   // reference note shown next to Margin % for whoever's pricing the item.
-  // Defaults to 13% (the common rate) but stays fully editable — see the
-  // yellow-bordered Input below, which calls attention to it precisely
-  // because it's a default and not a per-item fact someone actually typed.
-  vat_pct: "13",
+  // Defaults blank here since Cost Currency itself defaults to USD right
+  // above — VAT % is the Chinese export rebate, which only applies to a
+  // cost actually paid in RMB, so defaulting it to 13% alongside a USD
+  // default cost currency would default to a number that can't be right.
+  // Switching Cost Currency away from USD below is what actually turns this
+  // into 13% (see its own onChange) — stays fully editable either way, see
+  // the yellow-bordered Input below.
+  vat_pct: "",
   // What's counted/sold (Unit or Pair) for categories that don't already
   // have their own pricing unit (Chemical=liter/ton, Textile/DTF=meter) —
   // see the Sold By field below.
@@ -4889,8 +4913,15 @@ const handleSalePerLiterChange = (e) => {
         // USD-costed item (already-in-dollars supplier, e.g. bought abroad)
         // never has that rebate to begin with, so switching Cost Currency to
         // USD clears whatever VAT % was sitting there instead of leaving a
-        // stale rate that no longer applies to this item.
-        setF(p => ({ ...p, cost_currency: cur, vat_pct: cur === "USD" ? "" : p.vat_pct }));
+        // stale rate that no longer applies to this item. Going the other
+        // way — off USD onto a real RMB-style currency — restores the 13%
+        // default (only when the field's still blank, so it never clobbers
+        // a number someone already typed by hand).
+        setF(p => ({
+          ...p,
+          cost_currency: cur,
+          vat_pct: cur === "USD" ? "" : (p.vat_pct || "13"),
+        }));
       }}>
         {currencies.map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
       </Select>

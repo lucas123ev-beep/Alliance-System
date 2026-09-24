@@ -127,6 +127,17 @@ async function fetchAttachment(url, filename) {
   }
 }
 
+// Plural counterpart for the "Notify status change" modal's multi-attachment
+// support — `list` is [{url, name}, ...]. Resolves every URL in parallel
+// (same "once per request, reused across every recipient" contract as
+// fetchAttachment above) and drops any entry that fails to download instead
+// of failing the whole notification over one bad link.
+async function fetchAttachments(list) {
+  if (!Array.isArray(list) || list.length === 0) return [];
+  const resolved = await Promise.all(list.map(a => fetchAttachment(a?.url, a?.name)));
+  return resolved.filter(Boolean);
+}
+
 // `to` is a single address — the route in server.js calls this once per
 // recipient rather than passing an array, so one bad/missing address for
 // one person can't silently drop the e-mail to everyone else. `attachment`
@@ -143,7 +154,14 @@ async function fetchAttachment(url, filename) {
 // it by e-mail instead of/as well as downloading it — always carries an
 // `attachment`, and `documentLabel` says which document, e.g. "PDF" or
 // "Payment Notice (20% Deposit)").
-async function sendStatusChangeEmail({ to, entityType, recordLabel, oldStatus, newStatus, changedBy, message, attachment, eventType = 'status_change', documentLabel }) {
+async function sendStatusChangeEmail({ to, entityType, recordLabel, oldStatus, newStatus, changedBy, message, attachment, attachments, eventType = 'status_change', documentLabel }) {
+  // `attachments` (array, from the multi-attachment "Notify status change"
+  // flow) takes priority; `attachment` (single object) stays supported for
+  // the older single-document DocEmailModal caller, which still only ever
+  // resolves one file.
+  const resolvedAttachments = (Array.isArray(attachments) && attachments.length > 0)
+    ? attachments
+    : (attachment ? [attachment] : []);
   const label = entityLabel(entityType);
   const isCreated = eventType === 'created';
   const isDocument = eventType === 'document';
@@ -190,9 +208,9 @@ async function sendStatusChangeEmail({ to, entityType, recordLabel, oldStatus, n
   `;
   const { error } = await getResend().emails.send({
     from: FROM_ADDRESS, to, subject, text, html,
-    attachments: attachment ? [attachment] : undefined,
+    attachments: resolvedAttachments.length > 0 ? resolvedAttachments : undefined,
   });
   if (error) throw new Error(error.message || 'Resend API error');
 }
 
-module.exports = { sendStatusChangeEmail, fetchAttachment, entityLabel, isRestricted, ENTITY_LABELS };
+module.exports = { sendStatusChangeEmail, fetchAttachment, fetchAttachments, entityLabel, isRestricted, ENTITY_LABELS };

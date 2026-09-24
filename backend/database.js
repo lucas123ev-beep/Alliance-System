@@ -603,6 +603,12 @@ const migrations = [
   ['notifications', 'attachment_url', 'TEXT'],
   ['notifications', 'attachment_name', 'TEXT'],
   ['notifications', 'batch_id', 'TEXT'],
+  // Full multi-attachment list ([{url,name}, ...] JSON) for notifications
+  // sent with more than one file — attachment_url/attachment_name above
+  // still get populated with just the FIRST entry so any old code (or the
+  // single-attachment DocEmailModal path) that only reads those two columns
+  // keeps working unchanged.
+  ['notifications', 'attachments_json', 'TEXT'],
   ['orders', 'acquisition_company', "TEXT DEFAULT ''"],
   ['orders', 'container', "TEXT DEFAULT ''"],
   ['orders', 'container_qty', 'REAL'],
