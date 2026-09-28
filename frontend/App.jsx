@@ -6356,11 +6356,11 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
 <Field label="Specifications"><Textarea value={f.specifications || ""} onChange={set("specifications")} /></Field>
         <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
 
-        <Field label="Photos / Videos">
+        <Field label="Photos / Videos / Files">
           <div>
             <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 16px", cursor: "pointer", fontSize: "13px", color: "#94a3b8", marginBottom: "12px" }}>
-              {uploading ? t("⏳ Uploading...") : t("📎 Add Photos / Videos")}
-              <input type="file" multiple accept="image/*,video/*" onChange={handleUpload} style={{ display: "none" }} disabled={uploading} />
+              {uploading ? t("⏳ Uploading...") : t("📎 Add Photos / Videos / Files")}
+              <input type="file" multiple onChange={handleUpload} style={{ display: "none" }} disabled={uploading} />
             </label>
             {lightbox && (
               <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
@@ -6376,14 +6376,22 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
               {media.filter(Boolean).map((item, i) => {
   const url = typeof item === 'string' ? item : item.url;
   const name = typeof item === 'string' ? url.split('/').pop() : item.name;
+  const isPdf = url.match(/\.pdf$/i) || name.match(/\.pdf$/i);
+  const isVideo = url.match(/\.(mp4|mov|avi|webm)$/i) || name.match(/\.(mp4|mov|avi|webm)$/i);
+  const isImage = url.match(/\.(jpe?g|png|gif|webp|bmp|svg)$/i) || name.match(/\.(jpe?g|png|gif|webp|bmp|svg)$/i);
   return (
     <div key={i} style={{ position: "relative" }}>
-      {url.match(/\.pdf$/i) || name.match(/\.pdf$/i) ? (
+      {isPdf ? (
         <a href={url} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "80px", height: "80px", background: "#1e293b", borderRadius: "6px", border: "1px solid #334155", color: "#f1f5f9", fontSize: "28px", textDecoration: "none" }}>📄</a>
-      ) : url.match(/\.(mp4|mov|avi|webm)$/i) ? (
+      ) : isVideo ? (
         <video src={url} onClick={() => setLightbox(url)} style={{ width: "80px", height: "80px", objectFit: "cover", borderRadius: "6px", border: "1px solid #334155", cursor: "pointer" }} />
-      ) : (
+      ) : isImage ? (
         <img src={url} onClick={() => setLightbox(url)} style={{ width: "80px", height: "80px", objectFit: "cover", borderRadius: "6px", border: "1px solid #334155", cursor: "pointer" }} alt="" />
+      ) : (
+        <a href={url} target="_blank" rel="noreferrer" title={name} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: "80px", height: "80px", background: "#1e293b", borderRadius: "6px", border: "1px solid #334155", color: "#f1f5f9", fontSize: "26px", textDecoration: "none", gap: "2px", padding: "4px", overflow: "hidden" }}>
+          📁
+          <span style={{ fontSize: "8px", color: "#94a3b8", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }}>{name}</span>
+        </a>
       )}
       <button onClick={async () => {
         const res = await fetch(url);
