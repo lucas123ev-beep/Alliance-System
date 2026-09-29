@@ -4955,10 +4955,17 @@ const handleSalePerLiterChange = (e) => {
           {/* Defaults to 13% (see initial state above) but is fully
               editable — the yellow border is there so whoever's filling
               this out notices it's a default and double-checks it, instead
-              of it silently going through unnoticed like a normal field. */}
+              of it silently going through unnoticed like a normal field.
+              Locked whenever Cost Currency is USD — VAT % is the Chinese
+              export rebate, meaningless in dollars, and the onChange above
+              already clears it to "" on switching to USD, so this just
+              keeps it from being typed back in until the currency changes. */}
           <Input type="number" value={f.vat_pct || ""} onChange={set("vat_pct")} placeholder="e.g. 13"
-            style={{ border: "2px solid #eab308" }} />
-          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>{t("Added on top of the Real Margin below.")}</div>
+            disabled={f.cost_currency === "USD"}
+            style={{ border: "2px solid #eab308", opacity: f.cost_currency === "USD" ? 0.5 : 1, cursor: f.cost_currency === "USD" ? "not-allowed" : "text" }} />
+          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
+            {f.cost_currency === "USD" ? t("Not applicable for USD cost.") : t("Added on top of the Real Margin below.")}
+          </div>
         </Field>
       </div>
     </div>
