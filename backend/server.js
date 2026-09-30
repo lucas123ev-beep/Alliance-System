@@ -1958,7 +1958,7 @@ function normalizeSalesItem(item, fallbackCurrency) {
   if (category === 'Chemical' && priceBasis === 'ton' && item.quantity != null) {
     const perDrumTons = productNetWeightKg(product) / 1000;
     const drums = perDrumTons > 0 ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons) : null;
-    quantityLabel = `${item.quantity} t${drums ? ` (≈ ${drums} ${item.unit || 'packages'})` : ''}`;
+    quantityLabel = `${item.quantity} Ton${drums ? ` (≈ ${drums} ${item.unit || 'packages'})` : ''}`;
   }
   // Meters per roll — the roll length used for this specific item (may
   // differ from the product's registered default when a custom length was
