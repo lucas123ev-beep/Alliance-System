@@ -1407,6 +1407,12 @@ const PACKAGE_UNIT_OPTIONS = [
 // small volumes of liquid...) are still legitimately sold by length or
 // volume.
 const SELLING_UNIT_OPTIONS = ["Unit", "Pair", "Meter", "Liter"];
+// "Other" is the catch-all category for goods that don't fit any of the
+// other dedicated flows (Chemical's liter/ton, Textile/DTF's meter/roll) —
+// bulk/raw goods quoted by weight (scrap metal, raw material, etc.) land
+// here, so Ton is only offered as a Sold By option for this one category,
+// not the rest of SELLING_UNIT_OPTIONS' shared list.
+const sellingUnitOptionsFor = category => category === "Other" ? [...SELLING_UNIT_OPTIONS, "Ton"] : SELLING_UNIT_OPTIONS;
 
 // Shared list of product categories — used by Product registration, Sample
 // registration, and the Supplier's Product Types field (so a supplier's
@@ -3730,7 +3736,7 @@ const handleUnitChange = (e) => {
     // This is what actually prints as the Unit column on client documents.
     <Select value={item.unit || ""} onChange={e => setItem(p => ({ ...p, unit: e.target.value }))}>
       <option value="">Select...</option>
-      {SELLING_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
+      {sellingUnitOptionsFor(item.category).map(u => <option key={u}>{u}</option>)}
     </Select>
   )}
 </Field>
@@ -4809,7 +4815,7 @@ const handleSalePerLiterChange = (e) => {
   // Weight fields across mismatched rows.
   <Field label="Sold By">
     <Select value={f.selling_unit || "Unit"} onChange={set("selling_unit")}>
-      {SELLING_UNIT_OPTIONS.map(u => <option key={u}>{u}</option>)}
+      {sellingUnitOptionsFor(f.category).map(u => <option key={u}>{u}</option>)}
     </Select>
   </Field>
 )}
