@@ -29,7 +29,7 @@ const ACQ = require("./acquisitionCompanies");
 //     instead of the older ambiguous "both companies stacked" header used
 //     when no decision has been made yet at Quotation stage.
 function renderQuotation(params) {
-  const { number, date, client, priceValidity, portOfLoading, portOfDischarge, currency, items, totalAmount, freightValue, acq } = params;
+  const { number, date, client, priceValidity, portOfLoading, portOfDischarge, currency, items, totalAmount, freightValue, insuranceValue, acq } = params;
 
   // Picks navy/HKAG vs. gray/Ningbo for every icon() call below — no-op
   // (stays navy) when acq is null, matching the multi-company header case.
@@ -37,7 +37,8 @@ function renderQuotation(params) {
 
   const sectionsHtml = renderItemSections(items, currency, { showImage: true });
   const freight = parseFloat(freightValue) || 0;
-  const grandTotal = (parseFloat(totalAmount) || 0) + freight;
+  const insurance = parseFloat(insuranceValue) || 0;
+  const grandTotal = (parseFloat(totalAmount) || 0) + freight + insurance;
 
   const body = `
     <div class="doc-meta-row">
@@ -59,7 +60,8 @@ function renderQuotation(params) {
 
     <table class="items-table" style="margin-top:4px;">
       <tbody>
-        ${freight > 0 ? `<tr><td class="num" style="text-align:right;">Total CIF Freight: ${fmtMoney(freight, currency)}</td></tr>` : ""}
+        ${freight > 0 ? `<tr><td class="num" style="text-align:right;">Total of Ocean Cost: ${fmtMoney(freight, currency)}</td></tr>` : ""}
+        ${insurance > 0 ? `<tr><td class="num" style="text-align:right;">Total of Insurance Cost: ${fmtMoney(insurance, currency)}</td></tr>` : ""}
         <tr class="totals-row">
           <td class="num" style="text-align:right;">Grand Total Amount: ${fmtMoney(grandTotal, currency)}</td>
         </tr>

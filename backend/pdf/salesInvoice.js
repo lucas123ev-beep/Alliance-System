@@ -1,5 +1,5 @@
 const { wrapDocument, icon, applyTheme } = require("./layout");
-const { escapeHtml, fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLabel } = require("./helpers");
+const { escapeHtml, fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLabel, freightModeLabel } = require("./helpers");
 const { renderItemSections } = require("./itemSections");
 
 // production_days/delivery_days are usually a plain day-count ("28"), auto-
@@ -69,7 +69,7 @@ function renderSalesInvoice(params) {
     title, number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
     incoterm, acq, manufacturer, items, totalLength, totalWeight, totalQuantity, totalAmount, currency,
     paymentTerms, productionDays, deliveryDays, importer, consignee, notifyParty,
-    extraShipmentLine, extraShipmentLineLabel, validity, freightValue,
+    extraShipmentLine, extraShipmentLineLabel, validity, freightValue, insuranceValue,
   } = params;
 
   // Picks navy/HKAG vs. gray/Ningbo for every icon() call below (icon()
@@ -81,7 +81,8 @@ function renderSalesInvoice(params) {
   // "grand total" shown below (the summary row and the Total Invoice Value
   // box) instead of changing what totalAmount itself means upstream.
   const freight = parseFloat(freightValue) || 0;
-  const grandTotal = (parseFloat(totalAmount) || 0) + freight;
+  const insurance = parseFloat(insuranceValue) || 0;
+  const grandTotal = (parseFloat(totalAmount) || 0) + freight + insurance;
 
   // Blank consignee/notifyParty (the common case) -> one combined card, same
   // party for all three roles, exactly like before this field existed.
@@ -139,7 +140,8 @@ function renderSalesInvoice(params) {
   sectionsHtml += `
     <table class="items-table" style="margin-top:4px;">
       <tbody>
-        ${freight > 0 ? `<tr><td class="num" style="text-align:right;">Total CIF Freight: ${fmtMoney(freight, currency)}</td></tr>` : ""}
+        ${freight > 0 ? `<tr><td class="num" style="text-align:right;">Total of ${freightModeLabel(wayOfShipment)} Cost: ${fmtMoney(freight, currency)}</td></tr>` : ""}
+        ${insurance > 0 ? `<tr><td class="num" style="text-align:right;">Total of Insurance Cost: ${fmtMoney(insurance, currency)}</td></tr>` : ""}
         <tr class="totals-row">
           <td class="num" style="text-align:right;">${escapeHtml(summaryLabel)} &nbsp;&nbsp;|&nbsp;&nbsp; Grand Total Amount: ${fmtMoney(grandTotal, currency)}</td>
         </tr>

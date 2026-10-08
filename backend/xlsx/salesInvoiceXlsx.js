@@ -8,7 +8,7 @@
 const ExcelJS = require("exceljs");
 const LOGO = require("../pdf/logo");
 const LOGO_NINGBO = require("../pdf/logoNingbo");
-const { fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLabel } = require("../pdf/helpers");
+const { fmtDateLong, fmtNumber, fmtMoney, amountToWords, currencyLabel, freightModeLabel } = require("../pdf/helpers");
 const { htmlToExcelRuns } = require("./richText");
 
 const NAVY_ARGB = "FF0D1627";
@@ -96,13 +96,14 @@ function buildSalesInvoiceWorkbook(params) {
     title, number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
     incoterm, acq, manufacturer, items, totalLength, totalWeight, totalQuantity, totalAmount, currency,
     paymentTerms, productionDays, deliveryDays, importer, consignee, notifyParty,
-    extraShipmentLine, extraShipmentLineLabel, validity, freightValue,
+    extraShipmentLine, extraShipmentLineLabel, validity, freightValue, insuranceValue,
   } = params;
 
   // Same CIF freight handling as the PDF (pdf/salesInvoice.js) — separate
   // line, folded into every grand-total figure shown below.
   const freight = parseFloat(freightValue) || 0;
-  const grandTotal = (parseFloat(totalAmount) || 0) + freight;
+  const insurance = parseFloat(insuranceValue) || 0;
+  const grandTotal = (parseFloat(totalAmount) || 0) + freight + insurance;
 
   // Navy/HKAG vs. gray/Ningbo — same acq.code rule as the PDF version.
   const theme = themeForXlsx(acq);
@@ -337,12 +338,16 @@ function buildSalesInvoiceWorkbook(params) {
     sheet.addRow([]);
   });
 
-  if (freight > 0) {
-    const freightRow = sheet.addRow([`Total CIF Freight: ${fmtMoney(freight, currency)}`]);
-    sheet.mergeCells(freightRow.number, 1, freightRow.number, NUM_COLS);
-    freightRow.getCell(1).font = { size: FS.small };
-    freightRow.getCell(1).alignment = { horizontal: "right" };
-  }
+  [
+    [freight, `Total of ${freightModeLabel(wayOfShipment)} Cost`],
+    [insurance, "Total of Insurance Cost"],
+  ].forEach(([value, label]) => {
+    if (!(value > 0)) return;
+    const costRow = sheet.addRow([`${label}: ${fmtMoney(value, currency)}`]);
+    sheet.mergeCells(costRow.number, 1, costRow.number, NUM_COLS);
+    costRow.getCell(1).font = { size: FS.small };
+    costRow.getCell(1).alignment = { horizontal: "right" };
+  });
   const summaryLabel = textileItems.length > 0
     ? `Total Length: ${fmtNumber(totalLength, 0)} m`
     : `Total Quantity: ${fmtNumber(totalQuantity, 2)}`;

@@ -5,7 +5,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const db = require('./database');
 const { scheduleBackups, runBackup, listBackups } = require('./backup');
-const { sendStatusChangeEmail, fetchAttachment, fetchAttachments, isRestricted, ENTITY_LABELS } = require('./notifications');
+const { sendStatusChangeEmail, sendQuantityVarianceEmail, fetchAttachment, fetchAttachments, isRestricted, ENTITY_LABELS } = require('./notifications');
 
 const { renderPdfBuffer } = require('./pdf/render');
 const { renderSalesInvoice } = require('./pdf/salesInvoice');
@@ -290,15 +290,15 @@ app.get('/api/orders/:id', (req, res) => {
 app.post('/api/orders', guardScreen('orders'), (req, res) => {
   const { order_number, client, supplier, product, value, currency, production_lead_time, delivery_days,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
-    port_of_discharge, freight_value, acquisition_company, container, container_qty, notes, items } = req.body;
+    port_of_discharge, freight_value, insurance_value, acquisition_company, container, container_qty, notes, items } = req.body;
   try {
     const insert = db.transaction(() => {
       const result = db.prepare(`
         INSERT INTO orders (order_number, client, supplier, product, value, currency, production_lead_time, delivery_days,
-          shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, freight_value, acquisition_company, container, container_qty, notes, updated_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, freight_value, insurance_value, acquisition_company, container, container_qty, notes, updated_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(order_number, client, supplier, product, value, currency || 'USD', production_lead_time || null, delivery_days || null,
-        shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, freight_value || '', acquisition_company || '', container || '', container_qty, notes, actorName(req));
+        shipment_date, arrival_date, incoterm, payment_terms, port_of_loading, port_of_discharge, freight_value || '', insurance_value || '', acquisition_company || '', container || '', container_qty, notes, actorName(req));
       const orderId = result.lastInsertRowid;
       if (items && items.length > 0) {
         const insertItem = db.prepare(`
@@ -326,16 +326,16 @@ app.post('/api/orders', guardScreen('orders'), (req, res) => {
 app.put('/api/orders/:id', guardScreen('orders'), (req, res) => {
   const { order_number, client, supplier, product, value, currency, production_lead_time, delivery_days,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
-    port_of_discharge, freight_value, acquisition_company, container, container_qty, notes, items } = req.body;
+    port_of_discharge, freight_value, insurance_value, acquisition_company, container, container_qty, notes, items } = req.body;
   db.prepare(`
     UPDATE orders SET order_number=?, client=?, supplier=?, product=?, value=?, currency=?,
       production_lead_time=?, delivery_days=?, shipment_date=?, arrival_date=?, incoterm=?,
-      payment_terms=?, port_of_loading=?, port_of_discharge=?, freight_value=?, acquisition_company=?, container=?, container_qty=?, notes=?,
+      payment_terms=?, port_of_loading=?, port_of_discharge=?, freight_value=?, insurance_value=?, acquisition_company=?, container=?, container_qty=?, notes=?,
       updated_by=?, updated_at=datetime('now')
     WHERE id=?
   `).run(order_number, client, supplier, product, value, currency, production_lead_time || null, delivery_days || null,
     shipment_date, arrival_date, incoterm, payment_terms, port_of_loading,
-    port_of_discharge, freight_value || '', acquisition_company || '', container || '', container_qty || null, notes, actorName(req), req.params.id);
+    port_of_discharge, freight_value || '', insurance_value || '', acquisition_company || '', container || '', container_qty || null, notes, actorName(req), req.params.id);
 
 db.prepare('DELETE FROM order_items WHERE order_id=?').run(req.params.id);
 if (items && items.length > 0) {
@@ -664,18 +664,18 @@ app.get('/api/proformas', (req, res) => {
 // screen.
 app.post('/api/proformas', (req, res) => {
   const { order_id, quotation_id, number, issue_date, validity, client, total, currency, status, notes,
-    acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, freight_value, supplier,
+    acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, freight_value, insurance_value, supplier,
     payment_terms, production_days, delivery_days, items, consignee, notify_party,
     ningbo_way_of_shipment, ningbo_incoterm, ningbo_payment_terms, ningbo_items } = req.body;
   try {
     const result = db.prepare(`
 INSERT INTO proformas (order_id, quotation_id, number, issue_date, validity, client, total, currency, status, notes,
-  acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, freight_value, supplier,
+  acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, freight_value, insurance_value, supplier,
   payment_terms, production_days, delivery_days, items, consignee, notify_party,
   ningbo_way_of_shipment, ningbo_incoterm, ningbo_payment_terms, ningbo_items, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `).run(order_id || null, quotation_id || null, number, issue_date, validity, client, total, currency || 'USD', status || 'Draft', notes,
-      acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', freight_value || '', supplier || '',
+      acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', freight_value || '', insurance_value || '', supplier || '',
       payment_terms || null, production_days || null, delivery_days || null, items || null, consignee || null, notify_party || null,
       ningbo_way_of_shipment || '', ningbo_incoterm || '', ningbo_payment_terms || '', ningbo_items || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM proformas WHERE id=?').get(result.lastInsertRowid));
@@ -686,17 +686,17 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 
 app.put('/api/proformas/:id', (req, res) => {
   const { order_id, number, issue_date, validity, client, total, currency, status, notes,
-    acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, freight_value, supplier,
+    acquisition_company, incoterm, way_of_shipment, port_of_loading, port_of_discharge, freight_value, insurance_value, supplier,
     payment_terms, production_days, delivery_days, items, consignee, notify_party,
     ningbo_way_of_shipment, ningbo_incoterm, ningbo_payment_terms, ningbo_items } = req.body;
   db.prepare(`
     UPDATE proformas SET order_id=?, number=?, issue_date=?, validity=?, client=?, total=?, currency=?, status=?, notes=?,
-      acquisition_company=?, incoterm=?, way_of_shipment=?, port_of_loading=?, port_of_discharge=?, freight_value=?, supplier=?,
+      acquisition_company=?, incoterm=?, way_of_shipment=?, port_of_loading=?, port_of_discharge=?, freight_value=?, insurance_value=?, supplier=?,
       payment_terms=?, production_days=?, delivery_days=?, items=?, consignee=?, notify_party=?,
       ningbo_way_of_shipment=?, ningbo_incoterm=?, ningbo_payment_terms=?, ningbo_items=?, updated_by=?
     WHERE id=?
   `).run(order_id || null, number, issue_date, validity, client, total, currency, status, notes,
-    acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', freight_value || '', supplier || '',
+    acquisition_company || '', incoterm || '', way_of_shipment || 'By Sea', port_of_loading || '', port_of_discharge || '', freight_value || '', insurance_value || '', supplier || '',
     payment_terms || null, production_days || null, delivery_days || null, items || null, consignee || null, notify_party || null,
     ningbo_way_of_shipment || '', ningbo_incoterm || '', ningbo_payment_terms || '', ningbo_items || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM proformas WHERE id=?').get(req.params.id));
@@ -1003,6 +1003,124 @@ app.delete('/api/commercial-invoices/:id', guardScreen('commercial'), (req, res)
 // linked Order (single source of truth, same approach as Commercial
 // Invoices), plus the Order's number/client so the list screen doesn't need
 // a second round-trip per row.
+// ─── Packing List vs. Contract quantity check ────────────────────────────────
+// Compares what's being packed against what the order's Supplier Contract(s)
+// say was bought, per product, in the contract's own sold unit — so the
+// Packing List's physical counts (Packages/Roll, Total Length) are converted
+// back to that unit the same way buildPackingListDraft derived them from the
+// order quantity in the first place: Textile/DTF Film -> meters (Total
+// Length); ton-priced Chemical -> drums × net tons per drum; units_per_package
+// products -> packages × units per package; everything else -> Packages is
+// already the sold quantity. Differences of QUANTITY_VARIANCE_THRESHOLD_PCT or
+// more (either direction) are returned as `variances`. Nothing is flagged
+// when the order has no contract yet, and products without a contract line are
+// ignored (e.g. a second supplier whose contract hasn't been generated).
+const QUANTITY_VARIANCE_THRESHOLD_PCT = 5;
+const QUANTITY_VARIANCE_RECIPIENTS = ['lucas', 'martiello', 'max', 'gabriel'];
+
+function computeQuantityVariance(orderId, plItems) {
+  if (!orderId || !Array.isArray(plItems)) return { hasContract: false, variances: [] };
+  const contractItems = [];
+  db.prepare('SELECT items_json FROM supplier_contracts WHERE order_id=?').all(orderId).forEach(c => {
+    try {
+      const arr = JSON.parse(c.items_json || '[]');
+      if (Array.isArray(arr)) contractItems.push(...arr);
+    } catch { /* unparseable contract items are skipped */ }
+  });
+  if (contractItems.length === 0) return { hasContract: false, variances: [] };
+
+  const keyOf = i => i.product_id ? `p${i.product_id}` : `d${String(i.description || i.product_name || '').trim().toLowerCase()}`;
+  const realUnit = v => (v && v !== 'unit') ? v : '';
+  const groups = new Map();
+  const groupFor = item => {
+    const k = keyOf(item);
+    if (!groups.has(k)) groups.set(k, { description: '', unit: '', contractQty: 0, packingQty: 0, unconvertible: false });
+    return groups.get(k);
+  };
+
+  contractItems.forEach(it => {
+    const product = getProduct(it.product_id);
+    const category = it.category || product?.category || '';
+    const isTextile = category === 'Textile' || category === 'DTF Film';
+    const priceBasis = it.price_basis || product?.price_basis || null;
+    const g = groupFor(it);
+    g.description = g.description || product?.name || it.product_name || '—';
+    if (isTextile) {
+      g.unit = 'm';
+      g.contractQty += parseFloat(it.total_meterage || it.quantity) || 0;
+    } else {
+      g.unit = (category === 'Chemical' && priceBasis === 'ton') ? 'Ton' : (realUnit(it.unit) || realUnit(product?.unit));
+      g.contractQty += parseFloat(it.quantity) || 0;
+    }
+  });
+
+  plItems.forEach(it => {
+    const k = keyOf(it);
+    if (!groups.has(k)) return;
+    const g = groups.get(k);
+    const product = getProduct(it.product_id);
+    const category = it.category || product?.category || '';
+    const isTextile = category === 'Textile' || category === 'DTF Film';
+    const priceBasis = it.price_basis || product?.price_basis || null;
+    const roll = parseFloat(it.roll) || 0;
+    if (isTextile) {
+      g.packingQty += parseFloat(it.totalLength) || 0;
+    } else if (category === 'Chemical' && priceBasis === 'ton') {
+      const perDrumTons = productNetWeightKg(product) / 1000;
+      if (perDrumTons > 0) g.packingQty += roll * perDrumTons;
+      else g.unconvertible = true; // no net weight registered — can't turn drums back into tons
+    } else {
+      g.packingQty += roll * (parseFloat(product?.units_per_package) || 1);
+    }
+  });
+
+  const r3 = n => Math.round(n * 1000) / 1000;
+  const variances = [];
+  groups.forEach(g => {
+    if (g.unconvertible) return;
+    const contractQty = r3(g.contractQty);
+    const packingQty = r3(g.packingQty);
+    if (!contractQty && !packingQty) return;
+    const diff = r3(packingQty - contractQty);
+    const pct = contractQty > 0 ? (diff / contractQty) * 100 : (packingQty > 0 ? 100 : 0);
+    if (Math.abs(pct) >= QUANTITY_VARIANCE_THRESHOLD_PCT - 1e-9) {
+      variances.push({ description: g.description, unit: g.unit, contractQty, packingQty, diff, pct: Math.round(pct * 100) / 100 });
+    }
+  });
+  return { hasContract: true, variances };
+}
+
+// Called only after a save the user explicitly confirmed on screen
+// (quantity_variance_confirmed in the body). Re-derives the variances
+// server-side rather than trusting the client's numbers, and sends
+// fire-and-forget so a mail hiccup never fails the save itself.
+function notifyQuantityVariance(req, { order_id, number, items_json }) {
+  let items;
+  try { items = JSON.parse(items_json || '[]'); } catch { return; }
+  const { variances } = computeQuantityVariance(order_id, items);
+  if (variances.length === 0) return;
+  const order = db.prepare('SELECT order_number, client FROM orders WHERE id=?').get(order_id);
+  const placeholders = QUANTITY_VARIANCE_RECIPIENTS.map(() => '?').join(',');
+  const users = db.prepare(`SELECT username, email FROM users WHERE username IN (${placeholders})`).all(...QUANTITY_VARIANCE_RECIPIENTS);
+  const changedBy = actorName(req);
+  users.filter(u => u.email).forEach(u => {
+    sendQuantityVarianceEmail({
+      to: u.email,
+      packingListNumber: number,
+      orderNumber: order?.order_number || '',
+      client: order?.client || '',
+      changedBy,
+      variances,
+      threshold: QUANTITY_VARIANCE_THRESHOLD_PCT,
+    }).catch(err => console.error(`Quantity variance email to ${u.username} failed:`, err.message));
+  });
+}
+
+app.post('/api/packing-lists/check-quantities', guardScreen('packing-lists'), (req, res) => {
+  const { order_id, items } = req.body || {};
+  res.json({ threshold: QUANTITY_VARIANCE_THRESHOLD_PCT, ...computeQuantityVariance(order_id, items) });
+});
+
 app.get('/api/packing-lists', (req, res) => {
   res.json(db.prepare(`
     SELECT pl.*, o.order_number AS order_number, o.client AS client,
@@ -1040,6 +1158,7 @@ app.post('/api/packing-lists', guardScreen('packing-lists'), (req, res) => {
       total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null,
       freight_agent || '', agent_cost || null, freight_cost || null, loading_cost || null,
       agent_currency || 'USD', freight_currency || 'USD', loading_currency || 'USD', media || null, actorName(req));
+    if (req.body.quantity_variance_confirmed) notifyQuantityVariance(req, { order_id, number, items_json });
     res.status(201).json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -1063,6 +1182,7 @@ app.put('/api/packing-lists/:id', guardScreen('packing-lists'), (req, res) => {
     total_length || 0, total_roll || 0, total_gross_weight || 0, total_net_weight || 0, total_cbm || 0, status || 'Draft', notes || '', containers_json || null, loading_date || null,
     freight_agent || '', agent_cost || null, freight_cost || null, loading_cost || null,
     agent_currency || 'USD', freight_currency || 'USD', loading_currency || 'USD', media || null, actorName(req), req.params.id);
+  if (req.body.quantity_variance_confirmed) notifyQuantityVariance(req, { order_id, number, items_json });
   res.json(db.prepare('SELECT * FROM packing_lists WHERE id=?').get(req.params.id));
 });
 
@@ -1087,12 +1207,12 @@ app.get('/api/quotations', (req, res) => {
 });
 
 app.post('/api/quotations', guardScreen('quotations'), (req, res) => {
- const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, acquisition_company, specifications, notes, status, media, items, total, target_price, questionnaire } = req.body;
+ const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, insurance_value, acquisition_company, specifications, notes, status, media, items, total, target_price, questionnaire } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO quotations (number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, acquisition_company, specifications, notes, status, media, items, total, target_price, questionnaire, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(number, client, suppliers, currency || 'USD', deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, acquisition_company || '', specifications, notes, status || 'Open', media || null, items || null, total || null, target_price || null, questionnaire || null, actorName(req));
+      INSERT INTO quotations (number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, insurance_value, acquisition_company, specifications, notes, status, media, items, total, target_price, questionnaire, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(number, client, suppliers, currency || 'USD', deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, insurance_value || null, acquisition_company || '', specifications, notes, status || 'Open', media || null, items || null, total || null, target_price || null, questionnaire || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM quotations WHERE id=?').get(result.lastInsertRowid));
   } catch(err) {
     res.status(400).json({ error: err.message });
@@ -1100,11 +1220,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 });
 
 app.put('/api/quotations/:id', guardScreen('quotations'), (req, res) => {
-  const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, acquisition_company, specifications, notes, status, media, items, total, target_price, questionnaire } = req.body;
+  const { number, client, suppliers, currency, deadline, price_validity, port_of_loading, port_of_discharge, freight_value, insurance_value, acquisition_company, specifications, notes, status, media, items, total, target_price, questionnaire } = req.body;
   db.prepare(`
-    UPDATE quotations SET number=?, client=?, suppliers=?, currency=?, deadline=?, price_validity=?, port_of_loading=?, port_of_discharge=?, freight_value=?, acquisition_company=?, specifications=?, notes=?, status=?, media=?, items=?, total=?, target_price=?, questionnaire=?, updated_by=?
+    UPDATE quotations SET number=?, client=?, suppliers=?, currency=?, deadline=?, price_validity=?, port_of_loading=?, port_of_discharge=?, freight_value=?, insurance_value=?, acquisition_company=?, specifications=?, notes=?, status=?, media=?, items=?, total=?, target_price=?, questionnaire=?, updated_by=?
     WHERE id=?
-  `).run(number, client, suppliers, currency, deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, acquisition_company || '', specifications, notes, status, media || null, items || null, total || null, target_price || null, questionnaire || null, actorName(req), req.params.id);
+  `).run(number, client, suppliers, currency, deadline, price_validity || null, port_of_loading || null, port_of_discharge || null, freight_value || null, insurance_value || null, acquisition_company || '', specifications, notes, status, media || null, items || null, total || null, target_price || null, questionnaire || null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM quotations WHERE id=?').get(req.params.id));
 });
 
@@ -1142,6 +1262,7 @@ app.get('/api/quotations/:id/pdf', async (req, res) => {
       items,
       totalAmount,
       freightValue: q.freight_value,
+      insuranceValue: q.insurance_value,
       acq,
     });
 
@@ -2259,6 +2380,7 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
       // falls back to the linked Order's value once one has been created
       // (matching payment terms/production days above).
       freightValue: pf.freight_value || order?.freight_value,
+      insuranceValue: pf.insurance_value || order?.insurance_value,
       // Payment terms / production / delivery days: prefer whatever was
       // filled in on the Proforma itself (it usually exists before any Order
       // does); fall back to the linked Order once one has been created.
@@ -2330,6 +2452,7 @@ app.get('/api/proformas/:id/xlsx', async (req, res) => {
       totalAmount,
       currency,
       freightValue: pf.freight_value || order?.freight_value,
+      insuranceValue: pf.insurance_value || order?.insurance_value,
       paymentTerms: pf.payment_terms || order?.payment_terms,
       productionDays: pf.production_days || order?.production_lead_time,
       deliveryDays: pf.delivery_days || order?.delivery_days,
@@ -2566,6 +2689,7 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
       // No separate field on Commercial Invoice itself — this always reads
       // from the linked Order, same as payment terms/production days below.
       freightValue: order?.freight_value,
+      insuranceValue: order?.insurance_value,
       paymentTerms: order?.payment_terms || ci.notes,
       productionDays: order?.production_lead_time,
       deliveryDays: order?.delivery_days,
@@ -2642,6 +2766,7 @@ app.get('/api/commercial-invoices/:id/xlsx', async (req, res) => {
       totalAmount,
       currency,
       freightValue: order?.freight_value,
+      insuranceValue: order?.insurance_value,
       paymentTerms: order?.payment_terms || ci.notes,
       productionDays: order?.production_lead_time,
       deliveryDays: order?.delivery_days,
@@ -2663,12 +2788,28 @@ app.get('/api/commercial-invoices/:id/xlsx', async (req, res) => {
   }
 });
 
+// Package type printed next to the Packages count on the Packing List
+// PDF/Excel — always read live from the Product's own registered Package
+// field (not whatever was snapshotted into items_json when the list was
+// created, which goes stale if the product's Package is set/changed later),
+// falling back to the stored value only when the product can't be found.
+// "Pallet - America"/"Pallet - Europe" both print as just "Pallet" — the
+// regional distinction matters on the product record, not on the document.
+function withPackageTypes(items) {
+  return items.map(it => {
+    const product = getProduct(it.product_id);
+    let type = (product?.unit && product.unit !== 'unit') ? product.unit : (it.packageType || '');
+    type = type.replace(/^(Pallet)\s*-\s*.*$/i, '$1');
+    return { ...it, packageType: type };
+  });
+}
+
 app.get('/api/packing-lists/:id/pdf', async (req, res) => {
   try {
     const pl = db.prepare('SELECT * FROM packing_lists WHERE id=?').get(req.params.id);
     if (!pl) return res.status(404).json({ error: 'Packing list not found' });
     const order = pl.order_id ? db.prepare('SELECT * FROM orders WHERE id=?').get(pl.order_id) : null;
-    const items = parseJsonSafe(pl.items_json, []);
+    const items = withPackageTypes(parseJsonSafe(pl.items_json, []));
     const containers = parseJsonSafe(pl.containers_json, []);
     const clientRow = findClientByName(order?.client);
     // Same single source of truth as the Proforma/Commercial Invoice routes
@@ -2713,7 +2854,7 @@ app.get('/api/packing-lists/:id/xlsx', async (req, res) => {
     const pl = db.prepare('SELECT * FROM packing_lists WHERE id=?').get(req.params.id);
     if (!pl) return res.status(404).json({ error: 'Packing list not found' });
     const order = pl.order_id ? db.prepare('SELECT * FROM orders WHERE id=?').get(pl.order_id) : null;
-    const items = parseJsonSafe(pl.items_json, []);
+    const items = withPackageTypes(parseJsonSafe(pl.items_json, []));
     const containers = parseJsonSafe(pl.containers_json, []);
     const clientRow = findClientByName(order?.client);
     const acq = getAcq(order?.acquisition_company || 'HK');

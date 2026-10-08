@@ -138,6 +138,16 @@ function amountToWords(amount, currency = "USD") {
   return `${wholeWords}${centsWords}${ofPhrase ? " " + ofPhrase : ""}.`;
 }
 
+// Transport-mode word for the freight line on client documents — "Total of
+// Ocean Cost" / "Total of Air Cost" (Land for trucked shipments), following
+// the document's Way Of Shipment. Anything unrecognized (or no mode at all,
+// e.g. Quotations) reads as Ocean.
+function freightModeLabel(wayOfShipment) {
+  if (wayOfShipment === "By Air") return "Air";
+  if (wayOfShipment === "By Land") return "Land";
+  return "Ocean";
+}
+
 module.exports = {
-  escapeHtml, fmtDateLong, fmtDateShort, fmtNumber, fmtMoney, parseJsonSafe, amountToWords, currencyLabel, contentDisposition,
+  freightModeLabel, escapeHtml, fmtDateLong, fmtDateShort, fmtNumber, fmtMoney, parseJsonSafe, amountToWords, currencyLabel, contentDisposition,
 };

@@ -3894,6 +3894,7 @@ function OrderForm({ initial, onSave, onClose }) {
     production_lead_time: "", delivery_days: "", shipment_date: "", arrival_date: "",
     incoterm: "", payment_terms: "", port_of_loading: "", port_of_discharge: "",
     freight_value: "",
+    insurance_value: "",
     acquisition_company: "", container: "", container_qty: "", notes: "",
   });
   const [items, setItems] = useState(initial?.items || []);
@@ -4017,6 +4018,7 @@ useEffect(() => {
     await onSave({
       ...f, value: parseLocaleNumber(f.value) ?? 0,
       freight_value: f.freight_value !== "" && f.freight_value != null ? (parseLocaleNumber(f.freight_value) ?? f.freight_value) : f.freight_value,
+      insurance_value: f.insurance_value !== "" && f.insurance_value != null ? (parseLocaleNumber(f.insurance_value) ?? f.insurance_value) : f.insurance_value,
       items: cleanedItems,
     });
     onClose();
@@ -4138,6 +4140,10 @@ useEffect(() => {
         <Field label={`Freight Value (${currencyLabel(f.currency)})`} half>
           <Input type="text" inputMode="decimal" value={f.freight_value || ""}
             onChange={e => setF(p => ({ ...p, freight_value: maskMoney(e.target.value) }))} placeholder="0.00" />
+        </Field>
+        <Field label={`Insurance Value ({currencyLabel(f.currency)})`} half>
+          <Input type="text" inputMode="decimal" value={f.insurance_value || ""}
+            onChange={e => setF(p => ({ ...p, insurance_value: maskMoney(e.target.value) }))} placeholder="0.00" />
         </Field>
         <Field label="Prod. Lead Time (days)" half>
           <Input type="number" value={f.production_lead_time} onChange={set("production_lead_time")} />
@@ -5361,6 +5367,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
     order_id: "", quotation_id: "", number: "", issue_date: "", validity: "", client: "", total: "", currency: "USD", status: "Draft", notes: "",
     acquisition_company: "", incoterm: "", way_of_shipment: "By Sea", port_of_loading: "", port_of_discharge: "",
     freight_value: "",
+    insurance_value: "",
     payment_terms: "", production_days: "", delivery_days: "", consignee: "", notify_party: "",
   });
   const [items, setItems] = useState(() => {
@@ -5591,6 +5598,10 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
         <Input type="text" inputMode="decimal" value={f.freight_value || ""}
           onChange={e => setF(p => ({ ...p, freight_value: maskMoney(e.target.value) }))} placeholder="0.00" />
       </Field>
+      <Field label={`Insurance Value ({currencyLabel(f.currency)})`} half>
+        <Input type="text" inputMode="decimal" value={f.insurance_value || ""}
+          onChange={e => setF(p => ({ ...p, insurance_value: maskMoney(e.target.value) }))} placeholder="0.00" />
+      </Field>
       <Field label="Status" half>
         <Select value={f.status} onChange={set("status")}>
           {["Draft","Sent","Accepted","Rejected"].map(s => <option key={s}>{s}</option>)}
@@ -5713,6 +5724,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
           await onSave({
             ...f,
             freight_value: f.freight_value !== "" && f.freight_value != null ? (parseLocaleNumber(f.freight_value) ?? f.freight_value) : f.freight_value,
+            insurance_value: f.insurance_value !== "" && f.insurance_value != null ? (parseLocaleNumber(f.insurance_value) ?? f.insurance_value) : f.insurance_value,
             items: JSON.stringify(cleanedItems),
           });
           onClose();
@@ -6106,6 +6118,7 @@ function QuotationForm({ onSave, onClose, initial }) {
   acquisition_company: "",
   port_of_loading: "", port_of_discharge: "",
   freight_value: "",
+  insurance_value: "",
   total: "",
   specifications: "", notes: "", status: "Pending",
 });
@@ -6292,6 +6305,10 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
           <Input type="text" inputMode="decimal" value={f.freight_value || ""}
             onChange={e => setF(p => ({ ...p, freight_value: maskMoney(e.target.value) }))} placeholder="0.00" />
         </Field>
+        <Field label={`Insurance Value ({currencyLabel(f.currency)})`} half>
+          <Input type="text" inputMode="decimal" value={f.insurance_value || ""}
+            onChange={e => setF(p => ({ ...p, insurance_value: maskMoney(e.target.value) }))} placeholder="0.00" />
+        </Field>
 
         <Field label="Products">
           <div style={{ background: "#1e293b", borderRadius: "8px", border: "1px solid #334155", overflow: "hidden" }}>
@@ -6446,6 +6463,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
             await onSave({
               ...f,
               freight_value: f.freight_value !== "" && f.freight_value != null ? (parseLocaleNumber(f.freight_value) ?? f.freight_value) : f.freight_value,
+              insurance_value: f.insurance_value !== "" && f.insurance_value != null ? (parseLocaleNumber(f.insurance_value) ?? f.insurance_value) : f.insurance_value,
               items: JSON.stringify(cleanedItems), media: JSON.stringify(media),
             });
             onClose();
@@ -6859,6 +6877,7 @@ console.log('quotations set:', quotations?.length);
           // Same carry-over as the ports above — the CIF freight already
           // negotiated at Quotation stage.
           freight_value: r.freight_value || "",
+          insurance_value: r.insurance_value || "",
           // Copy the Quotation's items in as the Proforma's own snapshot —
           // from this point on they're independently editable, same as how
           // Order items work once created from a Proforma.
@@ -7260,6 +7279,22 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
   const isMultiContainer = containers.length > 1;
   const items = f._items || [];
 
+  // Contract-vs-Packing-List quantity check (see the Save button below).
+  const [varianceWarning, setVarianceWarning] = useState(null);
+  const [checkingQty, setCheckingQty] = useState(false);
+  const doSave = async (varianceConfirmed) => {
+    // Compares against the media count this popup was opened with
+    // (initialMediaCount, captured once at mount) so the caller only
+    // notifies when THIS save actually added a new attachment — not
+    // on every subsequent save of a Packing List that already had one.
+    const newCount = media.filter(Boolean).length;
+    await onSave(
+      { ...f, media: JSON.stringify(media), ...(varianceConfirmed ? { quantity_variance_confirmed: true } : {}) },
+      { mediaAdded: newCount > initialMediaCount }
+    );
+    onClose();
+  };
+
   const renderItemRow = (item, idx) => (
     <div key={idx} style={{ padding: "10px 14px", borderBottom: "1px solid #1e293b" }}>
       <div style={{ fontSize: "13px", color: "#f1f5f9", marginBottom: "6px" }}>
@@ -7464,16 +7499,52 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
             generating here (before Save) risked the edit never actually
             being persisted. It lives only on the Packing Lists screen's own
             Actions column now, where the record is already saved. */}
-        <Btn onClick={async () => {
-          // Compares against the media count this popup was opened with
-          // (initialMediaCount, captured once at mount) so the caller only
-          // notifies when THIS save actually added a new attachment — not
-          // on every subsequent save of a Packing List that already had one.
-          const newCount = media.filter(Boolean).length;
-          await onSave({ ...f, media: JSON.stringify(media) }, { mediaAdded: newCount > initialMediaCount });
-          onClose();
+        <Btn disabled={checkingQty} onClick={async () => {
+          // Before saving, compare the quantities against the order's
+          // Supplier Contract(s). A difference of 5% or more shows a
+          // warning with the figures; confirming saves anyway and flags the
+          // payload so the backend e-mails the team (see
+          // notifyQuantityVariance in server.js). If the check itself fails
+          // (offline, etc.) the save just goes ahead unflagged — it's an
+          // alert, not a gate.
+          setCheckingQty(true);
+          try {
+            const check = await api("/packing-lists/check-quantities", "POST", { order_id: f.order_id, items: f._items });
+            if (check?.variances?.length > 0) { setVarianceWarning(check); return; }
+          } catch { /* fall through to a normal save */ }
+          finally { setCheckingQty(false); }
+          await doSave(false);
         }}>Save Packing List</Btn>
       </div>
+
+      {varianceWarning && (
+        <Modal title={t("Quantity differs from the contract")} onClose={() => setVarianceWarning(null)}>
+          <p style={{ margin: "0 0 14px", fontSize: "13px", color: "#94a3b8", lineHeight: 1.5 }}>
+            {t("These quantities differ from the contract by")} {varianceWarning.threshold}% {t("or more:")}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+            {varianceWarning.variances.map((v, i) => (
+              <div key={i} style={{ background: "#1e293b", borderRadius: "8px", padding: "10px 14px", fontSize: "13px", color: "#f1f5f9" }}>
+                <strong>{v.description}</strong>
+                <div style={{ color: "#94a3b8", marginTop: "4px" }}>
+                  {t("Contract")}: {v.contractQty.toLocaleString("en-US", { maximumFractionDigits: 3 })} {v.unit}
+                  {" · "}{t("Packing List")}: {v.packingQty.toLocaleString("en-US", { maximumFractionDigits: 3 })} {v.unit}
+                </div>
+                <div style={{ color: "#f87171", fontWeight: 700, marginTop: "4px" }}>
+                  {t("Difference")}: {v.diff > 0 ? "+" : ""}{v.diff.toLocaleString("en-US", { maximumFractionDigits: 3 })} {v.unit} ({v.pct > 0 ? "+" : ""}{v.pct.toFixed(1)}%)
+                </div>
+              </div>
+            ))}
+          </div>
+          <p style={{ margin: "0 0 16px", fontSize: "12.5px", color: "#64748b" }}>
+            {t("If you save anyway, an e-mail with these differences will be sent to Lucas, Martiello, Max and Gabriel.")}
+          </p>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+            <Btn outline color="#64748b" onClick={() => setVarianceWarning(null)}>{t("Go back and fix")}</Btn>
+            <Btn color="#f59e0b" onClick={async () => { setVarianceWarning(null); await doSave(true); }}>{t("Confirm and save")}</Btn>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -8476,6 +8547,7 @@ const [proformas, setProformas] = useState([]);
       port_of_loading: pf.port_of_loading || "",
       port_of_discharge: pf.port_of_discharge || "",
       freight_value: pf.freight_value || "",
+      insurance_value: pf.insurance_value || "",
       acquisition_company: pf.acquisition_company || "",
       payment_terms: pf.payment_terms || "",
       production_lead_time: pf.production_days || "",

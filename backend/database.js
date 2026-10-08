@@ -609,6 +609,11 @@ const migrations = [
   // single-attachment DocEmailModal path) that only reads those two columns
   // keeps working unchanged.
   ['notifications', 'attachments_json', 'TEXT'],
+  // Insurance charged to the client, alongside freight_value (the Ocean/Air
+  // cost) — both fold into the CIF grand total on Proforma/Commercial/Quotation.
+  ['quotations', 'insurance_value', "TEXT DEFAULT ''"],
+  ['orders', 'insurance_value', "TEXT DEFAULT ''"],
+  ['proformas', 'insurance_value', "TEXT DEFAULT ''"],
   ['orders', 'acquisition_company', "TEXT DEFAULT ''"],
   ['orders', 'container', "TEXT DEFAULT ''"],
   ['orders', 'container_qty', 'REAL'],
