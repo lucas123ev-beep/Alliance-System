@@ -1147,6 +1147,13 @@ for (const [table, columns] of Object.entries(ZH_ENUM_FIXES)) {
   }
 }
 
+// "Pallet - America" / "Pallet - Europe" were merged into a single "Pallet"
+// package option — rename every product (and Chemical order item, which
+// reuses the same package list in its `unit` column) still carrying one of the
+// old values, so the dropdown doesn't show a blank for them. No-op once done.
+db.prepare(`UPDATE products SET unit = 'Pallet' WHERE unit IN ('Pallet - America', 'Pallet - Europe')`).run();
+db.prepare(`UPDATE order_items SET unit = 'Pallet' WHERE unit IN ('Pallet - America', 'Pallet - Europe')`).run();
+
 // Backfill for Packing Lists generated before the Packages column started
 // showing each item's physical package type (see buildPackingListDraft on
 // the frontend and pdf/packingList.js's Packages cell) — those already have
