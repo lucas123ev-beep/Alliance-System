@@ -213,4 +213,52 @@ async function sendStatusChangeEmail({ to, entityType, recordLabel, oldStatus, n
   if (error) throw new Error(error.message || 'Resend API error');
 }
 
-module.exports = { sendStatusChangeEmail, fetchAttachment, fetchAttachments, entityLabel, isRestricted, ENTITY_LABELS };
+// Alert for a Packing List saved (after an explicit on-screen confirmation)
+// with quantities that differ from the order's Supplier Contract(s) by the
+// threshold or more — see computeQuantityVariance in server.js for how the
+// figures are derived. `variances` is that function's output:
+// [{ description, unit, contractQty, packingQty, diff, pct }].
+async function sendQuantityVarianceEmail({ to, packingListNumber, orderNumber, client, changedBy, variances, threshold }) {
+  const fmtQty = n => Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 });
+  const fmtSigned = n => `${n > 0 ? '+' : ''}${fmtQty(n)}`;
+  const subject = `[Alliance Flow] Quantity difference ≥ ${threshold}% — Packing List ${packingListNumber}${orderNumber ? ` (Order ${orderNumber})` : ''}`;
+
+  const text = `${changedBy} saved Packing List ${packingListNumber}${orderNumber ? ` (Order ${orderNumber}${client ? ` — ${client}` : ''})` : ''} with quantities that differ from the contract by ${threshold}% or more:\n\n` +
+    variances.map(v => `- ${v.description}: contract ${fmtQty(v.contractQty)} ${v.unit} / packing list ${fmtQty(v.packingQty)} ${v.unit} (${fmtSigned(v.diff)} ${v.unit}, ${v.pct > 0 ? '+' : ''}${v.pct.toFixed(1)}%)`).join('\n') +
+    `\n\nOpen the system for more details.`;
+
+  const cell = 'padding:6px 10px; border:1px solid #e5e5e5;';
+  const rows = variances.map(v => `
+    <tr>
+      <td style="${cell}">${escapeHtml(v.description)}</td>
+      <td style="${cell} text-align:right;">${escapeHtml(fmtQty(v.contractQty))} ${escapeHtml(v.unit)}</td>
+      <td style="${cell} text-align:right;">${escapeHtml(fmtQty(v.packingQty))} ${escapeHtml(v.unit)}</td>
+      <td style="${cell} text-align:right;">${escapeHtml(fmtSigned(v.diff))} ${escapeHtml(v.unit)}</td>
+      <td style="${cell} text-align:right; color:#b91c1c;"><strong>${v.pct > 0 ? '+' : ''}${v.pct.toFixed(1)}%</strong></td>
+    </tr>`).join('');
+
+  const logoUrl = await getLogoUrl();
+  const html = `
+    <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
+      <p><strong>${escapeHtml(changedBy)}</strong> saved <strong>Packing List ${escapeHtml(packingListNumber)}</strong>${orderNumber ? ` (Order <strong>${escapeHtml(orderNumber)}</strong>${client ? ` — ${escapeHtml(client)}` : ''})` : ''} with quantities that differ from the contract by <strong>${threshold}% or more</strong>:</p>
+      <table style="border-collapse: collapse; margin: 12px 0; font-size: 13px;">
+        <tr style="background:#f5f5f5;">
+          <th style="${cell} text-align:left;">Product</th>
+          <th style="${cell} text-align:right;">Contract</th>
+          <th style="${cell} text-align:right;">Packing List</th>
+          <th style="${cell} text-align:right;">Difference</th>
+          <th style="${cell} text-align:right;">%</th>
+        </tr>
+        ${rows}
+      </table>
+      <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e5e5;">
+        ${logoUrl ? `<img src="${logoUrl}" alt="HKAG — Hong Kong Alliance Global Trading Co. Ltd." width="180" style="display:block; width:180px; height:auto;" />` : ''}
+        <p style="color:#999; font-size:12px; margin: 10px 0 0;">Alliance Flow — automatic notification, please do not reply to this e-mail.</p>
+      </div>
+    </div>
+  `;
+  const { error } = await getResend().emails.send({ from: FROM_ADDRESS, to, subject, text, html });
+  if (error) throw new Error(error.message || 'Resend API error');
+}
+
+module.exports = { sendStatusChangeEmail, sendQuantityVarianceEmail, fetchAttachment, fetchAttachments, entityLabel, isRestricted, ENTITY_LABELS };

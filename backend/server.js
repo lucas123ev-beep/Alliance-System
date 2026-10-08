@@ -2625,7 +2625,7 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
     // instead of a single aggregate line, matching the per-container
     // Packing List PDF itself (see renderPackingList's containers grouping).
     const plContainers = pl ? parseJsonSafe(pl.containers_json, []) : [];
-    const plItems = pl ? parseJsonSafe(pl.items_json, []) : [];
+    const plItems = pl ? withPackageTypes(parseJsonSafe(pl.items_json, [])) : [];
     const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 0);
     // Describes the "how many units" part of the summary using whatever
     // unit this specific order was actually negotiated in — Tons for a
@@ -2641,7 +2641,17 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
         const tons = arr.reduce((s, i) => s + (parseFloat(i.roll) || 0) * (parseFloat(i.tons_per_package) || 0), 0);
         return `Tons: ${tons.toFixed(3)}`;
       }
-      return `${arr.every(i => i.isTextile) ? 'Rolls' : 'Packages'}: ${sumOf(arr, 'roll')}`;
+      if (arr.every(i => i.isTextile)) return `Rolls: ${sumOf(arr, 'roll')}`;
+      // "Packages: 44 Pallet" — package type(s) from the Product's own
+      // registered Package field (see withPackageTypes); bare count when
+      // any item has no type or the mix includes Textile rolls.
+      const typed = arr.filter(i => (parseFloat(i.roll) || 0) > 0);
+      if (typed.length && typed.every(i => !i.isTextile && i.packageType)) {
+        const byType = new Map();
+        typed.forEach(i => byType.set(i.packageType, (byType.get(i.packageType) || 0) + (parseFloat(i.roll) || 0)));
+        return `Packages: ${[...byType].map(([t, q]) => `${q} ${t}`).join(' + ')}`;
+      }
+      return `Packages: ${sumOf(arr, 'roll')}`;
     };
     // Falls back to this plain aggregate line (no container code — there's
     // nothing to attribute it to) only when the Packing List has no
@@ -2726,7 +2736,7 @@ app.get('/api/commercial-invoices/:id/xlsx', async (req, res) => {
     const clientRow = findClientByName(ci.client);
     const pl = db.prepare('SELECT * FROM packing_lists WHERE order_id=? ORDER BY created_at DESC LIMIT 1').get(order?.id);
     const plContainers = pl ? parseJsonSafe(pl.containers_json, []) : [];
-    const plItems = pl ? parseJsonSafe(pl.items_json, []) : [];
+    const plItems = pl ? withPackageTypes(parseJsonSafe(pl.items_json, [])) : [];
     const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 0);
     const unitSummary = (arr) => {
       if (!arr.length) return 'Packages: 0';
@@ -2734,7 +2744,17 @@ app.get('/api/commercial-invoices/:id/xlsx', async (req, res) => {
         const tons = arr.reduce((s, i) => s + (parseFloat(i.roll) || 0) * (parseFloat(i.tons_per_package) || 0), 0);
         return `Tons: ${tons.toFixed(3)}`;
       }
-      return `${arr.every(i => i.isTextile) ? 'Rolls' : 'Packages'}: ${sumOf(arr, 'roll')}`;
+      if (arr.every(i => i.isTextile)) return `Rolls: ${sumOf(arr, 'roll')}`;
+      // "Packages: 44 Pallet" — package type(s) from the Product's own
+      // registered Package field (see withPackageTypes); bare count when
+      // any item has no type or the mix includes Textile rolls.
+      const typed = arr.filter(i => (parseFloat(i.roll) || 0) > 0);
+      if (typed.length && typed.every(i => !i.isTextile && i.packageType)) {
+        const byType = new Map();
+        typed.forEach(i => byType.set(i.packageType, (byType.get(i.packageType) || 0) + (parseFloat(i.roll) || 0)));
+        return `Packages: ${[...byType].map(([t, q]) => `${q} ${t}`).join(' + ')}`;
+      }
+      return `Packages: ${sumOf(arr, 'roll')}`;
     };
     let plSummary = pl ? `${unitSummary(plItems)} | Gross Weight: ${pl.total_gross_weight || 0} kg | Net Weight: ${pl.total_net_weight || 0} kg | CBM: ${pl.total_cbm || 0}` : '';
     if (pl && Array.isArray(plContainers) && plContainers.length >= 1) {
