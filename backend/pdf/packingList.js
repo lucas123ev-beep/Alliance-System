@@ -52,6 +52,22 @@ const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 
 // instead of a hardcoded term that only applies to rolled fabric.
 const packageLabel = (arr) => (arr.length && arr.every(isTextileItem)) ? "Roll" : "Packages";
 
+// Package count with its package type next to it ("44 Pallet", or
+// "40 Pallet + 4 Boxes / Cartons - Small" when a slice mixes types) — for the
+// SUBTOTAL / TOTAL / GRAND TOTAL rows, matching what each item row already
+// shows. Falls back to the bare number whenever a type can't be stated
+// honestly: any Textile/DTF item in the slice (rolls have no package type)
+// or any item with no type registered.
+function packagesText(arr, total) {
+  const n = fmtNumber(total != null ? total : sumOf(arr, "roll"), 0);
+  const rows = arr.filter(i => (parseFloat(i.roll) || 0) > 0);
+  if (!rows.length || rows.some(i => isTextileItem(i) || !i.packageType)) return n;
+  const byType = new Map();
+  rows.forEach(i => byType.set(i.packageType, (byType.get(i.packageType) || 0) + (parseFloat(i.roll) || 0)));
+  if (byType.size === 1) return `${n} ${[...byType.keys()][0]}`;
+  return [...byType].map(([type, qty]) => `${fmtNumber(qty, 0)} ${type}`).join(" + ");
+}
+
 // Renders the (up to) two category tables — Textile/DTF Film with a Total
 // Length column, everything else with a Quantity column — for one group of
 // items. Used both for a whole Packing List (no container split) and for a
@@ -100,7 +116,7 @@ function renderItemSections(items) {
       <td class="center">${item.quantityLabel
         ? escapeHtml(item.quantityLabel)
         : item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
-      <td class="num">${fmtNumber(item.roll, 0)}${item.packageType ? `<div style="font-size:9px;color:#666;margin-top:2px;font-weight:normal;">${escapeHtml(item.packageType)}</div>` : ""}</td>
+      <td class="num">${fmtNumber(item.roll, 0)}${item.packageType ? ` ${escapeHtml(item.packageType)}` : ""}</td>
       <td class="num">${fmtNumber(item.grossWeight, 3)}</td>
       <td class="num">${fmtNumber(item.netWeight, 3)}</td>
       <td class="num">${fmtNumber(item.cbm, 2)}</td>
@@ -172,7 +188,7 @@ function renderItemSections(items) {
         <tr class="totals-row">
           <td colspan="4">SUBTOTAL:</td>
           <td></td>
-          <td class="num">${fmtNumber(sumOf(group.items, "roll"), 0)}</td>
+          <td class="num">${packagesText(group.items)}</td>
           <td class="num">${fmtNumber(sumOf(group.items, "grossWeight"), 3)}</td>
           <td class="num">${fmtNumber(sumOf(group.items, "netWeight"), 3)}</td>
           <td class="num">${fmtNumber(sumOf(group.items, "cbm"), 2)}</td>
@@ -225,7 +241,7 @@ function renderPackingList(params) {
             <tr class="totals-row">
               <td>TOTAL:</td>
               ${containerHasTextile ? `<td class="num">Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 0)}</td>` : ""}
-              <td class="num">${packageLabel(containerItems)}: ${fmtNumber(sumOf(containerItems, "roll"), 0)}</td>
+              <td class="num">${packageLabel(containerItems)}: ${packagesText(containerItems)}</td>
               <td class="num">Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)}</td>
               <td class="num">Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)}</td>
               <td class="num">CBM: ${fmtNumber(sumOf(containerItems, "cbm"), 2)}</td>
@@ -249,7 +265,7 @@ function renderPackingList(params) {
         <tr class="totals-row">
           <td>GRAND TOTAL:</td>
           ${anyTextile ? `<td class="num">Length: ${fmtNumber(totals.totalLength, 0)}</td>` : ""}
-          <td class="num">${packageLabel(items)}: ${fmtNumber(totals.totalRoll, 0)}</td>
+          <td class="num">${packageLabel(items)}: ${packagesText(items, totals.totalRoll)}</td>
           <td class="num">Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}</td>
           <td class="num">Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}</td>
           <td class="num">CBM: ${fmtNumber(totals.totalCbm, 2)}</td>

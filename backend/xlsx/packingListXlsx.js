@@ -43,6 +43,22 @@ function isTextileItem(item) {
 const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 0);
 const packageLabel = arr => (arr.length && arr.every(isTextileItem)) ? "Roll" : "Packages";
 
+// Package count with its package type next to it ("44 Pallet", or
+// "40 Pallet + 4 Boxes / Cartons - Small" when a slice mixes types) — for the
+// SUBTOTAL / TOTAL / GRAND TOTAL rows, matching what each item row already
+// shows. Falls back to the bare number whenever a type can't be stated
+// honestly: any Textile/DTF item in the slice (rolls have no package type)
+// or any item with no type registered.
+function packagesText(arr, total) {
+  const n = fmtNumber(total != null ? total : sumOf(arr, "roll"), 0);
+  const rows = arr.filter(i => (parseFloat(i.roll) || 0) > 0);
+  if (!rows.length || rows.some(i => isTextileItem(i) || !i.packageType)) return n;
+  const byType = new Map();
+  rows.forEach(i => byType.set(i.packageType, (byType.get(i.packageType) || 0) + (parseFloat(i.roll) || 0)));
+  if (byType.size === 1) return `${n} ${[...byType.keys()][0]}`;
+  return [...byType].map(([type, qty]) => `${fmtNumber(qty, 0)} ${type}`).join(" + ");
+}
+
 function buildPackingListWorkbook(params) {
   const {
     number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
@@ -177,7 +193,7 @@ function buildPackingListWorkbook(params) {
           `${fmtNumber(item.roll, 0)}${item.packageType ? ` ${item.packageType}` : ""}`, fmtNumber(item.grossWeight, 3), fmtNumber(item.netWeight, 3), fmtNumber(item.cbm, 2),
         ]);
       });
-      addTotalsRow("SUBTOTAL:", ["", "", "", "", fmtNumber(sumOf(group.items, "roll"), 0), fmtNumber(sumOf(group.items, "grossWeight"), 3), fmtNumber(sumOf(group.items, "netWeight"), 3), fmtNumber(sumOf(group.items, "cbm"), 2)]);
+      addTotalsRow("SUBTOTAL:", ["", "", "", "", packagesText(group.items), fmtNumber(sumOf(group.items, "grossWeight"), 3), fmtNumber(sumOf(group.items, "netWeight"), 3), fmtNumber(sumOf(group.items, "cbm"), 2)]);
       sheet.addRow([]);
     });
   }
@@ -200,7 +216,7 @@ function buildPackingListWorkbook(params) {
       addTotalsRow(
         "TOTAL:",
         [containerHasTextile ? `Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 0)}` : "", "", "",
-          `${packageLabel(containerItems)}: ${fmtNumber(sumOf(containerItems, "roll"), 0)}`,
+          `${packageLabel(containerItems)}: ${packagesText(containerItems)}`,
           `Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)}`, "",
           `Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)}`, "",
           `CBM: ${fmtNumber(sumOf(containerItems, "cbm"), 2)}`]
@@ -213,7 +229,7 @@ function buildPackingListWorkbook(params) {
 
   const anyTextile = items.some(isTextileItem);
   const grandTotalRow = sheet.addRow([
-    `GRAND TOTAL:   ${anyTextile ? `Length: ${fmtNumber(totals.totalLength, 0)}   |   ` : ""}${packageLabel(items)}: ${fmtNumber(totals.totalRoll, 0)}   |   Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}   |   Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}   |   CBM: ${fmtNumber(totals.totalCbm, 2)}`,
+    `GRAND TOTAL:   ${anyTextile ? `Length: ${fmtNumber(totals.totalLength, 0)}   |   ` : ""}${packageLabel(items)}: ${packagesText(items, totals.totalRoll)}   |   Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}   |   Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}   |   CBM: ${fmtNumber(totals.totalCbm, 2)}`,
   ]);
   sheet.mergeCells(grandTotalRow.number, 1, grandTotalRow.number, NUM_COLS);
   grandTotalRow.font = { bold: true };
