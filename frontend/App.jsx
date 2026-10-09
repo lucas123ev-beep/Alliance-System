@@ -6712,10 +6712,20 @@ console.log('quotations set:', quotations?.length);
 }, []);
     useEffect(() => { load(); }, [load]);
   
+  // Product names of a quotation's items — the quotation row itself has no
+  // product column of its own (items live in the `items` JSON), so the list's
+  // Products column and the search box both read them from there.
+  const quotationItemNames = r => {
+    try {
+      const items = typeof r.items === "string" ? JSON.parse(r.items) : (r.items || []);
+      return items.map(i => i.product_name).filter(Boolean);
+    } catch { return []; }
+  };
+
   const filtered = quotations.filter(q =>
     (acqFilter === "All" || q.acquisition_company === acqFilter) &&
     ((q.number || "").toLowerCase().includes(search.toLowerCase()) ||
-    (q.product_name || "").toLowerCase().includes(search.toLowerCase()) ||
+    quotationItemNames(q).some(n => n.toLowerCase().includes(search.toLowerCase())) ||
     (q.client || "").toLowerCase().includes(search.toLowerCase()) ||
     (q.status || "").toLowerCase().includes(search.toLowerCase()))
   );
@@ -6808,8 +6818,20 @@ console.log('quotations set:', quotations?.length);
       <Table
         cols={[
           { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
-          { label: "Product", key: "product_name" },
           { label: "Client", key: "client" },
+          // First item's name (plus "+N" when there are more) so each
+          // quotation is recognizable at a glance — search above matches any
+          // item's name, not just the first.
+          { label: "Product", sortValue: r => quotationItemNames(r)[0] || "", render: r => {
+            const names = quotationItemNames(r);
+            if (names.length === 0) return "—";
+            return (
+              <span title={names.join("\n")}>
+                {names[0]}
+                {names.length > 1 && <span style={{ color: "#64748b", marginLeft: "6px", fontSize: "12px" }}>+{names.length - 1}</span>}
+              </span>
+            );
+          }},
           { label: "Suppliers", sortValue: r => {
   try {
     const items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
