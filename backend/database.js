@@ -611,6 +611,9 @@ const migrations = [
   ['notifications', 'attachments_json', 'TEXT'],
   // Insurance charged to the client, alongside freight_value (the Ocean/Air
   // cost) — both fold into the CIF grand total on Proforma/Commercial/Quotation.
+  // Supporting files on a Supplier Contract (signed copy, photos, videos...) —
+  // same JSON [{url,name}] shape used by Inspections/Samples/Packing Lists.
+  ['supplier_contracts', 'media', 'TEXT'],
   ['quotations', 'insurance_value', "TEXT DEFAULT ''"],
   ['orders', 'insurance_value', "TEXT DEFAULT ''"],
   ['proformas', 'insurance_value', "TEXT DEFAULT ''"],

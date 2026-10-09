@@ -3123,7 +3123,7 @@ function buildPackingListDraft(order, products) {
     let quantityLabel = null;
     if (isTonChemical && item.quantity != null) {
       const drums = perDrumTons > 0 ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons) : null;
-      quantityLabel = `${item.quantity} t${drums ? ` (≈ ${drums} ${item.unit || "packages"})` : ""}`;
+      quantityLabel = `${item.quantity} Ton${drums ? ` (≈ ${drums} ${item.unit || "packages"})` : ""}`;
     }
     return {
       product_id: item.product_id,
@@ -3329,6 +3329,12 @@ function buildPackingListDraft(order, products) {
 // "750 Meters" when 750 is really the roll count for 30,000 meters) — this
 // shows total_meterage instead whenever the item is in that mode.
 function displayQtyUnit(item) {
+  // Ton-priced Chemical: Quantity is stored directly in tons, so item.unit
+  // (the drum/bag package type) next to it would read "3 Bags / Sacks - 25kg"
+  // for what is really 3 tons.
+  if (item.category === "Chemical" && item.price_basis === "ton") {
+    return `${item.quantity ?? ""} Ton`.trim();
+  }
   const isTextileMeters = (item.category === "Textile" || item.category === "DTF Film") && item.unit === "Meters";
   const qty = isTextileMeters ? item.total_meterage : item.quantity;
   return `${qty ?? ""} ${item.unit || ""}`.trim();
@@ -5930,6 +5936,34 @@ function ContractForm({ onSave, onClose, orders, initial }) {
   // HSBC account instead of Ningbo's — see pdf/contract.js.
   const [f, setF] = useState(initial || { order_id: "", contract_number: "", supplier: "", sign_date: "", delivery_date: "", total: "", currency: "USD", status: "Draft", notes: "", acquisition_company: "NINGBO" });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+
+  // Supporting files (signed copy, photos, videos, any document) — same
+  // { url, name } media pattern used by Inspections/Samples/Packing Lists.
+  const t = useT();
+  const [media, setMedia] = useState(() => {
+    if (!initial?.media) return [];
+    let parsed = initial.media;
+    if (typeof parsed === "string") {
+      try { parsed = JSON.parse(parsed); } catch { return []; }
+    }
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(item => typeof item === "string" ? { url: item, name: item.split("/").pop() } : item);
+  });
+  const [uploading, setUploading] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+  useEscapeToClose(!!lightbox, () => setLightbox(null));
+  const handleUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setUploading(true);
+    try {
+      const results = await Promise.all(files.map(uploadToCloudinary));
+      setMedia(prev => [...prev, ...results.filter(Boolean)]);
+    } catch (err) { alert(t("Upload failed: ") + err.message); }
+    setUploading(false);
+    e.target.value = "";
+  };
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
       <Field label="Linked Order" half>
@@ -5961,6 +5995,59 @@ function ContractForm({ onSave, onClose, orders, initial }) {
       </Field>
       <Field label="Notes"><Textarea value={f.notes} onChange={set("notes")} /></Field>
 
+      <Field label="Attachments (documents, photos, videos)">
+        <div>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 16px", cursor: "pointer", fontSize: "13px", color: "#94a3b8", marginBottom: "12px" }}>
+            {uploading ? t("⏳ Uploading...") : t("📎 Add Photos / Videos / Files")}
+            <input type="file" multiple onChange={handleUpload} style={{ display: "none" }} disabled={uploading} />
+          </label>
+          {lightbox && (
+            <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              {lightbox.match(/\.(mp4|mov|avi|webm)$/i) ? (
+                <video src={lightbox} controls style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: "8px" }} onClick={e => e.stopPropagation()} />
+              ) : (
+                <img src={lightbox} style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: "8px", objectFit: "contain" }} alt="" onClick={e => e.stopPropagation()} />
+              )}
+              <button onClick={() => setLightbox(null)} style={{ position: "fixed", top: "20px", right: "20px", background: "#ef4444", border: "none", borderRadius: "50%", width: "36px", height: "36px", color: "#fff", fontSize: "18px", cursor: "pointer" }}>✕</button>
+            </div>
+          )}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+            {media.filter(Boolean).map((item, i) => {
+              const url = typeof item === "string" ? item : item.url;
+              const name = typeof item === "string" ? url.split("/").pop() : (item.name || "");
+              const isPdf = url.match(/\.pdf$/i) || name.match(/\.pdf$/i);
+              const isVideo = url.match(/\.(mp4|mov|avi|webm)$/i) || name.match(/\.(mp4|mov|avi|webm)$/i);
+              const isImage = url.match(/\.(jpe?g|png|gif|webp|bmp|svg)$/i) || name.match(/\.(jpe?g|png|gif|webp|bmp|svg)$/i);
+              return (
+                <div key={i} style={{ position: "relative" }}>
+                  {isPdf ? (
+                    <a href={url} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "80px", height: "80px", background: "#1e293b", borderRadius: "6px", border: "1px solid #334155", color: "#f1f5f9", fontSize: "28px", textDecoration: "none" }}>📄</a>
+                  ) : isVideo ? (
+                    <video src={url} onClick={() => setLightbox(url)} style={{ width: "80px", height: "80px", objectFit: "cover", borderRadius: "6px", border: "1px solid #334155", cursor: "pointer" }} />
+                  ) : isImage ? (
+                    <img src={url} onClick={() => setLightbox(url)} style={{ width: "80px", height: "80px", objectFit: "cover", borderRadius: "6px", border: "1px solid #334155", cursor: "pointer" }} alt="" />
+                  ) : (
+                    <a href={url} target="_blank" rel="noreferrer" title={name} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: "80px", height: "80px", background: "#1e293b", borderRadius: "6px", border: "1px solid #334155", color: "#f1f5f9", fontSize: "26px", textDecoration: "none", gap: "2px", padding: "4px", overflow: "hidden" }}>
+                      📁
+                      <span style={{ fontSize: "8px", color: "#94a3b8", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }}>{name}</span>
+                    </a>
+                  )}
+                  <button onClick={async () => {
+                    const res = await fetch(url);
+                    const blob = await res.blob();
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = name;
+                    a.click();
+                  }} style={{ position: "absolute", bottom: "-6px", left: "-6px", background: "#3b82f6", border: "none", borderRadius: "50%", width: "18px", height: "18px", color: "#fff", fontSize: "10px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>⬇</button>
+                  <button onClick={() => setMedia(prev => prev.filter((_, idx) => idx !== i))} style={{ position: "absolute", top: "-6px", right: "-6px", background: "#ef4444", border: "none", borderRadius: "50%", width: "18px", height: "18px", color: "#fff", fontSize: "10px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </Field>
+
       {(f._items || (f.items_json ? JSON.parse(f.items_json) : [])).length > 0 && (
         <div style={{ gridColumn: "span 2", background: "#0f172a", borderRadius: "8px", padding: "12px 16px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
@@ -5985,7 +6072,7 @@ function ContractForm({ onSave, onClose, orders, initial }) {
 
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={async () => { await onSave(f); }}>Save Contract</Btn>
+        <Btn disabled={uploading} onClick={async () => { await onSave({ ...f, media: JSON.stringify(media) }); }}>Save Contract</Btn>
       </div>
     </div>
   );
@@ -7599,7 +7686,7 @@ function OrderProfitModal({ order, onClose }) {
           <Table
             cols={[
               { label: "Product", key: "product_name" },
-              { label: "Qty", render: r => `${r.quantity || "—"} ${r.unit || ""}`.trim() },
+              { label: "Qty", render: r => r.quantity ? displayQtyUnit(r) : "—" },
               { label: "Sale", render: r => fmt(r.sale, data.currency) },
               { label: "Cost", render: r => fmt(r.cost, data.currency) },
             ]}
@@ -8846,7 +8933,7 @@ cols={[
         return items.length > 0 ? (
           <div style={{ fontSize: "11px", color: "#94a3b8" }}>
             {items.map((i, idx) => (
-              <div key={idx}>{i.product_name} × {i.quantity} {i.unit}</div>
+              <div key={idx}>{i.product_name} × {displayQtyUnit(i)}</div>
             ))}
           </div>
         ) : "—";

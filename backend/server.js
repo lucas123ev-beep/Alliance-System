@@ -719,12 +719,12 @@ app.get('/api/contracts', (req, res) => {
 });
 
 app.post('/api/contracts', guardScreen('contracts'), (req, res) => {
-  const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, items_json, acquisition_company } = req.body;
+  const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, items_json, acquisition_company, media } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO supplier_contracts (order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, items_json, acquisition_company, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency || 'USD', status || 'Draft', notes, items_json || null, acquisition_company || 'NINGBO', actorName(req));
+      INSERT INTO supplier_contracts (order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, items_json, acquisition_company, media, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency || 'USD', status || 'Draft', notes, items_json || null, acquisition_company || 'NINGBO', media || null, actorName(req));
     res.status(201).json(db.prepare('SELECT * FROM supplier_contracts WHERE id=?').get(result.lastInsertRowid));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -732,11 +732,14 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 });
 
 app.put('/api/contracts/:id', guardScreen('contracts'), (req, res) => {
-  const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, acquisition_company } = req.body;
+  const { order_id, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, acquisition_company, media } = req.body;
+  // media: COALESCE keeps the stored attachments when a caller doesn't send
+  // the field at all (e.g. a plain status change) — only an explicit value,
+  // including "[]" for "all removed", overwrites it.
   db.prepare(`
-    UPDATE supplier_contracts SET order_id=?, contract_number=?, supplier=?, sign_date=?, delivery_date=?, total=?, currency=?, status=?, notes=?, acquisition_company=?, updated_by=?
+    UPDATE supplier_contracts SET order_id=?, contract_number=?, supplier=?, sign_date=?, delivery_date=?, total=?, currency=?, status=?, notes=?, acquisition_company=?, media=COALESCE(?, media), updated_by=?
     WHERE id=?
-  `).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, acquisition_company || 'NINGBO', actorName(req), req.params.id);
+  `).run(order_id || null, contract_number, supplier, sign_date, delivery_date, total, currency, status, notes, acquisition_company || 'NINGBO', media ?? null, actorName(req), req.params.id);
   res.json(db.prepare('SELECT * FROM supplier_contracts WHERE id=?').get(req.params.id));
 });
 
