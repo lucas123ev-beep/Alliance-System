@@ -8879,6 +8879,28 @@ function Financial({ type, navSeed, onConsumeNav }) {
   const color = isClient ? "#3b82f6" : "#8b5cf6";
   const party = isClient ? "client" : "supplier";
 
+  // Supplier entries come in more than one currency (Purchase Contracts
+  // priced in RMB, others in USD) — summing them into one figure mixed the
+  // two, so the summary cards are split into one row per currency instead
+  // (RMB first, then USD, then anything else that shows up). Same
+  // Partial-splits-into-Paid/Pending rule as `totals` above.
+  const supplierCurrencies = isClient ? [] : (() => {
+    const order = ["CNY", "USD"];
+    const present = [...new Set(records.map(r => r.currency || "CNY"))];
+    return [...order, ...present.filter(c => !order.includes(c))];
+  })();
+  const totalsFor = cur => records
+    .filter(r => (r.currency || "CNY") === cur)
+    .reduce((acc, r) => {
+      const amount = parseFloat(r.amount) || 0;
+      const paidSoFar = r.status === "Paid" ? amount : r.status === "Partial" ? (parseFloat(r.paid_amount) || 0) : 0;
+      acc.total += amount;
+      acc.paid += paidSoFar;
+      if (r.status === "Pending") acc.pending += amount;
+      if (r.status === "Partial") acc.pending += Math.max(0, amount - paidSoFar);
+      return acc;
+    }, { total: 0, pending: 0, paid: 0 });
+
   // Search only narrows the table below — the summary cards above keep
   // reflecting every record, same as Activity's own filters.
   const q = search.toLowerCase();
@@ -8894,15 +8916,26 @@ function Financial({ type, navSeed, onConsumeNav }) {
         </h2>
         <Btn color={color} onClick={() => setModal(true)}>+ New Entry</Btn>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
-        {/* Supplier payments are always RMB (Purchase Contracts with Chinese
-            factories are priced in RMB and paid through Ningbo — see
-            NINGBO_ACQ in server.js), unlike Client Cash Flow entries, whose
-            currency follows whatever the linked Order was invoiced in. */}
-        <StatCard label="Total" value={fmt(totals.total, isClient ? undefined : "CNY")} color={color} />
-        <StatCard label="Pending" value={fmt(totals.pending, isClient ? undefined : "CNY")} color="#f59e0b" />
-        <StatCard label={isClient ? "Received" : "Paid"} value={fmt(totals.paid, isClient ? undefined : "CNY")} color="#10b981" />
-      </div>
+      {isClient ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
+          <StatCard label="Total" value={fmt(totals.total)} color={color} />
+          <StatCard label="Pending" value={fmt(totals.pending)} color="#f59e0b" />
+          <StatCard label="Received" value={fmt(totals.paid)} color="#10b981" />
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "24px" }}>
+          {supplierCurrencies.map(cur => {
+            const tt = totalsFor(cur);
+            return (
+              <div key={cur} style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
+                <StatCard label={`Total (${currencyLabel(cur)})`} value={fmt(tt.total, cur)} color={color} />
+                <StatCard label={`Pending (${currencyLabel(cur)})`} value={fmt(tt.pending, cur)} color="#f59e0b" />
+                <StatCard label={`Paid (${currencyLabel(cur)})`} value={fmt(tt.paid, cur)} color="#10b981" />
+              </div>
+            );
+          })}
+        </div>
+      )}
       {modal && (
         <Modal title={isClient ? t("New Client Payment") : t("New Supplier Payment")} onClose={() => setModal(false)}>
           <FinForm type={type} orders={orders} onSave={b => api(endpoint, "POST", b).then(load)} onClose={() => setModal(false)} />
