@@ -1404,7 +1404,7 @@ const PACKAGE_UNIT_OPTIONS = [
 // non-Chemical/non-Textile-category items (ribbon, trim, cable, elastic,
 // small volumes of liquid...) are still legitimately sold by length or
 // volume.
-const SELLING_UNIT_OPTIONS = ["Unit", "Pair", "Meter", "Liter"];
+const SELLING_UNIT_OPTIONS = ["Unit", "Pair", "Meter", "Liter", "Kg"];
 // "Other" is the catch-all category for goods that don't fit any of the
 // other dedicated flows (Chemical's liter/ton, Textile/DTF's meter/roll) —
 // bulk/raw goods quoted by weight (scrap metal, raw material, etc.) land
@@ -5926,6 +5926,91 @@ function NingboInternalForm({ items, currency, initial, onSave, onClose }) {
   );
 }
 
+// Reusable attachments picker (documents, photos, videos — any file type) for
+// forms that keep their files as a JSON [{url,name}] string in a `media`
+// column, like Commercial Invoices. `value` is that stored string (or array),
+// `onChange` receives the updated JSON string.
+function MediaAttachmentsField({ value, onChange, label = "Attachments (documents, images, videos)" }) {
+  const t = useT();
+  const [uploading, setUploading] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+  useEscapeToClose(!!lightbox, () => setLightbox(null));
+  const list = (() => {
+    let parsed = value;
+    if (!parsed) return [];
+    if (typeof parsed === "string") {
+      try { parsed = JSON.parse(parsed); } catch { return []; }
+    }
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(Boolean).map(item => typeof item === "string" ? { url: item, name: item.split("/").pop() } : item);
+  })();
+  const handleUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setUploading(true);
+    try {
+      const results = await Promise.all(files.map(uploadToCloudinary));
+      onChange(JSON.stringify([...list, ...results.filter(Boolean)]));
+    } catch (err) { alert(t("Upload failed: ") + err.message); }
+    setUploading(false);
+    e.target.value = "";
+  };
+  const thumb = { width: "80px", height: "80px", borderRadius: "6px", border: "1px solid #334155" };
+  const circleBtn = { position: "absolute", border: "none", borderRadius: "50%", width: "18px", height: "18px", color: "#fff", fontSize: "10px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" };
+  return (
+    <Field label={label}>
+      <div>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "10px 16px", cursor: "pointer", fontSize: "13px", color: "#94a3b8", marginBottom: "12px" }}>
+          {uploading ? t("⏳ Uploading...") : t("📎 Add Photos / Videos / Files")}
+          <input type="file" multiple onChange={handleUpload} style={{ display: "none" }} disabled={uploading} />
+        </label>
+        {lightbox && (
+          <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+            {lightbox.match(/\.(mp4|mov|avi|webm)$/i) ? (
+              <video src={lightbox} controls style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: "8px" }} onClick={e => e.stopPropagation()} />
+            ) : (
+              <img src={lightbox} style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: "8px", objectFit: "contain" }} alt="" onClick={e => e.stopPropagation()} />
+            )}
+            <button onClick={() => setLightbox(null)} style={{ position: "fixed", top: "20px", right: "20px", background: "#ef4444", border: "none", borderRadius: "50%", width: "36px", height: "36px", color: "#fff", fontSize: "18px", cursor: "pointer" }}>✕</button>
+          </div>
+        )}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+          {list.map((item, i) => {
+            const url = item.url;
+            const name = item.name || "";
+            const is = re => url.match(re) || name.match(re);
+            return (
+              <div key={i} style={{ position: "relative" }}>
+                {is(/\.pdf$/i) ? (
+                  <a href={url} target="_blank" rel="noreferrer" style={{ ...thumb, display: "flex", alignItems: "center", justifyContent: "center", background: "#1e293b", color: "#f1f5f9", fontSize: "28px", textDecoration: "none" }}>📄</a>
+                ) : is(/\.(mp4|mov|avi|webm)$/i) ? (
+                  <video src={url} onClick={() => setLightbox(url)} style={{ ...thumb, objectFit: "cover", cursor: "pointer" }} />
+                ) : is(/\.(jpe?g|png|gif|webp|bmp|svg)$/i) ? (
+                  <img src={url} onClick={() => setLightbox(url)} style={{ ...thumb, objectFit: "cover", cursor: "pointer" }} alt="" />
+                ) : (
+                  <a href={url} target="_blank" rel="noreferrer" title={name} style={{ ...thumb, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#1e293b", color: "#f1f5f9", fontSize: "26px", textDecoration: "none", gap: "2px", padding: "4px", overflow: "hidden", boxSizing: "border-box" }}>
+                    📁
+                    <span style={{ fontSize: "8px", color: "#94a3b8", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }}>{name}</span>
+                  </a>
+                )}
+                <button onClick={async () => {
+                  const res = await fetch(url);
+                  const blob = await res.blob();
+                  const a = document.createElement("a");
+                  a.href = URL.createObjectURL(blob);
+                  a.download = name;
+                  a.click();
+                }} style={{ ...circleBtn, bottom: "-6px", left: "-6px", background: "#3b82f6" }}>⬇</button>
+                <button onClick={() => onChange(JSON.stringify(list.filter((_, idx) => idx !== i)))} style={{ ...circleBtn, top: "-6px", right: "-6px", background: "#ef4444" }}>✕</button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </Field>
+  );
+}
+
 function ContractForm({ onSave, onClose, orders, initial }) {
   // acquisition_company defaults to NINGBO (purchasing from Chinese
   // factories normally runs through that entity), NOT inherited from the
@@ -8187,6 +8272,7 @@ const inspectionStatusFor = (order) => {
         <Input type="date" value={editCommercial.arrival_date || ""} onChange={e => setEditCommercial(p => ({ ...p, arrival_date: e.target.value }))} />
       </Field>
       <Field label="Notes"><Textarea value={editCommercial.notes || ""} onChange={e => setEditCommercial(p => ({ ...p, notes: e.target.value }))} /></Field>
+      <MediaAttachmentsField value={editCommercial.media} onChange={m => setEditCommercial(p => ({ ...p, media: m }))} />
       <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <Btn outline color="#64748b" onClick={() => setEditCommercial(null)}>Cancel</Btn>
         <Btn onClick={async () => {
@@ -9765,6 +9851,7 @@ function CommercialInvoices({ navSeed, onConsumeNav } = {}) {
               <Input type="date" value={editing.arrival_date || ""} onChange={e => setEditing(p => ({ ...p, arrival_date: e.target.value }))} />
             </Field>
             <Field label="Notes"><Textarea value={editing.notes || ""} onChange={e => setEditing(p => ({ ...p, notes: e.target.value }))} /></Field>
+            <MediaAttachmentsField value={editing.media} onChange={m => setEditing(p => ({ ...p, media: m }))} />
             <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
               <Btn outline color="#64748b" onClick={() => setEditing(null)}>Cancel</Btn>
               <Btn onClick={async () => {
