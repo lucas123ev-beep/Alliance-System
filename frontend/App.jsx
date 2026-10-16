@@ -6284,6 +6284,8 @@ function FinForm({ type, onSave, onClose, orders, initial }) {
 
 function QuotationForm({ onSave, onClose, initial }) {
   const t = useT();
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentCount, setCommentCount] = useState(parseInt(initial?.comment_count) || 0);
   const [f, setF] = useState(initial || {
   number: "", client: "", currency: "USD", deadline: "", price_validity: "",
   acquisition_company: "",
@@ -6539,6 +6541,22 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
     <span style={{ color: "#10b981", fontWeight: 700, fontSize: "18px" }}>{fmt(itemsTotal, f.currency)}</span>
   </div>
 )}
+
+        {/* Observações/Perguntas — chat-style thread for notes/questions
+            between the team on this quotation (see QuotationCommentsModal).
+            Only for saved quotations: the thread hangs off the quotation's id. */}
+        {initial?.id && (
+          <div style={{ gridColumn: "span 2" }}>
+            <Btn outline color="#0ea5e9" onClick={() => setCommentsOpen(true)}>
+              💬 {t("Observações/Perguntas")}{commentCount > 0 ? ` (${commentCount})` : ""}
+            </Btn>
+          </div>
+        )}
+        {commentsOpen && (
+          <QuotationCommentsModal quotation={{ id: initial.id, number: f.number || initial.number }}
+            onClose={() => setCommentsOpen(false)}
+            onChanged={() => setCommentCount(c => c + 1)} />
+        )}
 
         <Field label="Currency" half>
   <Select value={f.currency} onChange={e => {
@@ -7004,7 +7022,6 @@ const [orders, setOrders] = useState([]);
 const [notify, setNotify] = useState(null);
 const [acqFilter, setAcqFilter] = useState("All");
 const [questionnaireModal, setQuestionnaireModal] = useState(null); // the Quotation row currently being built/edited, or null
-const [commentsFor, setCommentsFor] = useState(null); // the Quotation whose Observações/Perguntas thread is open, or null
   const load = useCallback(async () => {
   try {
     console.log('loading quotations...');
@@ -7126,7 +7143,6 @@ console.log('quotations set:', quotations?.length);
   </Modal>
 )}
 {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
-{commentsFor && <QuotationCommentsModal quotation={commentsFor} onClose={() => setCommentsFor(null)} onChanged={load} />}
       <Table
         cols={[
           { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
@@ -7222,11 +7238,6 @@ console.log('quotations set:', quotations?.length);
           send to the supplier. See QuestionnaireForm above. */}
       <Btn small outline color="#8b5cf6" onClick={() => setQuestionnaireModal(r)}>
         🗒️ {t("Questionnaire")}
-      </Btn>
-      {/* Chat-style thread for notes/questions between the team on this
-          quotation — see QuotationCommentsModal. Badge = messages so far. */}
-      <Btn small outline color="#0ea5e9" onClick={() => setCommentsFor(r)}>
-        💬 {t("Observações/Perguntas")}{r.comment_count > 0 ? ` (${r.comment_count})` : ""}
       </Btn>
       <DocButtons url={authUrl(`${API}/quotations/${r.id}/pdf`)} filename={`Quotation-${r.number}.pdf`}
         entityType="quotations" recordLabel={r.number} label="📄 PDF" />
