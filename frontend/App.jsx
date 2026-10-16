@@ -1810,7 +1810,7 @@ function Textarea(props) { return <textarea style={{ ...inputStyle, resize: "ver
 // Deliberately kept to `document.execCommand` + a handful of toolbar
 // buttons rather than pulling in a full editor library — this field never
 // needs more than what a factory/product description realistically uses.
-function RichTextEditor({ value, onChange, placeholder }) {
+function RichTextEditor({ value, onChange, placeholder, onKeyDown, minHeight = 80 }) {
   const ref = useRef(null);
   const lastValue = useRef(value);
 
@@ -1870,9 +1870,10 @@ function RichTextEditor({ value, onChange, placeholder }) {
         suppressContentEditableWarning
         onInput={handleInput}
         onBlur={handleInput}
+        onKeyDown={onKeyDown}
         data-placeholder={placeholder || ""}
         className="rich-text-editable"
-        style={{ ...inputStyle, minHeight: "80px", overflowY: "auto", whiteSpace: "pre-wrap" }}
+        style={{ ...inputStyle, minHeight: `${minHeight}px`, overflowY: "auto", whiteSpace: "pre-wrap" }}
       />
     </div>
   );
@@ -4145,7 +4146,7 @@ useEffect(() => {
           <Input type="text" inputMode="decimal" value={f.freight_value || ""}
             onChange={e => setF(p => ({ ...p, freight_value: maskMoney(e.target.value) }))} placeholder="0.00" />
         </Field>
-        <Field label={`Insurance Value ({currencyLabel(f.currency)})`} half>
+        <Field label={`Insurance Value (${currencyLabel(f.currency)})`} half>
           <Input type="text" inputMode="decimal" value={f.insurance_value || ""}
             onChange={e => setF(p => ({ ...p, insurance_value: maskMoney(e.target.value) }))} placeholder="0.00" />
         </Field>
@@ -5602,7 +5603,7 @@ function ProformaForm({ onSave, onClose, orders, initial }) {
         <Input type="text" inputMode="decimal" value={f.freight_value || ""}
           onChange={e => setF(p => ({ ...p, freight_value: maskMoney(e.target.value) }))} placeholder="0.00" />
       </Field>
-      <Field label={`Insurance Value ({currencyLabel(f.currency)})`} half>
+      <Field label={`Insurance Value (${currencyLabel(f.currency)})`} half>
         <Input type="text" inputMode="decimal" value={f.insurance_value || ""}
           onChange={e => setF(p => ({ ...p, insurance_value: maskMoney(e.target.value) }))} placeholder="0.00" />
       </Field>
@@ -6475,7 +6476,7 @@ setMedia(prev => [...prev, ...results.filter(Boolean)]);
           <Input type="text" inputMode="decimal" value={f.freight_value || ""}
             onChange={e => setF(p => ({ ...p, freight_value: maskMoney(e.target.value) }))} placeholder="0.00" />
         </Field>
-        <Field label={`Insurance Value ({currencyLabel(f.currency)})`} half>
+        <Field label={`Insurance Value (${currencyLabel(f.currency)})`} half>
           <Input type="text" inputMode="decimal" value={f.insurance_value || ""}
             onChange={e => setF(p => ({ ...p, insurance_value: maskMoney(e.target.value) }))} placeholder="0.00" />
         </Field>
@@ -6852,6 +6853,143 @@ function QuestionnaireForm({ quotation, onSave, onClose }) {
   );
 }
 
+// "Observações/Perguntas" — chat-style thread on a single Quotation. Anyone
+// with access opens it, writes a note or question (optionally with images,
+// videos or documents attached), and everything stays saved with the author's
+// name and time; the next person opens the same thread to read/reply. Polls
+// every few seconds while open so a reply shows up without reopening it.
+function QuotationCommentsModal({ quotation, onClose, onChanged }) {
+  const t = useT();
+  const myUsername = useContext(UserContext).username;
+  const [messages, setMessages] = useState(null); // null = still loading
+  const [text, setText] = useState("");
+  const [pending, setPending] = useState([]); // attachments waiting to be sent: [{url,name}]
+  const [uploading, setUploading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const endRef = useRef(null);
+
+  const load = useCallback(() => {
+    api(`/quotations/${quotation.id}/comments`).then(setMessages).catch(() => setMessages(prev => prev || []));
+  }, [quotation.id]);
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 8000);
+    return () => clearInterval(id);
+  }, [load]);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [messages?.length]);
+
+  const handleAttach = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setUploading(true);
+    try {
+      const uploaded = await Promise.all(files.map(uploadToCloudinary));
+      setPending(prev => [...prev, ...uploaded.filter(Boolean)]);
+    } catch (err) { alert(t("Upload failed: ") + err.message); }
+    setUploading(false);
+    e.target.value = "";
+  };
+
+  // The editor's value is HTML — "empty" means no visible text (an emptied
+  // editor can leave a lone <br> or <div></div> behind).
+  const isEmpty = !text.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+  const send = async () => {
+    if (sending || uploading || (isEmpty && pending.length === 0)) return;
+    setSending(true);
+    try {
+      await api(`/quotations/${quotation.id}/comments`, "POST", { message: isEmpty ? "" : text, attachments: pending });
+      setText(""); setPending([]);
+      load();
+      if (onChanged) onChanged();
+    } catch (err) { alert(t("Failed to send. Try again.")); }
+    setSending(false);
+  };
+
+  const isImg = a => /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(a.url) || /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(a.name || "");
+  const isVideo = a => /\.(mp4|mov|avi|webm)$/i.test(a.url) || /\.(mp4|mov|avi|webm)$/i.test(a.name || "");
+  const parseAtt = m => { try { return m.attachments_json ? JSON.parse(m.attachments_json) : []; } catch { return []; } };
+
+  return (
+    <Modal title={`${t("Observações/Perguntas")} — ${quotation.number}`} onClose={onClose} wide>
+      <div style={{ display: "flex", flexDirection: "column", height: "60vh" }}>
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px", padding: "4px 2px 12px" }}>
+          {messages === null && <p style={{ color: "#64748b", fontSize: "13px" }}>{t("Loading…")}</p>}
+          {messages && messages.length === 0 && (
+            <p style={{ color: "#64748b", fontSize: "13px", textAlign: "center", marginTop: "30px" }}>
+              {t("No messages yet — write the first note or question below.")}
+            </p>
+          )}
+          {(messages || []).map(m => {
+            const mine = m.author_username && m.author_username === myUsername;
+            const atts = parseAtt(m);
+            return (
+              <div key={m.id} style={{ alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "78%" }}>
+                <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "3px", textAlign: mine ? "right" : "left" }}>
+                  <strong style={{ color: mine ? "#93c5fd" : "#cbd5e1" }}>{m.author_name || m.author_username}</strong> · {fmtDateTime(m.created_at)}
+                </div>
+                <div style={{ background: mine ? "#1d4ed8" : "#1e293b", color: "#f1f5f9", borderRadius: "10px", padding: "9px 12px", fontSize: "13.5px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                  {/* Stored as sanitized HTML (see sanitizeChatHtml in server.js,
+                      applied on write and on read). */}
+                  {m.message && <div className="chat-message-html" dangerouslySetInnerHTML={{ __html: m.message }} />}
+                  {atts.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: m.message ? "8px" : 0 }}>
+                      {atts.map((a, i) => isImg(a) ? (
+                        <a key={i} href={a.url} target="_blank" rel="noreferrer">
+                          <img src={a.url} alt={a.name} style={{ width: "110px", height: "110px", objectFit: "cover", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.2)" }} />
+                        </a>
+                      ) : isVideo(a) ? (
+                        <video key={i} src={a.url} controls style={{ width: "220px", maxHeight: "160px", borderRadius: "8px" }} />
+                      ) : (
+                        <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(0,0,0,0.25)", borderRadius: "8px", padding: "6px 10px", color: "#f1f5f9", fontSize: "12.5px", textDecoration: "none" }}>
+                          {/\.pdf$/i.test(a.url) || /\.pdf$/i.test(a.name || "") ? "📄" : "📁"} {a.name || a.url.split("/").pop()}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          <div ref={endRef} />
+        </div>
+
+        <div style={{ borderTop: "1px solid #334155", paddingTop: "12px" }}>
+          {pending.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "8px" }}>
+              {pending.map((a, i) => (
+                <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "#1e293b", border: "1px solid #334155", borderRadius: "999px", padding: "4px 10px", fontSize: "12px", color: "#cbd5e1" }}>
+                  📎 {a.name}
+                  <button onClick={() => setPending(prev => prev.filter((_, idx) => idx !== i))} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "12px", padding: 0 }}>✕</button>
+                </span>
+              ))}
+            </div>
+          )}
+          {/* Same rich-text editor as the Product Description (bold/italic/
+              underline/alignment/bullets). Enter sends; Shift+Enter makes a
+              new line (and Enter inside a bullet list still adds a bullet). */}
+          <RichTextEditor value={text} onChange={setText} minHeight={64}
+            onKeyDown={e => {
+              if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+              if (document.queryCommandState && document.queryCommandState("insertUnorderedList")) return;
+              e.preventDefault();
+              send();
+            }}
+            placeholder={t("Write an observation or question… (Enter to send, Shift+Enter for a new line)")} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px" }}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "8px 14px", cursor: uploading ? "default" : "pointer", fontSize: "13px", color: "#94a3b8" }}>
+              {uploading ? t("⏳ Uploading...") : t("📎 Attach")}
+              <input type="file" multiple onChange={handleAttach} style={{ display: "none" }} disabled={uploading} />
+            </label>
+            <Btn onClick={send} disabled={sending || uploading || (isEmpty && pending.length === 0)}>
+              {sending ? t("Sending…") : t("Send")}
+            </Btn>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function Quotations({ navSeed, onConsumeNav } = {}) {
 const t = useT();
 const [proformas, setProformas] = useState([]);
@@ -6866,6 +7004,7 @@ const [orders, setOrders] = useState([]);
 const [notify, setNotify] = useState(null);
 const [acqFilter, setAcqFilter] = useState("All");
 const [questionnaireModal, setQuestionnaireModal] = useState(null); // the Quotation row currently being built/edited, or null
+const [commentsFor, setCommentsFor] = useState(null); // the Quotation whose Observações/Perguntas thread is open, or null
   const load = useCallback(async () => {
   try {
     console.log('loading quotations...');
@@ -6987,6 +7126,7 @@ console.log('quotations set:', quotations?.length);
   </Modal>
 )}
 {notify && <NotifyStatusChangeModal {...notify} onClose={() => setNotify(null)} />}
+{commentsFor && <QuotationCommentsModal quotation={commentsFor} onClose={() => setCommentsFor(null)} onChanged={load} />}
       <Table
         cols={[
           { label: "Number", sortValue: r => r.number, render: r => <span style={{ fontWeight: 700, color: "#60a5fa" }}>{r.number}</span> },
@@ -7082,6 +7222,11 @@ console.log('quotations set:', quotations?.length);
           send to the supplier. See QuestionnaireForm above. */}
       <Btn small outline color="#8b5cf6" onClick={() => setQuestionnaireModal(r)}>
         🗒️ {t("Questionnaire")}
+      </Btn>
+      {/* Chat-style thread for notes/questions between the team on this
+          quotation — see QuotationCommentsModal. Badge = messages so far. */}
+      <Btn small outline color="#0ea5e9" onClick={() => setCommentsFor(r)}>
+        💬 {t("Observações/Perguntas")}{r.comment_count > 0 ? ` (${r.comment_count})` : ""}
       </Btn>
       <DocButtons url={authUrl(`${API}/quotations/${r.id}/pdf`)} filename={`Quotation-${r.number}.pdf`}
         entityType="quotations" recordLabel={r.number} label="📄 PDF" />
@@ -11129,6 +11274,7 @@ const renderTab = () => {
         .rich-text-editable:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
         .rich-text-editable:empty:before { content: attr(data-placeholder); color: #64748b; }
         .rich-text-editable ul { margin: 4px 0; padding-left: 20px; }
+        .chat-message-html ul, .chat-message-html ol { margin: 4px 0; padding-left: 20px; }
         @keyframes notifToastIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
       `}</style>
       {/* Wraps the WHOLE layout (sidebar included) — it used to only wrap
@@ -11262,7 +11408,7 @@ const renderTab = () => {
             background: "#0a1628", border: "1px solid #1e293b", borderRadius: "16px",
             padding: "28px", minHeight: "calc(100vh - 64px)",
           }}>
-            <UserContext.Provider value={{ permissions: user.permissions }}>
+            <UserContext.Provider value={{ permissions: user.permissions, username: user.username }}>
               {renderTab()}
             </UserContext.Provider>
           </div>

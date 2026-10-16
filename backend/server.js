@@ -916,12 +916,12 @@ function getCommercialInvoiceWithDates(id) {
 // hideCommercialStatus redaction further below applies regardless of any
 // of this.
 app.post('/api/commercial-invoices', (req, res) => {
-  const { order_id, number, issue_date, client, total, currency, status, notes } = req.body;
+  const { order_id, number, issue_date, client, total, currency, status, notes, media } = req.body;
   try {
     const result = db.prepare(`
-      INSERT INTO commercial_invoices (order_id, number, issue_date, client, total, currency, status, notes, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(order_id || null, number, issue_date, client, total, currency || 'USD', status || 'Pending', notes, actorName(req));
+      INSERT INTO commercial_invoices (order_id, number, issue_date, client, total, currency, status, notes, media, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(order_id || null, number, issue_date, client, total, currency || 'USD', status || 'Pending', notes, media || null, actorName(req));
 
     // Swift HKAG used to be auto-created here — moved to a manual "Generate
     // Swift Transfer" button on the Proforma's own Ningbo -> HKAG Internal
@@ -937,7 +937,7 @@ app.post('/api/commercial-invoices', (req, res) => {
 });
 
 app.put('/api/commercial-invoices/:id', (req, res) => {
-  const { order_id, number, issue_date, client, total, currency, notes, shipment_date, arrival_date } = req.body;
+  const { order_id, number, issue_date, client, total, currency, notes, shipment_date, arrival_date, media } = req.body;
   // Accounts with hideCommercialStatus never see the status field, so they
   // can't legitimately be submitting a real change to it either — keep
   // whatever is already in the database instead of trusting req.body.status
@@ -950,9 +950,9 @@ app.put('/api/commercial-invoices/:id', (req, res) => {
   const status = hidesStatus ? existing?.status : req.body.status;
   const paid_amount = hidesStatus ? existing?.paid_amount : req.body.paid_amount;
   db.prepare(`
-    UPDATE commercial_invoices SET order_id=?, number=?, issue_date=?, client=?, total=?, currency=?, status=?, notes=?, paid_amount=?, updated_by=?
+    UPDATE commercial_invoices SET order_id=?, number=?, issue_date=?, client=?, total=?, currency=?, status=?, notes=?, paid_amount=?, media=COALESCE(?, media), updated_by=?
     WHERE id=?
-  `).run(order_id || null, number, issue_date, client, total, currency, status, notes, paid_amount || 0, actorName(req), req.params.id);
+  `).run(order_id || null, number, issue_date, client, total, currency, status, notes, paid_amount || 0, media ?? null, actorName(req), req.params.id);
   // Editing the shipment/arrival date from the Commercial Invoice screen
   // writes straight through to the linked Order — same value, same column,
   // so a change made here is immediately reflected back on the Order (and
@@ -1206,7 +1206,66 @@ app.get('/api/cloudinary-signature', (req, res) => {
 
 // ─── QUOTATIONS ───────────────────────────────────────────────────────────────
 app.get('/api/quotations', (req, res) => {
-  res.json(db.prepare('SELECT * FROM quotations ORDER BY created_at DESC').all());
+  // comment_count feeds the badge on the list's Observações/Perguntas button.
+  res.json(db.prepare(`
+    SELECT q.*, (SELECT COUNT(*) FROM quotation_comments c WHERE c.quotation_id = q.id) AS comment_count
+    FROM quotations q ORDER BY q.created_at DESC
+  `).all());
+});
+
+// Observações/Perguntas — chat-style thread per quotation. Oldest first so it
+// reads top to bottom like a conversation. Posting needs the same access as
+// the Quotations screen itself; reading is open to any signed-in user (same
+// as the list). Messages are append-only on purpose: the thread is a record
+// of who said what.
+// Messages are written with the same small rich-text editor used for Product
+// descriptions (bold/italic/underline/alignment/bullets), so they're stored
+// as HTML — and rendered as HTML by the frontend, which means whatever is
+// stored has to be safe. This allowlist sanitizer runs on the way in AND on
+// the way out (plain-text messages from before the editor existed just pass
+// through it): only a handful of formatting tags survive, every attribute is
+// dropped except a rebuilt text-align, and any stray "<" is escaped.
+function sanitizeChatHtml(html) {
+  const src = String(html || '').slice(0, 20000)
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<(script|style|iframe|object|embed)\b[\s\S]*?<\/\1\s*>/gi, '');
+  const ALLOWED = new Set(['b', 'strong', 'i', 'em', 'u', 'br', 'p', 'div', 'ul', 'ol', 'li', 'span']);
+  const tagRe = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g;
+  let out = '';
+  let last = 0;
+  let m;
+  while ((m = tagRe.exec(src)) !== null) {
+    out += src.slice(last, m.index).replace(/</g, '&lt;');
+    last = m.index + m[0].length;
+    const tag = m[2].toLowerCase();
+    if (!ALLOWED.has(tag)) continue;
+    if (m[1]) { out += `</${tag}>`; continue; }
+    if (tag === 'br') { out += '<br>'; continue; }
+    const align = /text-align\s*:\s*(left|center|right|justify)/i.exec(m[3]);
+    out += align ? `<${tag} style="text-align:${align[1].toLowerCase()}">` : `<${tag}>`;
+  }
+  out += src.slice(last).replace(/</g, '&lt;');
+  return out;
+}
+const chatHtmlIsEmpty = html => !String(html || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+
+app.get('/api/quotations/:id/comments', (req, res) => {
+  const rows = db.prepare('SELECT * FROM quotation_comments WHERE quotation_id=? ORDER BY created_at ASC, id ASC').all(req.params.id);
+  res.json(rows.map(r => ({ ...r, message: sanitizeChatHtml(r.message) })));
+});
+
+app.post('/api/quotations/:id/comments', guardScreen('quotations'), (req, res) => {
+  const message = sanitizeChatHtml((req.body && req.body.message) || '').trim();
+  const attachments = Array.isArray(req.body && req.body.attachments)
+    ? req.body.attachments.filter(a => a && a.url).map(a => ({ url: String(a.url), name: String(a.name || '') }))
+    : [];
+  if (chatHtmlIsEmpty(message) && attachments.length === 0) return res.status(400).json({ error: 'Message or attachment required' });
+  if (!db.prepare('SELECT 1 FROM quotations WHERE id=?').get(req.params.id)) return res.status(404).json({ error: 'Quotation not found' });
+  const result = db.prepare(`
+    INSERT INTO quotation_comments (quotation_id, author_username, author_name, message, attachments_json)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(req.params.id, req.user.username, actorName(req), chatHtmlIsEmpty(message) ? '' : message, attachments.length ? JSON.stringify(attachments) : null);
+  res.status(201).json(db.prepare('SELECT * FROM quotation_comments WHERE id=?').get(result.lastInsertRowid));
 });
 
 app.post('/api/quotations', guardScreen('quotations'), (req, res) => {
@@ -1232,6 +1291,7 @@ app.put('/api/quotations/:id', guardScreen('quotations'), (req, res) => {
 });
 
 app.delete('/api/quotations/:id', guardScreen('quotations'), (req, res) => {
+  db.prepare('DELETE FROM quotation_comments WHERE quotation_id=?').run(req.params.id);
   db.prepare('DELETE FROM quotations WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });

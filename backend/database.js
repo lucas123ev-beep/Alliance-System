@@ -567,6 +567,22 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_username, created_at);
 
+  -- "Observações/Perguntas" thread on each Quotation — a simple chat log
+  -- (one row per message, never edited/deleted) so the team can leave notes
+  -- and questions for each other on a specific quotation. author_name is a
+  -- snapshot of who wrote it, like updated_by elsewhere, so history still
+  -- reads correctly if a user's display name changes later.
+  CREATE TABLE IF NOT EXISTS quotation_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    quotation_id INTEGER NOT NULL,
+    author_username TEXT,
+    author_name TEXT,
+    message TEXT,
+    attachments_json TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_quotation_comments_q ON quotation_comments(quotation_id, created_at);
+
   -- Cross-entity audit trail — separate from the notifications table above:
   -- notifications is a per-recipient, opt-in e-mail inbox (only fires for
   -- the specific create/status-change/document events each screen wires up,
@@ -614,6 +630,7 @@ const migrations = [
   // Supporting files on a Supplier Contract (signed copy, photos, videos...) —
   // same JSON [{url,name}] shape used by Inspections/Samples/Packing Lists.
   ['supplier_contracts', 'media', 'TEXT'],
+  ['commercial_invoices', 'media', 'TEXT'],
   ['quotations', 'insurance_value', "TEXT DEFAULT ''"],
   ['orders', 'insurance_value', "TEXT DEFAULT ''"],
   ['proformas', 'insurance_value', "TEXT DEFAULT ''"],
