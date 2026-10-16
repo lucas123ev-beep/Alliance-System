@@ -1241,6 +1241,8 @@ function sanitizeChatHtml(html) {
     if (!ALLOWED.has(tag)) continue;
     if (m[1]) { out += `</${tag}>`; continue; }
     if (tag === 'br') { out += '<br>'; continue; }
+    // The only class that survives: the "mention" highlight on a span (@name).
+    if (tag === 'span' && /class\s*=\s*["']?mention\b/i.test(m[3])) { out += '<span class="mention">'; continue; }
     const align = /text-align\s*:\s*(left|center|right|justify)/i.exec(m[3]);
     out += align ? `<${tag} style="text-align:${align[1].toLowerCase()}">` : `<${tag}>`;
   }
@@ -1261,10 +1263,40 @@ app.post('/api/quotations/:id/comments', guardScreen('quotations'), (req, res) =
     : [];
   if (chatHtmlIsEmpty(message) && attachments.length === 0) return res.status(400).json({ error: 'Message or attachment required' });
   if (!db.prepare('SELECT 1 FROM quotations WHERE id=?').get(req.params.id)) return res.status(404).json({ error: 'Quotation not found' });
+  const authorName = actorName(req);
+  const storedMessage = chatHtmlIsEmpty(message) ? '' : message;
   const result = db.prepare(`
     INSERT INTO quotation_comments (quotation_id, author_username, author_name, message, attachments_json)
     VALUES (?, ?, ?, ?, ?)
-  `).run(req.params.id, req.user.username, actorName(req), chatHtmlIsEmpty(message) ? '' : message, attachments.length ? JSON.stringify(attachments) : null);
+  `).run(req.params.id, req.user.username, authorName, storedMessage, attachments.length ? JSON.stringify(attachments) : null);
+
+  // @mentions — in-system only (bell inbox), deliberately NO e-mail. The
+  // frontend sends the usernames picked from the @ list; each is re-checked
+  // here (real user, not the author, eligible for Quotations) instead of
+  // trusting the client, then gets one inbox row pointing at this quotation,
+  // carrying the message text and attachments like any other notification.
+  const mentions = [...new Set(Array.isArray(req.body && req.body.mentions) ? req.body.mentions.map(String) : [])]
+    .filter(u => u !== req.user.username);
+  if (mentions.length > 0) {
+    const quotation = db.prepare('SELECT number FROM quotations WHERE id=?').get(req.params.id);
+    const plainText = storedMessage
+      .replace(/<br\s*\/?>|<\/(div|p|li)>/gi, ' ')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+      .replace(/\s+/g, ' ').trim().slice(0, 500);
+    const batchId = crypto.randomUUID();
+    const insertInboxRow = db.prepare(`
+      INSERT INTO notifications (recipient_username, entity_type, record_label, event_type, message, sender_name, attachment_url, attachment_name, attachments_json, batch_id)
+      VALUES (?, 'quotations', ?, 'mention', ?, ?, ?, ?, ?, ?)
+    `);
+    for (const username of mentions) {
+      const user = db.prepare('SELECT username FROM users WHERE username=?').get(username);
+      if (!user || !isEligibleForEntityType(username, 'quotations')) continue;
+      insertInboxRow.run(username, quotation?.number || '', plainText || null, authorName,
+        attachments[0]?.url || null, attachments[0]?.name || null,
+        attachments.length ? JSON.stringify(attachments) : null, batchId);
+    }
+  }
   res.status(201).json(db.prepare('SELECT * FROM quotation_comments WHERE id=?').get(result.lastInsertRowid));
 });
 

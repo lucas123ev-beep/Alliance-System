@@ -687,6 +687,7 @@ function notificationSummary(n, t) {
   const record = n.record_label || "";
   if (n.event_type === "created") return `${label} ${t("was created")}: ${record}`;
   if (n.event_type === "document") return `${n.document_label || t("Document")} ${t("sent")} — ${label} ${record}`;
+  if (n.event_type === "mention") return `${n.sender_name || ""} ${t("mentioned you in")} ${label} ${record}`.trim();
   return `${label} ${record} — ${t("Status changed to")} ${n.new_status || ""}`;
 }
 
@@ -1810,9 +1811,18 @@ function Textarea(props) { return <textarea style={{ ...inputStyle, resize: "ver
 // Deliberately kept to `document.execCommand` + a handful of toolbar
 // buttons rather than pulling in a full editor library — this field never
 // needs more than what a factory/product description realistically uses.
-function RichTextEditor({ value, onChange, placeholder, onKeyDown, minHeight = 80 }) {
+function RichTextEditor({ value, onChange, placeholder, onKeyDown, minHeight = 80, mentionOptions, onMention }) {
   const ref = useRef(null);
   const lastValue = useRef(value);
+  // @mentions (optional — only when `mentionOptions` [{username,name}] is
+  // passed, e.g. the Quotation chat): typing "@" at the start of a word
+  // opens a small list of people to tag; picking one swaps the typed
+  // "@query" for a highlighted "@Name" chip and reports the username through
+  // onMention. Everything else about the editor is unchanged.
+  const [mention, setMention] = useState(null); // { query, index } while the list is open
+  const mentionMatches = (mentionOptions && mention)
+    ? mentionOptions.filter(u => (u.name || "").toLowerCase().includes(mention.query.toLowerCase()) || u.username.toLowerCase().includes(mention.query.toLowerCase())).slice(0, 6)
+    : [];
 
   useEffect(() => {
     // Escreve no DOM sempre que o valor vindo de fora for diferente do que
@@ -1826,10 +1836,51 @@ function RichTextEditor({ value, onChange, placeholder, onKeyDown, minHeight = 8
     lastValue.current = value;
   }, [value]);
 
+  const checkMention = () => {
+    if (!mentionOptions) return;
+    const sel = window.getSelection();
+    const node = sel && sel.anchorNode;
+    if (!sel || !sel.rangeCount || !sel.isCollapsed || !node || node.nodeType !== 3 || !ref.current?.contains(node)) { setMention(null); return; }
+    const before = node.textContent.slice(0, sel.anchorOffset);
+    const m = /(^|\s)@([^\s@]*)$/.exec(before);
+    setMention(m ? { query: m[2], index: 0 } : null);
+  };
+
   const handleInput = () => {
     const html = ref.current?.innerHTML || "";
     lastValue.current = html;
     onChange(html);
+    checkMention();
+  };
+
+  const insertMention = (u) => {
+    const sel = window.getSelection();
+    const node = sel && sel.anchorNode;
+    if (!sel || !node || node.nodeType !== 3) return;
+    const offset = sel.anchorOffset;
+    const m = /@([^\s@]*)$/.exec(node.textContent.slice(0, offset));
+    if (!m) return;
+    const range = document.createRange();
+    range.setStart(node, offset - m[0].length);
+    range.setEnd(node, offset);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    ref.current?.focus();
+    const safeName = String(u.name || u.username).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    document.execCommand("insertHTML", false, `<span class="mention">@${safeName}</span>&nbsp;`);
+    setMention(null);
+    handleInput();
+    if (onMention) onMention(u);
+  };
+
+  const handleKeyDown = (e) => {
+    if (mention && mentionMatches.length > 0) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setMention(m => ({ ...m, index: (m.index + 1) % mentionMatches.length })); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setMention(m => ({ ...m, index: (m.index - 1 + mentionMatches.length) % mentionMatches.length })); return; }
+      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); insertMention(mentionMatches[Math.min(mention.index, mentionMatches.length - 1)]); return; }
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setMention(null); return; }
+    }
+    if (onKeyDown) onKeyDown(e);
   };
 
   const exec = (cmd, arg) => {
@@ -1864,17 +1915,32 @@ function RichTextEditor({ value, onChange, placeholder, onKeyDown, minHeight = 8
         <button type="button" title="Bullet list" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("insertUnorderedList")}>•—</button>
         <button type="button" title="Clear formatting" style={btnStyle} onMouseDown={e => e.preventDefault()} onClick={() => exec("removeFormat")}>✕</button>
       </div>
-      <div
-        ref={ref}
-        contentEditable
-        suppressContentEditableWarning
-        onInput={handleInput}
-        onBlur={handleInput}
-        onKeyDown={onKeyDown}
-        data-placeholder={placeholder || ""}
-        className="rich-text-editable"
-        style={{ ...inputStyle, minHeight: `${minHeight}px`, overflowY: "auto", whiteSpace: "pre-wrap" }}
-      />
+      <div style={{ position: "relative" }}>
+        {mention && mentionMatches.length > 0 && (
+          <div style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: "4px", zIndex: 50, minWidth: "200px", background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", boxShadow: "0 8px 24px rgba(0,0,0,0.4)", overflow: "hidden" }}>
+            {mentionMatches.map((u, i) => (
+              <div key={u.username}
+                onMouseDown={e => { e.preventDefault(); insertMention(u); }}
+                onMouseEnter={() => setMention(m => ({ ...m, index: i }))}
+                style={{ padding: "8px 12px", fontSize: "13px", cursor: "pointer", color: "#f1f5f9", background: i === mention.index ? "#334155" : "transparent" }}>
+                @{u.name || u.username}
+              </div>
+            ))}
+          </div>
+        )}
+        <div
+          ref={ref}
+          contentEditable
+          suppressContentEditableWarning
+          onInput={handleInput}
+          onClick={checkMention}
+          onBlur={() => { handleInput(); setMention(null); }}
+          onKeyDown={handleKeyDown}
+          data-placeholder={placeholder || ""}
+          className="rich-text-editable"
+          style={{ ...inputStyle, minHeight: `${minHeight}px`, overflowY: "auto", whiteSpace: "pre-wrap" }}
+        />
+      </div>
     </div>
   );
 }
@@ -6885,6 +6951,14 @@ function QuotationCommentsModal({ quotation, onClose, onChanged }) {
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const endRef = useRef(null);
+  // People who can be tagged with @ (everyone with access to Quotations,
+  // minus yourself), and the ones actually picked for the message being
+  // written. Tagged people get a bell notification — no e-mail.
+  const [people, setPeople] = useState([]);
+  const [tagged, setTagged] = useState([]); // [{username,name}]
+  useEffect(() => {
+    api("/notifications/recipients?entityType=quotations").then(list => setPeople((list || []).filter(u => u.username !== myUsername))).catch(() => {});
+  }, [myUsername]);
 
   const load = useCallback(() => {
     api(`/quotations/${quotation.id}/comments`).then(setMessages).catch(() => setMessages(prev => prev || []));
@@ -6915,8 +6989,11 @@ function QuotationCommentsModal({ quotation, onClose, onChanged }) {
     if (sending || uploading || (isEmpty && pending.length === 0)) return;
     setSending(true);
     try {
-      await api(`/quotations/${quotation.id}/comments`, "POST", { message: isEmpty ? "" : text, attachments: pending });
-      setText(""); setPending([]);
+      // Only people whose @Name is still in the text (they may have been
+      // deleted again after being picked).
+      const mentions = tagged.filter(u => text.includes(`@${u.name || u.username}`)).map(u => u.username);
+      await api(`/quotations/${quotation.id}/comments`, "POST", { message: isEmpty ? "" : text, attachments: pending, mentions });
+      setText(""); setPending([]); setTagged([]);
       load();
       if (onChanged) onChanged();
     } catch (err) { alert(t("Failed to send. Try again.")); }
@@ -6986,13 +7063,15 @@ function QuotationCommentsModal({ quotation, onClose, onChanged }) {
               underline/alignment/bullets). Enter sends; Shift+Enter makes a
               new line (and Enter inside a bullet list still adds a bullet). */}
           <RichTextEditor value={text} onChange={setText} minHeight={64}
+            mentionOptions={people}
+            onMention={u => setTagged(prev => prev.some(p => p.username === u.username) ? prev : [...prev, u])}
             onKeyDown={e => {
               if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
               if (document.queryCommandState && document.queryCommandState("insertUnorderedList")) return;
               e.preventDefault();
               send();
             }}
-            placeholder={t("Write an observation or question… (Enter to send, Shift+Enter for a new line)")} />
+            placeholder={t("Write an observation or question… (@ to tag someone, Enter to send, Shift+Enter for a new line)")} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px" }}>
             <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "#1e293b", border: "1px solid #334155", borderRadius: "8px", padding: "8px 14px", cursor: uploading ? "default" : "pointer", fontSize: "13px", color: "#94a3b8" }}>
               {uploading ? t("⏳ Uploading...") : t("📎 Attach")}
@@ -11286,6 +11365,7 @@ const renderTab = () => {
         .rich-text-editable:empty:before { content: attr(data-placeholder); color: #64748b; }
         .rich-text-editable ul { margin: 4px 0; padding-left: 20px; }
         .chat-message-html ul, .chat-message-html ol { margin: 4px 0; padding-left: 20px; }
+        .rich-text-editable .mention, .chat-message-html .mention { color: #bae6fd; background: rgba(125,211,252,0.18); border-radius: 4px; padding: 0 4px; font-weight: 600; }
         @keyframes notifToastIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
       `}</style>
       {/* Wraps the WHOLE layout (sidebar included) — it used to only wrap
