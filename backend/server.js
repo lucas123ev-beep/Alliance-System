@@ -2754,14 +2754,14 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
     // gets its code printed via the per-container breakdown below instead;
     // that used to only kick in above 1 container, which silently dropped
     // the container code for the (very common) single-container case.
-    let plSummary = pl ? `${unitSummary(plItems)} | Gross Weight: ${pl.total_gross_weight || 0} kg | Net Weight: ${pl.total_net_weight || 0} kg | CBM: ${pl.total_cbm || 0}` : '';
+    let plSummary = pl ? `${unitSummary(plItems)} | Gross Weight: ${pl.total_gross_weight || 0} kg | Net Weight: ${pl.total_net_weight || 0} kg | CBM: ${(parseFloat(pl.total_cbm) || 0).toFixed(2)}` : '';
     if (pl && Array.isArray(plContainers) && plContainers.length >= 1) {
       plSummary = plContainers.map(c => {
         // Same zero-roll filter as the Packing List PDF — unallocated rows
         // that only exist for the allocation UI shouldn't show up here.
         const containerItems = plItems.filter(i => (i.container_seq || 1) === c.seq && (parseFloat(i.roll) || 0) > 0);
         if (!containerItems.length) return null;
-        return `Container ${String(c.seq).padStart(2, '0')}: ${c.code || '—'} — ${unitSummary(containerItems)} | Gross Weight: ${sumOf(containerItems, 'grossWeight').toFixed(1)} kg | Net Weight: ${sumOf(containerItems, 'netWeight').toFixed(1)} kg | CBM: ${sumOf(containerItems, 'cbm').toFixed(1)}`;
+        return `Container ${String(c.seq).padStart(2, '0')}: ${c.code || '—'} — ${unitSummary(containerItems)} | Gross Weight: ${sumOf(containerItems, 'grossWeight').toFixed(1)} kg | Net Weight: ${sumOf(containerItems, 'netWeight').toFixed(1)} kg | CBM: ${sumOf(containerItems, 'cbm').toFixed(2)}`;
       }).filter(Boolean);
     }
     // "2x 40' High Cube" — shown right next to the "Packing List
@@ -2851,12 +2851,12 @@ app.get('/api/commercial-invoices/:id/xlsx', async (req, res) => {
       }
       return `Packages: ${sumOf(arr, 'roll')}`;
     };
-    let plSummary = pl ? `${unitSummary(plItems)} | Gross Weight: ${pl.total_gross_weight || 0} kg | Net Weight: ${pl.total_net_weight || 0} kg | CBM: ${pl.total_cbm || 0}` : '';
+    let plSummary = pl ? `${unitSummary(plItems)} | Gross Weight: ${pl.total_gross_weight || 0} kg | Net Weight: ${pl.total_net_weight || 0} kg | CBM: ${(parseFloat(pl.total_cbm) || 0).toFixed(2)}` : '';
     if (pl && Array.isArray(plContainers) && plContainers.length >= 1) {
       plSummary = plContainers.map(c => {
         const containerItems = plItems.filter(i => (i.container_seq || 1) === c.seq && (parseFloat(i.roll) || 0) > 0);
         if (!containerItems.length) return null;
-        return `Container ${String(c.seq).padStart(2, '0')}: ${c.code || '—'} — ${unitSummary(containerItems)} | Gross Weight: ${sumOf(containerItems, 'grossWeight').toFixed(1)} kg | Net Weight: ${sumOf(containerItems, 'netWeight').toFixed(1)} kg | CBM: ${sumOf(containerItems, 'cbm').toFixed(1)}`;
+        return `Container ${String(c.seq).padStart(2, '0')}: ${c.code || '—'} — ${unitSummary(containerItems)} | Gross Weight: ${sumOf(containerItems, 'grossWeight').toFixed(1)} kg | Net Weight: ${sumOf(containerItems, 'netWeight').toFixed(1)} kg | CBM: ${sumOf(containerItems, 'cbm').toFixed(2)}`;
       }).filter(Boolean);
     }
     const containerSummaryText = order?.container_qty && order?.container
