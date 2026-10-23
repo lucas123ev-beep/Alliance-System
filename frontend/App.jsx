@@ -8328,23 +8328,42 @@ const currency = supplierItems[0]?.cost_currency || supplierItems[0]?.currency |
     }));
   }
 };
-// One inspection per product on the order -- even when several products
-// share the same supplier, each physical item still has to be inspected on
-// its own. Builds one stub per order.items entry, reusing the existing saved
-// inspection for that item (matched via order_item_id) when there is one, so
-// reopening this modal never loses previously-logged results.
+// One inspection per SUPPLIER (factory) on the order -- products from the same
+// factory (e.g. the same item in several colors) are inspected together in
+// one visit, so they share a single inspection instead of one each. Items are
+// grouped by their own `supplier`; items with no supplier fall into one
+// shared group. Each group's inspection carries the supplier name, all its
+// product names, and the first item's id (kept for legacy lookups).
+const inspectionGroups = (order) => {
+  const groups = [];
+  (order.items || []).forEach(item => {
+    const key = String(item.supplier || "").trim();
+    let g = groups.find(x => x.key === key);
+    if (!g) { g = { key, items: [] }; groups.push(g); }
+    g.items.push(item);
+  });
+  return groups;
+};
+// Saved inspection for a supplier group, if there is one: matched by
+// supplier name, or -- for inspections generated back when this was per item
+// -- by any of the group's items' ids, so nothing already saved is lost.
+const findGroupInspection = (order, group) =>
+  inspections.find(i => Number(i.order_id) === Number(order.id) && i.supplier != null && i.supplier === group.key)
+  || inspections.find(i => Number(i.order_id) === Number(order.id) && i.order_item_id && group.items.some(it => Number(it.id) === Number(i.order_item_id)));
+// Reusing the saved inspection (when there is one) means reopening this
+// modal never loses previously-logged results.
 const generateInspections = (order) => {
   const baseNumber = String(order.order_number || "").replace(/^ORD-/, "");
-  const items = order.items || [];
+  const groups = inspectionGroups(order);
   // Fallback for the edge case of an order with no item rows at all (legacy
   // data, or a manually-created order that skipped the items step) -- keeps
   // a single order-level inspection available instead of the button doing
-  // nothing, matching how inspections worked before this per-item change.
-  const stubs = items.length > 0 ? items : [null];
+  // nothing.
+  const stubs = groups.length > 0 ? groups : [null];
   const doneIdxs = [];
-  const built = stubs.map((item, idx) => {
-    const existing = item
-      ? inspections.find(i => Number(i.order_item_id) === Number(item.id))
+  const built = stubs.map((group, idx) => {
+    const existing = group
+      ? findGroupInspection(order, group)
       : inspections.find(i => Number(i.order_id) === Number(order.id) && !i.order_item_id);
     if (existing) {
       doneIdxs.push(idx);
@@ -8353,8 +8372,9 @@ const generateInspections = (order) => {
     const number = stubs.length > 1 ? `INS-${baseNumber}-${idx + 1}` : `INS-${baseNumber}`;
     return {
       order_id: order.id,
-      order_item_id: item ? item.id : null,
-      product_name: item ? (item.product_name || "") : "",
+      order_item_id: group ? group.items[0].id : null,
+      supplier: group ? group.key : null,
+      product_name: group ? [...new Set(group.items.map(it => it.product_name).filter(Boolean))].join(", ") : "",
       number,
       inspection_date: new Date().toISOString().slice(0, 10),
       inspector: "",
@@ -8366,16 +8386,16 @@ const generateInspections = (order) => {
   setSavedInspections(doneIdxs);
   setEditingInspectionIdx(null);
 };
-// Product count vs. how many of those products already have a saved
-// inspection -- drives the "(done/total)" badge on the Actions button.
+// Supplier groups vs. how many of them already have a saved inspection --
+// drives the "(done/total)" badge on the Actions button.
 const inspectionStatusFor = (order) => {
-  const items = order.items || [];
-  if (items.length === 0) {
+  const groups = inspectionGroups(order);
+  if (groups.length === 0) {
     const has = inspections.some(i => Number(i.order_id) === Number(order.id));
     return { done: has ? 1 : 0, total: 1 };
   }
-  const done = items.filter(item => inspections.some(i => Number(i.order_item_id) === Number(item.id))).length;
-  return { done, total: items.length };
+  const done = groups.filter(g => findGroupInspection(order, g)).length;
+  return { done, total: groups.length };
 };
   return (
     <div>
@@ -8430,7 +8450,7 @@ const inspectionStatusFor = (order) => {
           <div key={idx} style={{ background: "#1e293b", borderRadius: "12px", padding: "16px", opacity: isDone && editingInspectionIdx !== idx ? 0.7 : 1 }}>
             <div style={{ marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: 700, color: isDone ? "#10b981" : "#f59e0b", fontSize: "14px" }}>
-                {isDone ? "✅" : "🔍"} {insp.product_name || (t("Item") + " " + (idx + 1))}
+                {isDone ? "✅" : "🔍"} {insp.supplier ? `${insp.supplier} — ` : ""}{insp.product_name || (t("Item") + " " + (idx + 1))}
               </span>
               {isDone && editingInspectionIdx !== idx && (
                 <Btn small outline color="#64748b" onClick={() => setEditingInspectionIdx(idx)}>✎ {t("Edit")}</Btn>

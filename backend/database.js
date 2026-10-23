@@ -709,6 +709,11 @@ const migrations = [
   // documented here in comments; it isn't enforced either way since this
   // app never turns on PRAGMA foreign_keys.
   ['inspections', 'order_item_id', 'INTEGER'],
+  // Factory/supplier an inspection covers — inspections are generated per
+  // supplier (same factory = one inspection, even across several products or
+  // colors), not per item. product_name then holds all that supplier's
+  // product names and order_item_id just the first item (kept for legacy).
+  ['inspections', 'supplier', 'TEXT'],
   ['inspections', 'product_name', 'TEXT'],
   ['samples', 'code', "TEXT DEFAULT ''"],
   ['samples', 'product_id', 'INTEGER'],
