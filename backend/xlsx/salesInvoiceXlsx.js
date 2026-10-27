@@ -321,7 +321,7 @@ function buildSalesInvoiceWorkbook(params) {
     // nothing to do with that item. Dropped entirely — header and cell —
     // for a group that would never fill it in, same as the PDF (see
     // pdf/itemSections.js).
-    const showWeightCol = group.items.some(item => item.category === "Chemical" && item.priceBasis !== "ton");
+    const showWeightCol = group.items.some(item => item.category === "Chemical" && item.priceBasis !== "ton" && item.priceBasis !== "kg");
     const headers = ["Product", "Description", "Color", "Thickness", "Unit", "Quantity"];
     if (showWeightCol) headers.push("Total Weight");
     headers.push("Unit Price", "Total Amount");

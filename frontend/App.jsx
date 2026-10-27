@@ -367,6 +367,7 @@ const TRANSLATIONS = {
     "Packaging": "包装",
     "Other": "其他",
     "Bags / Sacks - 25kg": "袋装 - 25公斤",
+    "Bags / Sacks - 20kg": "袋装 - 20公斤",
     "Bags / Sacks - 50kg": "袋装 - 50公斤",
     "Boxes / Cartons - Large": "纸箱 - 大",
     "Boxes / Cartons - Medium": "纸箱 - 中",
@@ -1191,6 +1192,15 @@ const netWeightKgOf = (product) => {
 };
 const netTonsOf = (product) => netWeightKgOf(product) / 1000;
 
+// Chemical price bases: 'liter' (default), 'ton' or 'kg'. Ton and Kg are both
+// weight bases: Quantity is entered directly in that unit and the registered
+// rate lives in cost_per_ton / sale_per_ton (meaning "per Ton" or "per Kg"
+// depending on price_basis). Package counts are derived from the net weight.
+const isWeightBasis = (b) => b === "ton" || b === "kg";
+const weightBasisLabel = (b) => (b === "kg" ? "Kg" : "Ton");
+// Net weight of one package expressed in the basis unit (kg or tons).
+const netBasisUnitsOf = (product, basis) => (basis === "kg" ? netWeightKgOf(product) : netTonsOf(product));
+
 // GROSS weight of one full physical package (box + contents), for products
 // sold in a unit that differs from how they're packed (see units_per_package
 // below) — same conversions as weightKgOf, reading the separate
@@ -1223,7 +1233,7 @@ const registeredPerTon = (product) => {
 // registered per-ton rate is already the unit price with no per-package
 // conversion needed (perPackage = 1), same as a flat unit-price category.
 function recalcLiquidItem(item, product, field, rawValue) {
-  const isTon = item.price_basis === "ton";
+  const isTon = isWeightBasis(item.price_basis);
   const rateKey = isTon ? "sale_per_ton" : "sale_per_liter";
   const perPackage = isTon ? 1 : volumeLOf(product);
   const qty = parseFloat(item.quantity) || 0;
@@ -1310,7 +1320,7 @@ function PricingRow({ item, product, currency, onChange }) {
   const t = useT();
   const isTextile = item.category === "Textile" || item.category === "DTF Film";
   const isLiquid = item.category === "Chemical";
-  const isTon = isLiquid && item.price_basis === "ton";
+  const isTon = isLiquid && isWeightBasis(item.price_basis);
   const rateKey = isTon ? "sale_per_ton" : "sale_per_liter";
   // Live thousands-separator formatting on every money field here (Value/X,
   // Unit Price, Total) — Margin % is a percentage, not a money amount, so
@@ -1350,7 +1360,7 @@ function PricingRow({ item, product, currency, onChange }) {
         // was added) — the two rates are kept in separate fields
         // (sale_per_liter / sale_per_ton) so switching a product's basis
         // later doesn't silently reinterpret an old item's registered rate.
-        <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Value /")} {isTon ? t("Ton") : t("Liter")} ({currencyLabel(currency)})
+        <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Value /")} {isTon ? t(weightBasisLabel(item.price_basis)) : t("Liter")} ({currencyLabel(currency)})
           <input type="text" inputMode="decimal" value={item[rateKey] ?? ""} onChange={onLiquidField(rateKey)}
             placeholder="0,00" style={{ ...inputStyle, display: "block", marginTop: "2px", padding: "6px 8px", fontSize: "12px", width: "100px" }} />
         </label>
@@ -1378,7 +1388,7 @@ function PricingRow({ item, product, currency, onChange }) {
 // below for that). Mixing the two into one list is what put "Pairs" here
 // before, which then printed as if it were a package type.
 const PACKAGE_UNIT_OPTIONS = [
-  "Bags / Sacks - 25kg",
+  "Bags / Sacks - 20kg", "Bags / Sacks - 25kg",
   "Bags / Sacks - 50kg",
   "Boxes / Cartons - Large",
   "Boxes / Cartons - Medium",
@@ -1557,14 +1567,14 @@ const perMeterLabel = (item, field, cur) => {
 function productRate(product, kind) {
   const isTextile = product?.category === "Textile" || product?.category === "DTF Film";
   const isChemical = product?.category === "Chemical";
-  const isTon = isChemical && product?.price_basis === "ton";
+  const isTon = isChemical && isWeightBasis(product?.price_basis);
   const currency = kind === "cost" ? product?.cost_currency : product?.sale_currency;
   if (isTextile) {
     return { value: product?.[kind === "cost" ? "cost_per_meter" : "sale_per_meter"], currency, suffix: "/m" };
   }
   if (isChemical) {
     return isTon
-      ? { value: product?.[kind === "cost" ? "cost_per_ton" : "sale_per_ton"], currency, suffix: "/ton" }
+      ? { value: product?.[kind === "cost" ? "cost_per_ton" : "sale_per_ton"], currency, suffix: product?.price_basis === "kg" ? "/kg" : "/ton" }
       : { value: product?.[kind === "cost" ? "cost_per_liter" : "sale_per_liter"], currency, suffix: "/L" };
   }
   return {
@@ -3111,7 +3121,7 @@ function buildPackingListDraft(order, products) {
     // the draft's stored numbers.
     const round1 = n => Math.round(n * 10) / 10;
     const priceBasis = item.price_basis || product?.price_basis || null;
-    const isTonChemical = category === "Chemical" && priceBasis === "ton";
+    const isTonChemical = category === "Chemical" && isWeightBasis(priceBasis);
     // Generalized version of the ton-priced Chemical case below, for any
     // OTHER category where the sold unit isn't the packed unit — e.g. LED
     // lights sold per PAIR, packed 500 pairs to a cardboard box
@@ -3120,6 +3130,7 @@ function buildPackingListDraft(order, products) {
     const perPackageUnits = (!isTonChemical && product?.units_per_package)
       ? parseFloat(product.units_per_package) || null : null;
     const perDrumTons = isTonChemical ? netTonsOf(product) : null;
+    const perDrumBasisUnits = isTonChemical ? netBasisUnitsOf(product, priceBasis) : null;
     // For ton-priced Chemical items, item.quantity is the tons ordered, not
     // a physical package count (see recalcLiquidItem/ProductItemModal) — the
     // Packing List's "roll"/"Packages" field needs the real, whole number of
@@ -3131,8 +3142,8 @@ function buildPackingListDraft(order, products) {
     // dividing by a unit count instead of a weight. Every other category
     // still uses quantity directly, since it already is a real package
     // count there.
-    const rollCount = isTonChemical && perDrumTons > 0
-      ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons)
+    const rollCount = isTonChemical && perDrumBasisUnits > 0
+      ? Math.round((parseFloat(item.quantity) || 0) / perDrumBasisUnits)
       : perPackageUnits > 0
       ? Math.round((parseFloat(item.quantity) || 0) / perPackageUnits)
       : (item.quantity != null && item.quantity !== "" ? parseFloat(item.quantity) || 0 : 0);
@@ -3176,7 +3187,7 @@ function buildPackingListDraft(order, products) {
     // category shows what unit the Quantity is expressed in instead (TON,
     // LITER, or the registered package unit), same as the PDF backend logic.
     const priceUnitLabel = !isTextile
-      ? (category === "Chemical" ? (priceBasis === "ton" ? "TON" : "LITER") : (item.unit || product?.unit || "").toUpperCase())
+      ? (category === "Chemical" ? (priceBasis === "ton" ? "TON" : priceBasis === "kg" ? "KG" : "LITER") : (item.unit || product?.unit || "").toUpperCase())
       : null;
     // Ton-priced Chemical items: Quantity is stored directly in tons, so the
     // Quantity column needs its own label (tons + estimated drum count)
@@ -3189,8 +3200,8 @@ function buildPackingListDraft(order, products) {
     // (it already has its own real Packages column there).
     let quantityLabel = null;
     if (isTonChemical && item.quantity != null) {
-      const drums = perDrumTons > 0 ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons) : null;
-      quantityLabel = `${item.quantity} Ton${drums ? ` (≈ ${drums} ${item.unit || "packages"})` : ""}`;
+      const drums = perDrumBasisUnits > 0 ? Math.round((parseFloat(item.quantity) || 0) / perDrumBasisUnits) : null;
+      quantityLabel = `${item.quantity} ${weightBasisLabel(priceBasis)}${drums ? ` (≈ ${drums} ${item.unit || "packages"})` : ""}`;
     }
     return {
       product_id: item.product_id,
@@ -3399,8 +3410,8 @@ function displayQtyUnit(item) {
   // Ton-priced Chemical: Quantity is stored directly in tons, so item.unit
   // (the drum/bag package type) next to it would read "3 Bags / Sacks - 25kg"
   // for what is really 3 tons.
-  if (item.category === "Chemical" && item.price_basis === "ton") {
-    return `${item.quantity ?? ""} Ton`.trim();
+  if (item.category === "Chemical" && isWeightBasis(item.price_basis)) {
+    return `${item.quantity ?? ""} ${weightBasisLabel(item.price_basis)}`.trim();
   }
   const isTextileMeters = (item.category === "Textile" || item.category === "DTF Film") && item.unit === "Meters";
   const qty = isTextileMeters ? item.total_meterage : item.quantity;
@@ -3419,7 +3430,7 @@ function displayQtyUnit(item) {
 function applyProductToItem(p, prevItem) {
   const isTextile = p.category === "Textile" || p.category === "DTF Film";
   const isLiquid = p.category === "Chemical";
-  const isTon = isLiquid && p.price_basis === "ton";
+  const isTon = isLiquid && isWeightBasis(p.price_basis);
   const h = parseFloat(p.height) || 0;
   const heightM = p.height_unit === "cm" ? h * 0.01 : p.height_unit === "mm" ? h * 0.001 : h;
   const volL = volumeLOf(p);
@@ -3571,6 +3582,9 @@ const handleProductFormSave = async (formData) => {
   // per-drum weight (which would treat the tons figure as a drum count).
   if (category === "Chemical" && product.price_basis === "ton") {
     return qty * 1000;
+  }
+  if (category === "Chemical" && product.price_basis === "kg") {
+    return qty;
   }
 
   const w = parseFloat(product.weight) || 0;
@@ -3813,7 +3827,7 @@ const handleUnitChange = (e) => {
 </Field>
         <Field label={
           isTextileMeters ? "Quantity (Total Meters)"
-          : selectedProduct && selectedProduct.category === "Chemical" && selectedProduct.price_basis === "ton" ? "Quantity (Tons)"
+          : selectedProduct && selectedProduct.category === "Chemical" && isWeightBasis(selectedProduct.price_basis) ? `Quantity (${selectedProduct.price_basis === "kg" ? "Kg" : "Tons"})`
           : (item.category === "Textile" || item.category === "DTF Film") ? "Quantity (Rolls)"
           : "Quantity"
         } half>
@@ -3885,7 +3899,7 @@ const handleUnitChange = (e) => {
     </div>
   </Field>
 )}
-{selectedProduct && selectedProduct.category === "Chemical" && selectedProduct.price_basis === "ton" ? (
+{selectedProduct && selectedProduct.category === "Chemical" && isWeightBasis(selectedProduct.price_basis) ? (
   // Ton-priced Chemical items: Quantity is entered directly in tons, so
   // this box repurposes the (otherwise unused, Textile-only) meterage slot
   // to show the estimated drum/package count that quantity corresponds to
@@ -3896,7 +3910,7 @@ const handleUnitChange = (e) => {
   <Field label={`≈ Drums (${selectedProduct.unit || "package"})`} half>
     <div style={{ background: "#0f172a", borderRadius: "8px", padding: "10px 12px", fontSize: "13px", color: "#f59e0b", fontWeight: 700, border: "1px solid #334155", minHeight: "42px", display: "flex", alignItems: "center" }}>
       {(() => {
-        const t = netTonsOf(selectedProduct);
+        const t = netBasisUnitsOf(selectedProduct, selectedProduct.price_basis);
         const qty = parseFloat(item.quantity) || 0;
         if (!t || !qty) return selectedProduct.net_weight ? "—" : "Set Net Weight on product";
         return `≈ ${Math.round(qty / t).toLocaleString("pt-BR")} ${selectedProduct.unit || "packages"}`;
@@ -4562,7 +4576,7 @@ const handleCostChange = (e) => {
   // Cost/Sale per Ton is a rate for the pure chemical (net weight), so the
   // per-package reference price below has to multiply by the NET tons in
   // one package, not the gross (package + drum) tons — see netTonsOf.
-  const tons = netTonsOf(f);
+  const tons = netBasisUnitsOf(f, f.price_basis);
   const cpm = heightM > 0 ? (cost / heightM).toFixed(4) : f.cost_per_meter;
   const cpl = volL > 0 ? (cost / volL).toFixed(4) : f.cost_per_liter;
   const cpt = tons > 0 ? (cost / tons).toFixed(4) : f.cost_per_ton;
@@ -4583,7 +4597,7 @@ const handleCostChange = (e) => {
   // Cost/Sale per Ton is a rate for the pure chemical (net weight), so the
   // per-package reference price below has to multiply by the NET tons in
   // one package, not the gross (package + drum) tons — see netTonsOf.
-  const tons = netTonsOf(f);
+  const tons = netBasisUnitsOf(f, f.price_basis);
   const spm = heightM > 0 ? (sale / heightM).toFixed(4) : f.sale_per_meter;
   const spl = volL > 0 ? (sale / volL).toFixed(4) : f.sale_per_liter;
   const spt = tons > 0 ? (sale / tons).toFixed(4) : f.sale_per_ton;
@@ -4624,7 +4638,7 @@ const handleSalePctChange = (e) => {
   // Cost/Sale per Ton is a rate for the pure chemical (net weight), so the
   // per-package reference price below has to multiply by the NET tons in
   // one package, not the gross (package + drum) tons — see netTonsOf.
-  const tons = netTonsOf(f);
+  const tons = netBasisUnitsOf(f, f.price_basis);
   setF((p) => ({
     ...p, sale_pct: pctStr,
     sale_price: canCalc ? maskMoney(sale.toFixed(2)) : p.sale_price,
@@ -4700,7 +4714,7 @@ const handleCostPerTonChange = (e) => {
   // Cost/Sale per Ton is a rate for the pure chemical (net weight), so the
   // per-package reference price below has to multiply by the NET tons in
   // one package, not the gross (package + drum) tons — see netTonsOf.
-  const tons = netTonsOf(f);
+  const tons = netBasisUnitsOf(f, f.price_basis);
   const unit_cost = maskMoney((cpt * tons).toFixed(2));
   setF((p) => ({ ...p, cost_per_ton: e.target.value, unit_cost: tons > 0 ? unit_cost : p.unit_cost }));
 };
@@ -4710,7 +4724,7 @@ const handleSalePerTonChange = (e) => {
   // Cost/Sale per Ton is a rate for the pure chemical (net weight), so the
   // per-package reference price below has to multiply by the NET tons in
   // one package, not the gross (package + drum) tons — see netTonsOf.
-  const tons = netTonsOf(f);
+  const tons = netBasisUnitsOf(f, f.price_basis);
   const sale_price = maskMoney((spt * tons).toFixed(2));
   setF((p) => ({
     ...p, sale_per_ton: e.target.value,
@@ -4869,7 +4883,7 @@ const handleSalePerLiterChange = (e) => {
   </div>
 </Field>
 
-{f.category === "Chemical" && f.price_basis === "ton" && (
+{f.category === "Chemical" && isWeightBasis(f.price_basis) && (
   // Full-width, same reasoning as Volume below — a conditional `half`
   // field here would throw off the Cost/Sale grid alternation that
   // follows. `weight` above is the GROSS weight of one full drum (drum +
@@ -4978,6 +4992,7 @@ const handleSalePerLiterChange = (e) => {
     <Select value={f.price_basis || "liter"} onChange={set("price_basis")}>
       <option value="liter">Per Liter (uses Volume)</option>
       <option value="ton">Per Ton (uses Weight)</option>
+      <option value="kg">Per Kg (uses Weight)</option>
     </Select>
   </Field>
 )}
@@ -5019,11 +5034,11 @@ const handleSalePerLiterChange = (e) => {
         <Input type="number" value={f.cost_per_liter || ""} onChange={handleCostPerLiterChange} placeholder="0.00" />
       </Field>
     )}
-    {f.category === "Chemical" && f.price_basis === "ton" && (
-      <Field label="Cost per Ton">
+    {f.category === "Chemical" && isWeightBasis(f.price_basis) && (
+      <Field label={`Cost per ${weightBasisLabel(f.price_basis)}`}>
         <Input type="number" value={f.cost_per_ton || ""} onChange={handleCostPerTonChange} placeholder="0.00" />
         <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>
-          1 package ≈ {netTonsOf(f).toFixed(3)} t net (from Net Weight above) — Cost/Sale Price below = this rate × that weight.
+          1 package ≈ {f.price_basis === "kg" ? `${netWeightKgOf(f).toFixed(2)} kg` : `${netTonsOf(f).toFixed(3)} t`} net (from Net Weight above) — Cost/Sale Price below = this rate × that weight.
         </div>
       </Field>
     )}
@@ -5069,8 +5084,8 @@ const handleSalePerLiterChange = (e) => {
         <Input type="number" value={f.sale_per_liter || ""} onChange={handleSalePerLiterChange} placeholder="0.00" />
       </Field>
     )}
-    {f.category === "Chemical" && f.price_basis === "ton" && (
-      <Field label="Sale per Ton">
+    {f.category === "Chemical" && isWeightBasis(f.price_basis) && (
+      <Field label={`Sale per ${weightBasisLabel(f.price_basis)}`}>
         <Input type="number" value={f.sale_per_ton || ""} onChange={handleSalePerTonChange} placeholder="0.00" />
       </Field>
     )}

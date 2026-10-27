@@ -446,7 +446,7 @@ app.get('/api/products/:id', (req, res) => {
 function priceFieldFor(category, priceBasis, kind) {
   const isTextile = category === 'Textile' || category === 'DTF Film';
   const isChemical = category === 'Chemical';
-  const isTon = isChemical && priceBasis === 'ton';
+  const isTon = isChemical && (priceBasis === 'ton' || priceBasis === 'kg');
   if (isTextile) return kind === 'cost' ? 'cost_per_meter' : 'sale_per_meter';
   if (isChemical) return isTon
     ? (kind === 'cost' ? 'cost_per_ton' : 'sale_per_ton')
@@ -1052,7 +1052,7 @@ function computeQuantityVariance(orderId, plItems) {
       g.unit = 'm';
       g.contractQty += parseFloat(it.total_meterage || it.quantity) || 0;
     } else {
-      g.unit = (category === 'Chemical' && priceBasis === 'ton') ? 'Ton' : (realUnit(it.unit) || realUnit(product?.unit));
+      g.unit = (category === 'Chemical' && priceBasis === 'ton') ? 'Ton' : (category === 'Chemical' && priceBasis === 'kg') ? 'Kg' : (realUnit(it.unit) || realUnit(product?.unit));
       g.contractQty += parseFloat(it.quantity) || 0;
     }
   });
@@ -1068,8 +1068,8 @@ function computeQuantityVariance(orderId, plItems) {
     const roll = parseFloat(it.roll) || 0;
     if (isTextile) {
       g.packingQty += parseFloat(it.totalLength) || 0;
-    } else if (category === 'Chemical' && priceBasis === 'ton') {
-      const perDrumTons = productNetWeightKg(product) / 1000;
+    } else if (category === 'Chemical' && (priceBasis === 'ton' || priceBasis === 'kg')) {
+      const perDrumTons = productNetWeightKg(product) / (priceBasis === 'kg' ? 1 : 1000);
       if (perDrumTons > 0) g.packingQty += roll * perDrumTons;
       else g.unconvertible = true; // no net weight registered — can't turn drums back into tons
     } else {
@@ -2083,7 +2083,7 @@ function splitDescription(product) {
 // ton-priced Chemical, "LITER" for a liter-priced one, or the registered
 // package unit otherwise), so the reader knows what they're buying units of.
 function priceUnitLabel(category, priceBasis, unit) {
-  if (category === 'Chemical') return priceBasis === 'ton' ? 'TON' : 'LITER';
+  if (category === 'Chemical') return priceBasis === 'ton' ? 'TON' : priceBasis === 'kg' ? 'KG' : 'LITER';
   return (unit || '').toUpperCase();
 }
 
@@ -2171,10 +2171,10 @@ function normalizeSalesItem(item, fallbackCurrency) {
   // Packing-List-only information (it already has its own real Packages
   // column there, computed on the frontend in buildPackingListDraft).
   let quantityLabel = null;
-  if (category === 'Chemical' && priceBasis === 'ton' && item.quantity != null) {
-    const perDrumTons = productNetWeightKg(product) / 1000;
+  if (category === 'Chemical' && (priceBasis === 'ton' || priceBasis === 'kg') && item.quantity != null) {
+    const perDrumTons = productNetWeightKg(product) / (priceBasis === 'kg' ? 1 : 1000);
     const drums = perDrumTons > 0 ? Math.round((parseFloat(item.quantity) || 0) / perDrumTons) : null;
-    quantityLabel = `${item.quantity} Ton${drums ? ` (≈ ${drums} ${item.unit || 'packages'})` : ''}`;
+    quantityLabel = `${item.quantity} ${priceBasis === 'kg' ? 'Kg' : 'Ton'}${drums ? ` (≈ ${drums} ${item.unit || 'packages'})` : ''}`;
   }
   // Meters per roll — the roll length used for this specific item (may
   // differ from the product's registered default when a custom length was
@@ -2732,7 +2732,7 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
     // filled in as, not a fixed assumption.
     const unitSummary = (arr) => {
       if (!arr.length) return 'Packages: 0';
-      if (arr.every(i => i.price_basis === 'ton' && i.tons_per_package)) {
+      if (arr.every(i => (i.price_basis === 'ton' || i.price_basis === 'kg') && i.tons_per_package)) {
         const tons = arr.reduce((s, i) => s + (parseFloat(i.roll) || 0) * (parseFloat(i.tons_per_package) || 0), 0);
         return `Tons: ${tons.toFixed(3)}`;
       }
@@ -2835,7 +2835,7 @@ app.get('/api/commercial-invoices/:id/xlsx', async (req, res) => {
     const sumOf = (arr, key) => arr.reduce((s, i) => s + (parseFloat(i[key]) || 0), 0);
     const unitSummary = (arr) => {
       if (!arr.length) return 'Packages: 0';
-      if (arr.every(i => i.price_basis === 'ton' && i.tons_per_package)) {
+      if (arr.every(i => (i.price_basis === 'ton' || i.price_basis === 'kg') && i.tons_per_package)) {
         const tons = arr.reduce((s, i) => s + (parseFloat(i.roll) || 0) * (parseFloat(i.tons_per_package) || 0), 0);
         return `Tons: ${tons.toFixed(3)}`;
       }
@@ -3028,7 +3028,7 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
       // category previously showed nonsense like "1.050 t" and "RMB
       // 115,000.00/ton" for a batch of LED lights sold per pair.
       const priceBasis = item.price_basis || product?.price_basis || null;
-      const isTonChemical = category === 'Chemical' && priceBasis === 'ton';
+      const isTonChemical = category === 'Chemical' && (priceBasis === 'ton' || priceBasis === 'kg');
       // Gramatura (GSM) only applies to Textile/DTF Film, registered on the
       // product as weight g/m² or g/m.
       const gramatura = isTextile && product?.weight && (product.weight_unit === 'g/m²' || product.weight_unit === 'g/m')
@@ -3067,8 +3067,8 @@ app.get('/api/contracts/:id/pdf', async (req, res) => {
         // Ton-priced Chemical: item.quantity is already stored in tons —
         // no weight lookup/derivation needed, unitPrice is already per ton.
         quantityValue = qty;
-        quantityUnit = 't';
-        quantityDecimals = 3;
+        quantityUnit = priceBasis === 'kg' ? 'kg' : 't';
+        quantityDecimals = priceBasis === 'kg' ? 2 : 3;
         unitPriceValue = unitPrice;
       } else {
         // General goods: show the real sold quantity/unit (e.g. "35,000

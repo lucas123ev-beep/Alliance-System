@@ -142,7 +142,7 @@ function renderItemSections(items, currency, opts = {}) {
 
   otherGroups.forEach((group, idx) => {
     const isNewSection = separateOtherGroups && idx > 0;
-    const showWeightCol = group.items.some(item => item.category === "Chemical" && item.priceBasis !== "ton");
+    const showWeightCol = group.items.some(item => item.category === "Chemical" && item.priceBasis !== "ton" && item.priceBasis !== "kg");
     const weightTh = showWeightCol ? `<th style="width:10%">Total Weight</th>` : "";
     // Quantity picks up the width Total Weight would've used when that
     // column is dropped, instead of leaving a gap in the table.
