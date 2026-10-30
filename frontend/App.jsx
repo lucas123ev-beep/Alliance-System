@@ -3115,7 +3115,13 @@ function buildPackingListDraft(order, products) {
     // Proforma/Commercial Invoice PDFs).
     const category = item.category || product?.category || "";
     const isTextile = category === "Textile" || category === "DTF Film";
-    const totalLength = isTextile ? (parseFloat(item.total_meterage || item.quantity || 0) || 0) : null;
+    // Non-textile goods sold by the Meter (e.g. PVC film): Quantity is the
+    // total meters, not a package count — Packages (rolls) is derived from
+    // units_per_package / roll length when registered, and the meters get
+    // their own field next to Packages.
+    const soldInMeters = !isTextile && /^meters?$/i.test(String(item.unit || ""));
+    const totalLength = isTextile ? (parseFloat(item.total_meterage || item.quantity || 0) || 0)
+      : soldInMeters ? (parseFloat(item.quantity) || 0) : null;
     // Round to 1 decimal here (not just at display time) so floating-point
     // artifacts from calcWeight (e.g. 26508.300000000003) never leak into
     // the draft's stored numbers.
@@ -3146,6 +3152,13 @@ function buildPackingListDraft(order, products) {
       ? Math.round((parseFloat(item.quantity) || 0) / perDrumBasisUnits)
       : perPackageUnits > 0
       ? Math.round((parseFloat(item.quantity) || 0) / perPackageUnits)
+      : soldInMeters
+      ? (() => {
+          const h = parseFloat(item.height || product?.height) || 0;
+          const hu = item.height ? item.height_unit : product?.height_unit;
+          const m = hu === "cm" ? h * 0.01 : hu === "mm" ? h * 0.001 : hu === "in" ? h * 0.0254 : h;
+          return m > 0 ? Math.round((parseFloat(item.quantity) || 0) / m) : 0;
+        })()
       : (item.quantity != null && item.quantity !== "" ? parseFloat(item.quantity) || 0 : 0);
     // item.total_weight (computed in ProductItemModal via calcWeight, from
     // the product's registered net weight per roll) is the goods' Net
@@ -3249,6 +3262,7 @@ function buildPackingListDraft(order, products) {
       // actually meant to live, and it's what every order should reflect.
       packageType: (product?.unit && product.unit !== "unit") ? product.unit : "",
       totalLength,
+      soldInMeters,
       // Physical package/drum count — for ton-priced Chemical this is
       // DERIVED from the tons ordered (see rollCount above), not the raw
       // order quantity, which means tons there rather than a package count.
@@ -7664,7 +7678,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
       const grossPerRoll = sumField("grossWeight") / total;
       const netPerRoll = sumField("netWeight") / total;
       const cbmPerRoll = sumField("cbm") / total;
-      const lengthPerRoll = item.isTextile ? sumField("totalLength") / total : null;
+      const lengthPerRoll = (item.isTextile || item.soldInMeters) ? sumField("totalLength") / total : null;
       // Ton-priced Chemical: Gross Weight per container is recomputed
       // directly from Packages × the product's registered GROSS per-drum
       // weight (gross_weight_per_package — full drum, not tons_per_package,
@@ -7754,6 +7768,11 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
         <label style={{ fontSize: "11px", color: "#64748b" }}>{item.isTextile ? t("Roll") : t("Packages")}
           <input type="number" value={item.roll} onChange={e => updateItemRoll(idx, e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
         </label>
+        {item.soldInMeters && (
+          <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Meters")}
+            <input type="number" value={item.totalLength ?? ""} onChange={e => updateItem(idx, "totalLength", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
+          </label>
+        )}
         <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Gross Weight (kg)")}
           <input type="number" value={item.grossWeight} onChange={e => updateItem(idx, "grossWeight", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
         </label>

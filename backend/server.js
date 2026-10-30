@@ -1051,6 +1051,10 @@ function computeQuantityVariance(orderId, plItems) {
     if (isTextile) {
       g.unit = 'm';
       g.contractQty += parseFloat(it.total_meterage || it.quantity) || 0;
+    } else if (/^meters?$/i.test(String(it.unit || ''))) {
+      // Non-textile goods sold by the meter: compared in meters.
+      g.unit = 'm';
+      g.contractQty += parseFloat(it.quantity) || 0;
     } else {
       g.unit = (category === 'Chemical' && priceBasis === 'ton') ? 'Ton' : (category === 'Chemical' && priceBasis === 'kg') ? 'Kg' : (realUnit(it.unit) || realUnit(product?.unit));
       g.contractQty += parseFloat(it.quantity) || 0;
@@ -1066,7 +1070,7 @@ function computeQuantityVariance(orderId, plItems) {
     const isTextile = category === 'Textile' || category === 'DTF Film';
     const priceBasis = it.price_basis || product?.price_basis || null;
     const roll = parseFloat(it.roll) || 0;
-    if (isTextile) {
+    if (isTextile || it.soldInMeters) {
       g.packingQty += parseFloat(it.totalLength) || 0;
     } else if (category === 'Chemical' && (priceBasis === 'ton' || priceBasis === 'kg')) {
       const perDrumTons = productNetWeightKg(product) / (priceBasis === 'kg' ? 1 : 1000);
