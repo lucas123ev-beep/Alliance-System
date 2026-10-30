@@ -7562,7 +7562,16 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
     // or net/gross-confused version of it) always self-corrects the moment
     // it's reopened, instead of keeping whatever figure happened to be
     // stored.
-    const items = rawItems.map(it => {
+    const items = rawItems.map(it0 => {
+      // Packing Lists saved before the Meters field existed: a non-textile
+      // item sold by the Meter stored the meters in Packages. Move that
+      // figure to Meters and clear Packages so the real roll count can be
+      // typed in (the product isn't available here to derive it).
+      let it = it0;
+      if (it.soldInMeters === undefined && !it.isTextile && /^meters?$/i.test(String(it.unit || ""))
+          && it.quantity != null && parseFloat(it.roll) === parseFloat(it.quantity)) {
+        it = { ...it, soldInMeters: true, totalLength: parseFloat(it.quantity) || 0, roll: "" };
+      }
       if (!it.gross_weight_per_package) return it;
       const grossWeight = Math.round((parseFloat(it.roll) || 0) * it.gross_weight_per_package * 10) / 10;
       return { ...it, grossWeight };
