@@ -350,7 +350,7 @@ function buildSalesInvoiceWorkbook(params) {
   });
   const summaryLabel = textileItems.length > 0
     ? `Total Length: ${fmtNumber(totalLength, 0)} m`
-    : `Total Quantity: ${fmtNumber(totalQuantity, 2)}`;
+    : `Total Quantity: ${(parseFloat(totalQuantity) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
   const summaryRow = sheet.addRow([`${summaryLabel}   |   Grand Total Amount: ${fmtMoney(grandTotal, currency)}`]);
   sheet.mergeCells(summaryRow.number, 1, summaryRow.number, NUM_COLS);
   summaryRow.height = 20;

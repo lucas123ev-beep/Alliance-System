@@ -127,7 +127,7 @@ function renderSalesInvoice(params) {
   // Length takes priority since it's the primary quoted measure.
   const summaryLabel = textileItems.length > 0
     ? `Total Length: ${fmtNumber(totalLength, 0)} m`
-    : `Total Quantity: ${fmtNumber(totalQuantity, 2)}`;
+    : `Total Quantity: ${(parseFloat(totalQuantity) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
 
   // Both totals share ONE cell (not split across two stretched-apart
   // <td>s spanning the full table width, which left a wide empty gap
