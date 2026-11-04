@@ -1349,7 +1349,7 @@ app.get('/api/quotations/:id/pdf', async (req, res) => {
       const normalized = normalizeSalesItem(i, currency);
       return { ...normalized, imageUrl: firstProductImage(normalized._product) };
     });
-    const totalAmount = q.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+    const totalAmount = items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0) || q.total || 0;
     const clientRow = findClientByName(q.client);
     // Only resolved once an Acquisition Company has actually been chosen on
     // the Quotation itself — renderQuotation falls back to the older
@@ -2438,7 +2438,7 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
     const totalLength = items.reduce((s, i) => s + (parseFloat(i.totalLength) || 0), 0);
     const totalWeight = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.totalWeight) || 0), 0);
     const totalQuantity = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
-    const totalAmount = pf.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+    const totalAmount = items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0) || pf.total || 0;
 
     // Once an Order exists, its acquisition_company is the single source of
     // truth (Commercial Invoice and Packing List both key off the Order too
@@ -2531,7 +2531,7 @@ app.get('/api/proformas/:id/xlsx', async (req, res) => {
     const totalLength = items.reduce((s, i) => s + (parseFloat(i.totalLength) || 0), 0);
     const totalWeight = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.totalWeight) || 0), 0);
     const totalQuantity = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
-    const totalAmount = pf.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+    const totalAmount = items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0) || pf.total || 0;
 
     const acqCode = order?.acquisition_company || pf.acquisition_company || 'HK';
     const acq = getAcq(acqCode);
@@ -2721,7 +2721,7 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
     const totalLength = items.reduce((s, i) => s + (parseFloat(i.totalLength) || 0), 0);
     const totalWeight = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.totalWeight) || 0), 0);
     const totalQuantity = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
-    const totalAmount = ci.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+    const totalAmount = items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0) || ci.total || 0;
 
     const acq = getAcq(order?.acquisition_company || 'HK');
     const clientRow = findClientByName(ci.client);
@@ -2835,7 +2835,7 @@ app.get('/api/commercial-invoices/:id/xlsx', async (req, res) => {
     const totalLength = items.reduce((s, i) => s + (parseFloat(i.totalLength) || 0), 0);
     const totalWeight = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.totalWeight) || 0), 0);
     const totalQuantity = items.filter(i => !i.isTextile).reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
-    const totalAmount = ci.total || items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+    const totalAmount = items.reduce((s, i) => s + (parseFloat(i.total) || 0), 0) || ci.total || 0;
 
     const acq = getAcq(order?.acquisition_company || 'HK');
     const clientRow = findClientByName(ci.client);
