@@ -3120,6 +3120,11 @@ function buildPackingListDraft(order, products) {
     // units_per_package / roll length when registered, and the meters get
     // their own field next to Packages.
     const soldInMeters = !isTextile && /^meters?$/i.test(String(item.unit || ""));
+    // Non-chemical goods sold by the Ton (e.g. wire, Category Other): Quantity
+    // is tons, NOT a package count — Packages (pallets, etc.) is typed in
+    // by hand (or derived from the registered package weight) and the traded
+    // tonnage is carried by Net Weight.
+    const soldInTons = !isTextile && category !== "Chemical" && /^tons?$/i.test(String(item.unit || ""));
     const totalLength = isTextile ? (parseFloat(item.total_meterage || item.quantity || 0) || 0)
       : soldInMeters ? (parseFloat(item.quantity) || 0) : null;
     // Round to 1 decimal here (not just at display time) so floating-point
@@ -3152,6 +3157,8 @@ function buildPackingListDraft(order, products) {
       ? Math.round((parseFloat(item.quantity) || 0) / perDrumBasisUnits)
       : perPackageUnits > 0
       ? Math.round((parseFloat(item.quantity) || 0) / perPackageUnits)
+      : soldInTons
+      ? (packageWeightKgOf(product) > 0 ? Math.round((parseFloat(item.quantity) || 0) * 1000 / packageWeightKgOf(product)) : 0)
       : soldInMeters
       ? (() => {
           const h = parseFloat(item.height || product?.height) || 0;
@@ -3169,7 +3176,8 @@ function buildPackingListDraft(order, products) {
     // items) it's the actual (rounded) package count × the product's
     // registered per-package weight, which naturally differs a little from
     // the idealized Net figure since you can't ship a fractional package.
-    const netWeightRaw = item.total_weight != null && item.total_weight !== "" ? parseFloat(item.total_weight) : null;
+    const netWeightRaw = soldInTons ? (parseFloat(item.quantity) || 0) * 1000
+      : item.total_weight != null && item.total_weight !== "" ? parseFloat(item.total_weight) : null;
     const netWeight = netWeightRaw != null ? round1(netWeightRaw) : null;
     const tubeWeightPerRoll = isTextile ? tubeWeightKg(product?.tube_weight, product?.tube_weight_unit) : 0;
     const perPackageWeightKg = isTonChemical ? weightKgOf(product) : (perPackageUnits > 0 ? packageWeightKgOf(product) : 0);
@@ -3263,6 +3271,7 @@ function buildPackingListDraft(order, products) {
       packageType: (product?.unit && product.unit !== "unit") ? product.unit : "",
       totalLength,
       soldInMeters,
+      soldInTons,
       // Physical package/drum count — for ton-priced Chemical this is
       // DERIVED from the tons ordered (see rollCount above), not the raw
       // order quantity, which means tons there rather than a package count.
@@ -3599,6 +3608,12 @@ const handleProductFormSave = async (formData) => {
   }
   if (category === "Chemical" && product.price_basis === "kg") {
     return qty;
+  }
+
+  // Non-chemical goods sold by the Ton (Sold By = Ton): Quantity is the
+  // tonnage itself, so the weight is simply tons -> kg.
+  if (category !== "Textile" && category !== "DTF Film" && /^tons?$/i.test(String(product.selling_unit || ""))) {
+    return qty * 1000;
   }
 
   const w = parseFloat(product.weight) || 0;
@@ -7571,6 +7586,10 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
       if (it.soldInMeters === undefined && !it.isTextile && /^meters?$/i.test(String(it.unit || ""))
           && it.quantity != null && parseFloat(it.roll) === parseFloat(it.quantity)) {
         it = { ...it, soldInMeters: true, totalLength: parseFloat(it.quantity) || 0, roll: "" };
+      }
+      if (it.soldInTons === undefined && !it.isTextile && it.category !== "Chemical"
+          && /^tons?$/i.test(String(it.unit || "")) && it.quantity != null) {
+        it = { ...it, soldInTons: true, netWeight: Math.round((parseFloat(it.quantity) || 0) * 10000) / 10 };
       }
       if (!it.gross_weight_per_package) return it;
       const grossWeight = Math.round((parseFloat(it.roll) || 0) * it.gross_weight_per_package * 10) / 10;
