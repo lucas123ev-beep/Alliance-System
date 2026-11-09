@@ -59,6 +59,23 @@ function packagesText(arr, total) {
   return [...byType].map(([type, qty]) => `${fmtNumber(qty, 0)} ${type}`).join(" + ");
 }
 
+
+// See pdf/packingList.js — containers shipped on pallets.
+const palletCount = c => (c && c.pallets_enabled && parseFloat(c.pallets) > 0) ? parseFloat(c.pallets) : 0;
+const palletsText = n => `${fmtNumber(n, 0)} Pallet${n > 1 ? "s" : ""}`;
+function grandPalletTotal(items, containers) {
+  if (!Array.isArray(containers) || !containers.length) return 0;
+  let sum = 0, any = false;
+  for (const c of containers) {
+    const has = items.some(i => (i.container_seq || 1) === c.seq && (parseFloat(i.roll) || 0) > 0);
+    if (!has) continue;
+    const n = palletCount(c);
+    if (!n) return 0;
+    sum += n; any = true;
+  }
+  return any ? sum : 0;
+}
+
 function buildPackingListWorkbook(params) {
   const {
     number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
@@ -216,7 +233,7 @@ function buildPackingListWorkbook(params) {
       addTotalsRow(
         "TOTAL:",
         [containerHasTextile ? `Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 0)}` : "", "", "",
-          `${packageLabel(containerItems)}: ${packagesText(containerItems)}`,
+          (palletCount(c) ? `Packages: ${palletsText(palletCount(c))}` : `${packageLabel(containerItems)}: ${packagesText(containerItems)}`),
           `Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)}`, "",
           `Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)}`, "",
           `CBM: ${fmtNumber(sumOf(containerItems, "cbm"), 2)}`]
@@ -229,7 +246,7 @@ function buildPackingListWorkbook(params) {
 
   const anyTextile = items.some(isTextileItem);
   const grandTotalRow = sheet.addRow([
-    `GRAND TOTAL:   ${anyTextile ? `Length: ${fmtNumber(totals.totalLength, 0)}   |   ` : ""}${packageLabel(items)}: ${packagesText(items, totals.totalRoll)}   |   Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}   |   Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}   |   CBM: ${fmtNumber(totals.totalCbm, 2)}`,
+    `GRAND TOTAL:   ${anyTextile ? `Length: ${fmtNumber(totals.totalLength, 0)}   |   ` : ""}${grandPalletTotal(items, containers) ? `Packages: ${palletsText(grandPalletTotal(items, containers))}` : `${packageLabel(items)}: ${packagesText(items, totals.totalRoll)}`}   |   Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}   |   Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}   |   CBM: ${fmtNumber(totals.totalCbm, 2)}`,
   ]);
   sheet.mergeCells(grandTotalRow.number, 1, grandTotalRow.number, NUM_COLS);
   grandTotalRow.font = { bold: true };

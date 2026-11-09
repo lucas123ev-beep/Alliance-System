@@ -7750,6 +7750,29 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
     });
   };
 
+  const updateContainerPallets = (seq, patch) => {
+    setF(prev => {
+      const containers = (prev._containers || []).map(c => c.seq === seq ? { ...c, ...patch } : c);
+      return { ...prev, _containers: containers, containers_json: JSON.stringify(containers) };
+    });
+  };
+
+  // "Shipped on Pallets" box per container: when ticked, a Number of Pallets
+  // field appears and the printed TOTAL row for that container reads
+  // "Packages: N Pallets" instead of the mix of package types.
+  const renderPalletControl = (c) => (
+    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+      <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "#94a3b8", cursor: "pointer" }}>
+        <input type="checkbox" checked={!!c.pallets_enabled} onChange={e => updateContainerPallets(c.seq, { pallets_enabled: e.target.checked })} />
+        {t("Shipped on Pallets")}
+      </label>
+      {c.pallets_enabled && (
+        <input type="number" min="0" value={c.pallets ?? ""} onChange={e => updateContainerPallets(c.seq, { pallets: e.target.value })}
+          placeholder={t("Number of Pallets")} style={{ ...inputStyle, width: "140px", padding: "6px 10px", fontSize: "13px" }} />
+      )}
+    </div>
+  );
+
   const updateContainerCode = (seq, code) => {
     setF(prev => {
       const containers = (prev._containers || []).map(c => c.seq === seq ? { ...c, code } : c);
@@ -7907,6 +7930,9 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
           <Input value={containers[0].code || ""} onChange={e => updateContainerCode(containers[0].seq, e.target.value)} placeholder="e.g. OOCU7979442" />
         </Field>
       )}
+      {!isMultiContainer && containers.length === 1 && (
+        <Field label="Pallets" half>{renderPalletControl(containers[0])}</Field>
+      )}
 
       <Field label={isMultiContainer ? "Items — allocated per container" : "Items — Roll / Gross Weight / Net Weight / CBM"}>
         <div style={{ display: "flex", flexDirection: "column", gap: isMultiContainer ? "12px" : 0 }}>
@@ -7926,6 +7952,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
                     <Input value={c.code || ""} onChange={e => updateContainerCode(c.seq, e.target.value)}
                       placeholder="Container code, e.g. OOCU7979442" style={{ ...inputStyle, flex: 1, padding: "6px 10px", fontSize: "13px" }} />
                   </div>
+                  <div style={{ padding: "8px 14px", borderBottom: "1px solid #1e293b" }}>{renderPalletControl(c)}</div>
                   {indices.map(idx => renderItemRow(items[idx], idx))}
                 </div>
               );

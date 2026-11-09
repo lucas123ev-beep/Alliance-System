@@ -201,6 +201,26 @@ function renderItemSections(items) {
   return html;
 }
 
+
+// Containers shipped on pallets (Packing List "Shipped on Pallets" box): the
+// TOTAL row of such a container reads "N Pallets" instead of the mix of
+// package types. GRAND TOTAL does the same only when every container that
+// has items is on pallets (otherwise it keeps the normal package summary).
+const palletCount = c => (c && c.pallets_enabled && parseFloat(c.pallets) > 0) ? parseFloat(c.pallets) : 0;
+const palletsText = n => `${fmtNumber(n, 0)} Pallet${n > 1 ? "s" : ""}`;
+function grandPalletTotal(items, containers) {
+  if (!Array.isArray(containers) || !containers.length) return 0;
+  let sum = 0, any = false;
+  for (const c of containers) {
+    const has = items.some(i => (i.container_seq || 1) === c.seq && (parseFloat(i.roll) || 0) > 0);
+    if (!has) continue;
+    const n = palletCount(c);
+    if (!n) return 0;
+    sum += n; any = true;
+  }
+  return any ? sum : 0;
+}
+
 function renderPackingList(params) {
   const {
     number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
@@ -241,7 +261,7 @@ function renderPackingList(params) {
             <tr class="totals-row">
               <td>TOTAL:</td>
               ${containerHasTextile ? `<td class="num">Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 0)}</td>` : ""}
-              <td class="num">${packageLabel(containerItems)}: ${packagesText(containerItems)}</td>
+              <td class="num">${palletCount(c) ? "Packages: " + palletsText(palletCount(c)) : `${packageLabel(containerItems)}: ${packagesText(containerItems)}`}</td>
               <td class="num">Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)}</td>
               <td class="num">Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)}</td>
               <td class="num">CBM: ${fmtNumber(sumOf(containerItems, "cbm"), 2)}</td>
@@ -265,7 +285,7 @@ function renderPackingList(params) {
         <tr class="totals-row">
           <td>GRAND TOTAL:</td>
           ${anyTextile ? `<td class="num">Length: ${fmtNumber(totals.totalLength, 0)}</td>` : ""}
-          <td class="num">${packageLabel(items)}: ${packagesText(items, totals.totalRoll)}</td>
+          <td class="num">${grandPalletTotal(items, containers) ? "Packages: " + palletsText(grandPalletTotal(items, containers)) : `${packageLabel(items)}: ${packagesText(items, totals.totalRoll)}`}</td>
           <td class="num">Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}</td>
           <td class="num">Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}</td>
           <td class="num">CBM: ${fmtNumber(totals.totalCbm, 2)}</td>
