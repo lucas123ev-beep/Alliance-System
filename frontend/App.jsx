@@ -7652,6 +7652,11 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
       totalNetWeight: acc.totalNetWeight + (parseFloat(i.netWeight) || 0),
       totalCbm: acc.totalCbm + (parseFloat(i.cbm) || 0),
     }), { totalLength: 0, totalRoll: 0, totalGrossWeight: 0, totalNetWeight: 0, totalCbm: 0 });
+    // Round away floating-point artifacts (e.g. 67.49999999999999).
+    totals.totalLength = Math.round(totals.totalLength * 100) / 100;
+    totals.totalGrossWeight = Math.round(totals.totalGrossWeight * 10) / 10;
+    totals.totalNetWeight = Math.round(totals.totalNetWeight * 10) / 10;
+    totals.totalCbm = Math.round(totals.totalCbm * 100) / 100;
     return {
       ...prev, _items: items, items_json: JSON.stringify(items),
       total_length: totals.totalLength, total_roll: totals.totalRoll,
@@ -7938,7 +7943,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
         <span>Total Roll: <strong style={{ color: "#f1f5f9" }}>{f.total_roll}</strong></span>
         <span>Gross Weight: <strong style={{ color: "#f1f5f9" }}>{f.total_gross_weight} kg</strong></span>
         <span>Net Weight: <strong style={{ color: "#f1f5f9" }}>{f.total_net_weight} kg</strong></span>
-        <span>CBM: <strong style={{ color: "#f1f5f9" }}>{f.total_cbm}</strong></span>
+        <span>CBM: <strong style={{ color: "#f1f5f9" }}>{Math.round((parseFloat(f.total_cbm) || 0) * 100) / 100}</strong></span>
       </div>
 
       <Field label="Notes"><Textarea value={f.notes || ""} onChange={set("notes")} /></Field>
@@ -10340,7 +10345,7 @@ function PackingLists({ navSeed, onConsumeNav } = {}) {
           { label: "Roll", sortValue: r => r.total_roll, render: r => r.total_roll || "—" },
           { label: "Gross Weight", sortValue: r => r.total_gross_weight, render: r => r.total_gross_weight ? `${parseFloat(r.total_gross_weight).toLocaleString("en-US", { maximumFractionDigits: 1 })} kg` : "—" },
           { label: "Net Weight", sortValue: r => r.total_net_weight, render: r => r.total_net_weight ? `${parseFloat(r.total_net_weight).toLocaleString("en-US", { maximumFractionDigits: 1 })} kg` : "—" },
-          { label: "CBM", sortValue: r => r.total_cbm, render: r => r.total_cbm || "—" },
+          { label: "CBM", sortValue: r => r.total_cbm, render: r => (r.total_cbm ? Math.round(parseFloat(r.total_cbm) * 100) / 100 : "—") },
           { label: "Status", sortValue: r => r.status, render: r => (
             <Select value={r.status || "Draft"}
               onChange={async e => {
