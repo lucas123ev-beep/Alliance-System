@@ -1047,7 +1047,7 @@ function computeQuantityVariance(orderId, plItems) {
     const isTextile = category === 'Textile' || category === 'DTF Film';
     const priceBasis = it.price_basis || product?.price_basis || null;
     const g = groupFor(it);
-    g.description = g.description || product?.name || it.product_name || '—';
+    g.description = g.description || [product?.name || it.product_name || '—', product?.color].filter(Boolean).join(' — ');
     if (isTextile) {
       g.unit = 'm';
       g.contractQty += parseFloat(it.total_meterage || it.quantity) || 0;
