@@ -2429,8 +2429,12 @@ app.get('/api/proformas/:id/pdf', async (req, res) => {
     // Quotation's items in at creation time); finally fall back to the
     // linked Quotation's items for older Proformas saved before this existed.
     let rawItems = [];
-    if (order) rawItems = orderItemsFor(order.id);
-    else if (pf.items) rawItems = parseJsonSafe(pf.items, []);
+    // The Proforma's own saved items (what the Edit Proforma screen shows)
+    // win, so the PDF always matches the registered record; the linked
+    // Order is only a fallback when the Proforma has no items of its own.
+    const ownItems = pf.items ? parseJsonSafe(pf.items, []) : [];
+    if (ownItems.length) rawItems = ownItems;
+    else if (order) rawItems = orderItemsFor(order.id);
     else if (quotation) rawItems = parseJsonSafe(quotation.items, []);
 
     const currency = pf.currency || order?.currency || quotation?.currency || 'USD';
@@ -2522,8 +2526,12 @@ app.get('/api/proformas/:id/xlsx', async (req, res) => {
     const quotation = pf.quotation_id ? db.prepare('SELECT * FROM quotations WHERE id=?').get(pf.quotation_id) : null;
 
     let rawItems = [];
-    if (order) rawItems = orderItemsFor(order.id);
-    else if (pf.items) rawItems = parseJsonSafe(pf.items, []);
+    // The Proforma's own saved items (what the Edit Proforma screen shows)
+    // win, so the PDF always matches the registered record; the linked
+    // Order is only a fallback when the Proforma has no items of its own.
+    const ownItems = pf.items ? parseJsonSafe(pf.items, []) : [];
+    if (ownItems.length) rawItems = ownItems;
+    else if (order) rawItems = orderItemsFor(order.id);
     else if (quotation) rawItems = parseJsonSafe(quotation.items, []);
 
     const currency = pf.currency || order?.currency || quotation?.currency || 'USD';
