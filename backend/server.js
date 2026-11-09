@@ -1021,6 +1021,23 @@ app.delete('/api/commercial-invoices/:id', guardScreen('commercial'), (req, res)
 const QUANTITY_VARIANCE_THRESHOLD_PCT = 5;
 const QUANTITY_VARIANCE_RECIPIENTS = ['lucas', 'martiello', 'max', 'gabriel'];
 
+
+// Way of Shipment / ports for the Commercial Invoice: the Proforma linked to
+// the Order is where these get edited (it has its own copy), so its values
+// win over the Order's own — otherwise switching the Proforma to "By Air"
+// left the Commercial Invoice printing "By Sea".
+function orderProformaShipment(order) {
+  const pf = order
+    ? db.prepare('SELECT way_of_shipment, port_of_loading, port_of_discharge, incoterm FROM proformas WHERE order_id=? ORDER BY id DESC LIMIT 1').get(order.id)
+    : null;
+  return {
+    way: pf?.way_of_shipment || order?.way_of_shipment,
+    origin: pf?.port_of_loading || order?.port_of_loading,
+    destination: pf?.port_of_discharge || order?.port_of_discharge,
+    incoterm: pf?.incoterm || order?.incoterm,
+  };
+}
+
 function computeQuantityVariance(orderId, plItems) {
   if (!orderId || !Array.isArray(plItems)) return { hasContract: false, variances: [] };
   const contractItems = [];
@@ -2793,11 +2810,11 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
       title: 'COMMERCIAL INVOICE',
       number: ci.number,
       date: ci.issue_date,
-      wayOfShipment: order?.way_of_shipment,
+      wayOfShipment: orderProformaShipment(order).way,
       countryOfOrigin: 'China',
-      portOfOrigin: order?.port_of_loading,
-      portOfDestination: order?.port_of_discharge,
-      incoterm: order?.incoterm,
+      portOfOrigin: orderProformaShipment(order).origin,
+      portOfDestination: orderProformaShipment(order).destination,
+      incoterm: orderProformaShipment(order).incoterm,
       acq,
       // Trader company: "Manufacturer" is always the Ningbo entity, never the
       // selected Acquisition Company (see the Proforma PDF route above for
@@ -2885,11 +2902,11 @@ app.get('/api/commercial-invoices/:id/xlsx', async (req, res) => {
       title: 'COMMERCIAL INVOICE',
       number: ci.number,
       date: ci.issue_date,
-      wayOfShipment: order?.way_of_shipment,
+      wayOfShipment: orderProformaShipment(order).way,
       countryOfOrigin: 'China',
-      portOfOrigin: order?.port_of_loading,
-      portOfDestination: order?.port_of_discharge,
-      incoterm: order?.incoterm,
+      portOfOrigin: orderProformaShipment(order).origin,
+      portOfDestination: orderProformaShipment(order).destination,
+      incoterm: orderProformaShipment(order).incoterm,
       acq,
       manufacturer: { name: NINGBO_ACQ.name, address: NINGBO_ACQ.addressLine, tel: NINGBO_ACQ.tel },
       items,
