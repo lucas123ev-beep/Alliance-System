@@ -7601,7 +7601,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
       // Older Packing Lists: show the shipped-quantity field too (blank until
       // typed in — the check keeps its old logic while it is empty).
       if (it.shippedQty === undefined && !it.isTextile && !it.soldInMeters && !it.soldInTons && it.category !== "Chemical"
-          && it.quantity != null && it.quantity !== "" && !it.price_basis) {
+          && it.quantity != null && it.quantity !== "" && !isWeightBasis(it.price_basis)) {
         it = { ...it, shippedQty: "" };
       }
       if (!it.gross_weight_per_package) return it;
