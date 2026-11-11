@@ -206,7 +206,7 @@ function buildPackingListWorkbook(params) {
       group.items.forEach(item => {
         addTableDataRow([
           item.description, itemDescription(item), itemColor(item), item.priceUnitLabel || item.width || "—",
-          item.quantityLabel || (item.quantity != null ? `${item.quantity} ${item.unit || ""}`.trim() : "—"),
+          item.quantityLabel || (item.quantity != null ? `${item.shippedQty != null && item.shippedQty !== "" ? item.shippedQty : item.quantity} ${item.unit || ""}`.trim() : "—"),
           `${fmtNumber(item.roll, 0)}${item.packageType ? ` ${item.packageType}` : ""}`, fmtNumber(item.grossWeight, 3), fmtNumber(item.netWeight, 3), fmtNumber(item.cbm, 2),
         ]);
       });

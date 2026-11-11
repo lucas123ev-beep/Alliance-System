@@ -3272,6 +3272,12 @@ function buildPackingListDraft(order, products) {
       totalLength,
       soldInMeters,
       soldInTons,
+      // Quantity actually shipped, in the item's sold unit (Unit/Pair/...) —
+      // independent of how many packages it went in (e.g. 2 units in 1
+      // box). Editable on the Packing List; the contract-vs-packing check
+      // compares THIS, not packages. Only for plain unit-sold goods.
+      shippedQty: (!isTextile && !isTonChemical && !soldInTons && !soldInMeters && category !== "Chemical" && item.quantity != null && item.quantity !== "")
+        ? (parseFloat(item.quantity) || 0) : undefined,
       // Physical package/drum count — for ton-priced Chemical this is
       // DERIVED from the tons ordered (see rollCount above), not the raw
       // order quantity, which means tons there rather than a package count.
@@ -3329,6 +3335,7 @@ function buildPackingListDraft(order, products) {
           grossWeight: item.grossWeight !== "" ? Math.round(item.grossWeight * fraction * 10) / 10 : "",
           netWeight: item.netWeight !== "" ? Math.round(item.netWeight * fraction * 10) / 10 : "",
           totalLength: item.totalLength != null ? Math.round(item.totalLength * fraction * 100) / 100 : item.totalLength,
+          shippedQty: item.shippedQty != null ? Math.round(item.shippedQty * fraction * 1000) / 1000 : item.shippedQty,
         });
       });
     });
@@ -7591,6 +7598,12 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
           && /^tons?$/i.test(String(it.unit || "")) && it.quantity != null) {
         it = { ...it, soldInTons: true, netWeight: Math.round((parseFloat(it.quantity) || 0) * 10000) / 10 };
       }
+      // Older Packing Lists: show the shipped-quantity field too (blank until
+      // typed in — the check keeps its old logic while it is empty).
+      if (it.shippedQty === undefined && !it.isTextile && !it.soldInMeters && !it.soldInTons && it.category !== "Chemical"
+          && it.quantity != null && it.quantity !== "" && !it.price_basis) {
+        it = { ...it, shippedQty: "" };
+      }
       if (!it.gross_weight_per_package) return it;
       const grossWeight = Math.round((parseFloat(it.roll) || 0) * it.gross_weight_per_package * 10) / 10;
       return { ...it, grossWeight };
@@ -7711,6 +7724,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
       const grossPerRoll = sumField("grossWeight") / total;
       const netPerRoll = sumField("netWeight") / total;
       const cbmPerRoll = sumField("cbm") / total;
+      const shippedPerRoll = item.shippedQty !== undefined ? sumField("shippedQty") / total : null;
       const lengthPerRoll = (item.isTextile || item.soldInMeters) ? sumField("totalLength") / total : null;
       // Ton-priced Chemical: Gross Weight per container is recomputed
       // directly from Packages × the product's registered GROSS per-drum
@@ -7741,6 +7755,7 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
           netWeight: Math.round(netPerRoll * roll * 10) / 10,
           cbm: Math.round(cbmPerRoll * roll * 100) / 100,
           totalLength: lengthPerRoll != null ? Math.round(lengthPerRoll * roll * 100) / 100 : items[i].totalLength,
+          ...(shippedPerRoll != null ? { shippedQty: Math.round(shippedPerRoll * roll * 1000) / 1000 } : {}),
         };
       };
       applyRow(idx, newRoll);
@@ -7824,6 +7839,11 @@ function PackingListForm({ initial, onSave, onClose, onDelete }) {
         <label style={{ fontSize: "11px", color: "#64748b" }}>{item.isTextile ? t("Roll") : t("Packages")}
           <input type="number" value={item.roll} onChange={e => updateItemRoll(idx, e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
         </label>
+        {item.shippedQty !== undefined && (
+          <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Quantity")} ({item.unit || "Unit"})
+            <input type="number" value={item.shippedQty ?? ""} onChange={e => updateItem(idx, "shippedQty", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />
+          </label>
+        )}
         {item.soldInMeters && (
           <label style={{ fontSize: "11px", color: "#64748b" }}>{t("Meters")}
             <input type="number" value={item.totalLength ?? ""} onChange={e => updateItem(idx, "totalLength", e.target.value)} style={{ ...miniInput, display: "block", marginTop: "2px" }} />

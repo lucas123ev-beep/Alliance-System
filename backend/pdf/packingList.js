@@ -115,7 +115,7 @@ function renderItemSections(items) {
       <td class="center">${escapeHtml(item.priceUnitLabel || item.width || "—")}</td>
       <td class="center">${item.quantityLabel
         ? escapeHtml(item.quantityLabel)
-        : item.quantity != null ? escapeHtml(`${item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
+        : item.quantity != null ? escapeHtml(`${item.shippedQty != null && item.shippedQty !== "" ? item.shippedQty : item.quantity} ${item.unit || ""}`.trim()) : "—"}</td>
       <td class="num">${fmtNumber(item.roll, 0)}${item.packageType ? ` ${escapeHtml(item.packageType)}` : ""}</td>
       <td class="num">${fmtNumber(item.grossWeight, 3)}</td>
       <td class="num">${fmtNumber(item.netWeight, 3)}</td>

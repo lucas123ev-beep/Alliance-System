@@ -1091,7 +1091,9 @@ function computeQuantityVariance(orderId, plItems) {
     const isTextile = category === 'Textile' || category === 'DTF Film';
     const priceBasis = it.price_basis || product?.price_basis || null;
     const roll = parseFloat(it.roll) || 0;
-    if (it.soldInTons) {
+    if (it.shippedQty !== undefined && it.shippedQty !== null && it.shippedQty !== '' && !it.soldInTons && !isTextile) {
+      g.packingQty += parseFloat(it.shippedQty) || 0;
+    } else if (it.soldInTons) {
       g.packingQty += (parseFloat(it.netWeight) || 0) / 1000;
     } else if (isTextile || it.soldInMeters) {
       g.packingQty += parseFloat(it.totalLength) || 0;
