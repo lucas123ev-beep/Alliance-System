@@ -1028,14 +1028,24 @@ const QUANTITY_VARIANCE_RECIPIENTS = ['lucas', 'martiello', 'max', 'gabriel'];
 // left the Commercial Invoice printing "By Sea".
 function orderProformaShipment(order) {
   const pf = order
-    ? db.prepare('SELECT way_of_shipment, port_of_loading, port_of_discharge, incoterm FROM proformas WHERE order_id=? ORDER BY id DESC LIMIT 1').get(order.id)
+    ? db.prepare('SELECT way_of_shipment, port_of_loading, port_of_discharge, incoterm, consignee, notify_party FROM proformas WHERE order_id=? ORDER BY id DESC LIMIT 1').get(order.id)
     : null;
   return {
     way: pf?.way_of_shipment || order?.way_of_shipment,
     origin: pf?.port_of_loading || order?.port_of_loading,
     destination: pf?.port_of_discharge || order?.port_of_discharge,
     incoterm: pf?.incoterm || order?.incoterm,
+    consignee: pf?.consignee || null,
+    notifyParty: pf?.notify_party || null,
   };
+}
+
+// Consignee / Notify Party block (same shape the Proforma uses) for the
+// Commercial Invoice, taken from the Proforma linked to the Order.
+function partyFromName(name) {
+  if (!name) return null;
+  const row = findClientByName(name);
+  return { name, address: fullAddress(row), taxId: row?.tax_id, tel: row?.phone };
 }
 
 function computeQuantityVariance(orderId, plItems) {
@@ -2838,6 +2848,8 @@ app.get('/api/commercial-invoices/:id/pdf', async (req, res) => {
       extraShipmentLine: plSummary,
       extraShipmentLineLabel: containerSummaryText,
       importer: { name: ci.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
+      consignee: partyFromName(orderProformaShipment(order).consignee),
+      notifyParty: partyFromName(orderProformaShipment(order).notifyParty),
     });
 
     const pdf = await renderPdfBuffer(html);
@@ -2925,6 +2937,8 @@ app.get('/api/commercial-invoices/:id/xlsx', async (req, res) => {
       extraShipmentLine: plSummary,
       extraShipmentLineLabel: containerSummaryText,
       importer: { name: ci.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
+      consignee: partyFromName(orderProformaShipment(order).consignee),
+      notifyParty: partyFromName(orderProformaShipment(order).notifyParty),
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
