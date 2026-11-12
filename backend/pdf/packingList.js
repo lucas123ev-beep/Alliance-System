@@ -143,8 +143,8 @@ function renderItemSections(items) {
           <th style="width:7%">Weight</th>
           <th style="width:9%">Total Length</th>
           <th style="width:8%">Roll</th>
-          <th style="width:9%">Gross Weight</th>
-          <th style="width:9%">Net Weight</th>
+          <th style="width:9%">Gross Weight (kg)</th>
+          <th style="width:9%">Net Weight (kg)</th>
           <th style="width:9%">CBM</th>
         </tr>
       </thead>
@@ -178,8 +178,8 @@ function renderItemSections(items) {
           <th style="width:8%">Unit</th>
           <th style="width:9%">Quantity</th>
           <th style="width:9%">Packages</th>
-          <th style="width:10%">Gross Weight</th>
-          <th style="width:10%">Net Weight</th>
+          <th style="width:10%">Gross Weight (kg)</th>
+          <th style="width:10%">Net Weight (kg)</th>
           <th style="width:10%">CBM</th>
         </tr>
       </thead>
@@ -224,7 +224,7 @@ function grandPalletTotal(items, containers) {
 function renderPackingList(params) {
   const {
     number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
-    incoterm, acq, manufacturer, items, totals, importer, containers,
+    incoterm, acq, manufacturer, items, totals, importer, consignee, notifyParty, containers,
   } = params;
 
   // Picks navy/HKAG vs. gray/Ningbo for every icon() call below — must run
@@ -262,8 +262,8 @@ function renderPackingList(params) {
               <td>TOTAL:</td>
               ${containerHasTextile ? `<td class="num">Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 0)}</td>` : ""}
               <td class="num">${palletCount(c) ? "Packages: " + palletsText(palletCount(c)) : `${packageLabel(containerItems)}: ${packagesText(containerItems)}`}</td>
-              <td class="num">Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)}</td>
-              <td class="num">Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)}</td>
+              <td class="num">Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)} kg</td>
+              <td class="num">Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)} kg</td>
               <td class="num">CBM: ${fmtNumber(sumOf(containerItems, "cbm"), 2)}</td>
             </tr>
           </tbody>
@@ -286,8 +286,8 @@ function renderPackingList(params) {
           <td>GRAND TOTAL:</td>
           ${anyTextile ? `<td class="num">Length: ${fmtNumber(totals.totalLength, 0)}</td>` : ""}
           <td class="num">${grandPalletTotal(items, containers) ? "Packages: " + palletsText(grandPalletTotal(items, containers)) : `${packageLabel(items)}: ${packagesText(items, totals.totalRoll)}`}</td>
-          <td class="num">Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}</td>
-          <td class="num">Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}</td>
+          <td class="num">Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)} kg</td>
+          <td class="num">Net Weight: ${fmtNumber(totals.totalNetWeight, 3)} kg</td>
           <td class="num">CBM: ${fmtNumber(totals.totalCbm, 2)}</td>
         </tr>
       </tbody>
@@ -300,6 +300,19 @@ function renderPackingList(params) {
   const originLabel = isAir ? "Airport Of Origin" : "Port Of Origin";
   const destinationLabel = isAir ? "Airport Of Destination" : "Port Of Destination";
 
+  const partyHtml = (title, p) => `
+      <p style="text-align:center; font-weight:bold; margin:0 0 6px;">${title}</p>
+      <p style="text-align:center; font-weight:bold; margin:0 0 2px;">${escapeHtml(p.name || "—")}</p>
+      <p style="text-align:center; margin:0 0 2px;">${escapeHtml(p.address || "—")}</p>
+      ${p.taxId ? `<p style="text-align:center; margin:0 0 2px;">CNPJ: ${escapeHtml(p.taxId)}</p>` : ""}
+      ${p.tel ? `<p style="text-align:center; margin:0;">Tel.: ${escapeHtml(p.tel)}</p>` : ""}`;
+  // Same rule as the Proforma/Commercial Invoice: separate Importer /
+  // Consignee / Notify Party blocks when the Proforma names a consignee or
+  // notify party; otherwise the single combined block.
+  const partyBlocks = (consignee || notifyParty)
+    ? [partyHtml("Importer:", importer), consignee ? partyHtml("Consignee:", consignee) : "", notifyParty ? partyHtml("Notify Party:", notifyParty) : ""]
+        .filter(Boolean).join('<div style="height:10px;"></div>')
+    : partyHtml("Importer | Consignee | Notify Part:", importer);
   const body = `
     <div class="doc-meta-row">
       <div><strong>Number:</strong> ${escapeHtml(number)}</div>
@@ -323,11 +336,7 @@ function renderPackingList(params) {
 
     <div class="section-bar" style="margin-top:10px;">${icon("user", "#fff")}Shipment Details</div>
     <div style="padding:10px 14px;">
-      <p style="text-align:center; font-weight:bold; margin:0 0 6px;">Importer | Consignee | Notify Part:</p>
-      <p style="text-align:center; font-weight:bold; margin:0 0 2px;">${escapeHtml(importer.name || "—")}</p>
-      <p style="text-align:center; margin:0 0 2px;">${escapeHtml(importer.address || "—")}</p>
-      ${importer.taxId ? `<p style="text-align:center; margin:0 0 2px;">CNPJ: ${escapeHtml(importer.taxId)}</p>` : ""}
-      ${importer.tel ? `<p style="text-align:center; margin:0;">Tel.: ${escapeHtml(importer.tel)}</p>` : ""}
+      ${partyBlocks}
     </div>
   `;
 

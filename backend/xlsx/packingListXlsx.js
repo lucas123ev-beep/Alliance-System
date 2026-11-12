@@ -79,7 +79,7 @@ function grandPalletTotal(items, containers) {
 function buildPackingListWorkbook(params) {
   const {
     number, date, wayOfShipment, countryOfOrigin, portOfOrigin, portOfDestination,
-    incoterm, acq, manufacturer, items, totals, importer, containers,
+    incoterm, acq, manufacturer, items, totals, importer, consignee, notifyParty, containers,
   } = params;
 
   const workbook = new ExcelJS.Workbook();
@@ -191,7 +191,7 @@ function buildPackingListWorkbook(params) {
     });
 
     if (textileItems.length > 0) {
-      addTableHeader(["Product", "Description", "Color", "Width", "Weight", "Total Length", "Roll", "Gross Weight", "Net Weight", "CBM"]);
+      addTableHeader(["Product", "Description", "Color", "Width", "Weight", "Total Length", "Roll", "Gross Weight (kg)", "Net Weight (kg)", "CBM"]);
       textileItems.forEach(item => {
         addTableDataRow([
           item.description, itemDescription(item), itemColor(item), item.width || "—", item.weightSpec || "—",
@@ -202,7 +202,7 @@ function buildPackingListWorkbook(params) {
       sheet.addRow([]);
     }
     otherGroups.forEach(group => {
-      addTableHeader(["Product", "Description", "Color", "Unit", "Quantity", "Packages", "Gross Weight", "Net Weight", "CBM"]);
+      addTableHeader(["Product", "Description", "Color", "Unit", "Quantity", "Packages", "Gross Weight (kg)", "Net Weight (kg)", "CBM"]);
       group.items.forEach(item => {
         addTableDataRow([
           item.description, itemDescription(item), itemColor(item), item.priceUnitLabel || item.width || "—",
@@ -234,8 +234,8 @@ function buildPackingListWorkbook(params) {
         "TOTAL:",
         [containerHasTextile ? `Length: ${fmtNumber(sumOf(containerItems, "totalLength"), 0)}` : "", "", "",
           (palletCount(c) ? `Packages: ${palletsText(palletCount(c))}` : `${packageLabel(containerItems)}: ${packagesText(containerItems)}`),
-          `Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)}`, "",
-          `Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)}`, "",
+          `Gross Weight: ${fmtNumber(sumOf(containerItems, "grossWeight"), 3)} kg`, "",
+          `Net Weight: ${fmtNumber(sumOf(containerItems, "netWeight"), 3)} kg`, "",
           `CBM: ${fmtNumber(sumOf(containerItems, "cbm"), 2)}`]
       );
       sheet.addRow([]);
@@ -246,7 +246,7 @@ function buildPackingListWorkbook(params) {
 
   const anyTextile = items.some(isTextileItem);
   const grandTotalRow = sheet.addRow([
-    `GRAND TOTAL:   ${anyTextile ? `Length: ${fmtNumber(totals.totalLength, 0)}   |   ` : ""}${grandPalletTotal(items, containers) ? `Packages: ${palletsText(grandPalletTotal(items, containers))}` : `${packageLabel(items)}: ${packagesText(items, totals.totalRoll)}`}   |   Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)}   |   Net Weight: ${fmtNumber(totals.totalNetWeight, 3)}   |   CBM: ${fmtNumber(totals.totalCbm, 2)}`,
+    `GRAND TOTAL:   ${anyTextile ? `Length: ${fmtNumber(totals.totalLength, 0)}   |   ` : ""}${grandPalletTotal(items, containers) ? `Packages: ${palletsText(grandPalletTotal(items, containers))}` : `${packageLabel(items)}: ${packagesText(items, totals.totalRoll)}`}   |   Gross Weight: ${fmtNumber(totals.totalGrossWeight, 3)} kg   |   Net Weight: ${fmtNumber(totals.totalNetWeight, 3)} kg   |   CBM: ${fmtNumber(totals.totalCbm, 2)}`,
   ]);
   sheet.mergeCells(grandTotalRow.number, 1, grandTotalRow.number, NUM_COLS);
   grandTotalRow.font = { bold: true };
@@ -267,11 +267,20 @@ function buildPackingListWorkbook(params) {
     row.getCell(1).alignment = { horizontal: "center", wrapText: true };
     return row;
   };
-  addCenteredLine("Importer | Consignee | Notify Part:").font = { bold: true };
-  addCenteredLine(importer.name || "—").font = { bold: true };
-  addCenteredLine(importer.address || "—");
-  if (importer.taxId) addCenteredLine(`CNPJ: ${importer.taxId}`);
-  if (importer.tel) addCenteredLine(`Tel.: ${importer.tel}`);
+  const addParty = (title, p) => {
+    addCenteredLine(title).font = { bold: true };
+    addCenteredLine(p.name || "—").font = { bold: true };
+    addCenteredLine(p.address || "—");
+    if (p.taxId) addCenteredLine(`CNPJ: ${p.taxId}`);
+    if (p.tel) addCenteredLine(`Tel.: ${p.tel}`);
+  };
+  if (consignee || notifyParty) {
+    addParty("Importer:", importer);
+    if (consignee) { sheet.addRow([]); addParty("Consignee:", consignee); }
+    if (notifyParty) { sheet.addRow([]); addParty("Notify Party:", notifyParty); }
+  } else {
+    addParty("Importer | Consignee | Notify Part:", importer);
+  }
 
   return workbook;
 }

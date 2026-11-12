@@ -1087,8 +1087,12 @@ function computeQuantityVariance(orderId, plItems) {
       g.unit = 'm';
       g.contractQty += parseFloat(it.quantity) || 0;
     } else {
-      g.unit = (category === 'Chemical' && priceBasis === 'ton') ? 'Ton' : (category === 'Chemical' && priceBasis === 'kg') ? 'Kg' : (realUnit(it.unit) || realUnit(product?.unit));
-      g.contractQty += parseFloat(it.quantity) || 0;
+      // Weight-priced Chemical (Ton or Kg basis) is always compared in tons,
+      // so a contract item saved under one basis and a Packing List item
+      // under the other still line up.
+      const isWeight = category === 'Chemical' && (priceBasis === 'ton' || priceBasis === 'kg');
+      g.unit = isWeight ? 'Ton' : (realUnit(it.unit) || realUnit(product?.unit));
+      g.contractQty += (parseFloat(it.quantity) || 0) / (isWeight && priceBasis === 'kg' ? 1000 : 1);
     }
   });
 
@@ -1108,7 +1112,7 @@ function computeQuantityVariance(orderId, plItems) {
     } else if (isTextile || it.soldInMeters) {
       g.packingQty += parseFloat(it.totalLength) || 0;
     } else if (category === 'Chemical' && (priceBasis === 'ton' || priceBasis === 'kg')) {
-      const perDrumTons = productNetWeightKg(product) / (priceBasis === 'kg' ? 1 : 1000);
+      const perDrumTons = productNetWeightKg(product) / 1000;
       if (perDrumTons > 0) g.packingQty += roll * perDrumTons;
       else g.unconvertible = true; // no net weight registered — can't turn drums back into tons
     } else {
@@ -3002,6 +3006,8 @@ app.get('/api/packing-lists/:id/pdf', async (req, res) => {
         totalGrossWeight: pl.total_gross_weight, totalNetWeight: pl.total_net_weight, totalCbm: pl.total_cbm,
       },
       importer: { name: order?.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
+      consignee: partyFromName(orderProformaShipment(order).consignee),
+      notifyParty: partyFromName(orderProformaShipment(order).notifyParty),
     });
 
     const pdf = await renderPdfBuffer(html);
@@ -3042,6 +3048,8 @@ app.get('/api/packing-lists/:id/xlsx', async (req, res) => {
         totalGrossWeight: pl.total_gross_weight, totalNetWeight: pl.total_net_weight, totalCbm: pl.total_cbm,
       },
       importer: { name: order?.client, address: fullAddress(clientRow), taxId: clientRow?.tax_id, tel: clientRow?.phone },
+      consignee: partyFromName(orderProformaShipment(order).consignee),
+      notifyParty: partyFromName(orderProformaShipment(order).notifyParty),
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
